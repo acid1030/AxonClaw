@@ -41,29 +41,19 @@ const CollapsibleBlock: React.FC<{
   );
 };
 
-// 对话数据类型
-interface Conversation {
-  id: string;
-  title: string;
-  lastMessage?: string;
-  timestamp: number;
-  unread?: number;
+// 当前会话显示名：优先 sessionLabels，其次 session.displayName，最后 session.key
+function getSessionDisplayName(
+  sessionKey: string,
+  sessions: { key: string; displayName?: string }[],
+  sessionLabels: Record<string, string>
+): string {
+  return sessionLabels[sessionKey]
+    || sessions.find((s) => s.key === sessionKey)?.displayName
+    || sessionKey;
 }
-
-// 模拟对话数据（从 ClawX store 获取后会替换）
-const mockConversations: Conversation[] = [
-  { id: '1', title: 'Anthropic API 配置问题', lastMessage: '配置完成', timestamp: Date.now() - 3600000 },
-  { id: '2', title: 'Python 异步爬虫设计', lastMessage: '代码已生成', timestamp: Date.now() - 7200000, unread: 2 },
-  { id: '3', title: 'Git rebase 冲突解决', lastMessage: '已解决', timestamp: Date.now() - 86400000 },
-  { id: '4', title: 'React Hooks 最佳实践', lastMessage: '文档已整理', timestamp: Date.now() - 172800000 },
-  { id: '5', title: '数据库索引优化', lastMessage: '优化完成', timestamp: Date.now() - 259200000 },
-  { id: '6', title: 'Docker 多阶段构建', lastMessage: '已完成', timestamp: Date.now() - 345600000 },
-  { id: '7', title: 'TypeScript 泛型进阶', lastMessage: '已学习', timestamp: Date.now() - 432000000 },
-];
 
 export const ChatView: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [activeConversation, setActiveConversation] = useState('Anthropic API 配置问题');
   const [input, setInput] = useState('');
   
   // 使用 ClawX stores
@@ -74,7 +64,9 @@ export const ChatView: React.FC = () => {
     sendMessage, 
     sessions,
     currentSessionKey,
+    sessionLabels,
     switchSession,
+    newSession,
     loadSessions,
     loadHistory
   } = useChatStore();
@@ -174,7 +166,7 @@ export const ChatView: React.FC = () => {
             className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm hover:bg-white/10 transition-colors min-w-[200px]"
           >
             <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-            <span>{activeConversation}</span>
+            <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || '选择对话'}</span>
             <ChevronDown className="w-3 h-3 text-white/40 ml-auto" />
           </button>
 
@@ -185,66 +177,31 @@ export const ChatView: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               className="absolute top-full left-0 mt-1 w-80 max-h-96 overflow-y-auto bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50"
             >
+              <div className="px-3 py-2 text-xs text-white/40 uppercase">
+                {sessions.length > 0 ? '对话列表' : '暂无对话'}
+              </div>
               {sessions.length > 0 ? (
-                <>
-                  <div className="px-3 py-2 text-xs text-white/40 uppercase">当前会话</div>
-                  {sessions.map((session) => (
-                    <div
-                      key={session.key}
-                      onClick={() => {
-                        setActiveConversation(session.displayName || session.label || session.key);
-                        switchSession(session.key);
-                        setDropdownOpen(false);
-                        loadHistory();
-                      }}
-                      className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer text-sm border-b border-white/5 ${
-                        session.key === currentSessionKey 
-                          ? 'bg-blue-500/20 text-blue-400' 
-                          : 'text-white/70 hover:bg-white/5'
-                      }`}
-                    >
-                      💬 {session.displayName || session.label || session.key}
-                    </div>
-                  ))}
-                </>
+                sessions.map((session) => (
+                  <div
+                    key={session.key}
+                    onClick={() => {
+                      switchSession(session.key);
+                      setDropdownOpen(false);
+                      loadHistory();
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer text-sm border-b border-white/5 ${
+                      session.key === currentSessionKey
+                        ? 'bg-blue-500/20 text-blue-400'
+                        : 'text-white/70 hover:bg-white/5'
+                    }`}
+                  >
+                    💬 {getSessionDisplayName(session.key, sessions, sessionLabels)}
+                  </div>
+                ))
               ) : (
-                <>
-                  <div className="px-3 py-2 text-xs text-white/40 uppercase">最近</div>
-                  {mockConversations.slice(0, 5).map((conv) => (
-                    <div
-                      key={conv.id}
-                      onClick={() => {
-                        setActiveConversation(conv.title);
-                        setDropdownOpen(false);
-                      }}
-                      className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer text-sm border-b border-white/5 ${
-                        conv.title === activeConversation 
-                          ? 'bg-blue-500/20 text-blue-400' 
-                          : 'text-white/70 hover:bg-white/5'
-                      }`}
-                    >
-                      💬 {conv.title}
-                      {conv.unread && (
-                        <span className="ml-auto px-2 py-0.5 rounded-full bg-white/10 text-white/60 text-xs">
-                          {conv.unread}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  <div className="px-3 py-2 text-xs text-white/40 uppercase">更早</div>
-                  {mockConversations.slice(5).map((conv) => (
-                    <div
-                      key={conv.id}
-                      onClick={() => {
-                        setActiveConversation(conv.title);
-                        setDropdownOpen(false);
-                      }}
-                      className="flex items-center gap-2 px-3 py-2.5 cursor-pointer text-sm text-white/70 hover:bg-white/5 border-b border-white/5"
-                    >
-                      💬 {conv.title}
-                    </div>
-                  ))}
-                </>
+                <div className="px-3 py-4 text-sm text-white/50 text-center">
+                  连接 OpenClaw Gateway 后将显示对话列表
+                </div>
               )}
             </motion.div>
           )}
@@ -258,7 +215,14 @@ export const ChatView: React.FC = () => {
         />
 
         {/* 新建按钮 */}
-        <button className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm hover:bg-white/10 transition-colors">
+        <button
+          onClick={() => {
+            newSession();
+            setDropdownOpen(false);
+            loadHistory();
+          }}
+          className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm hover:bg-white/10 transition-colors"
+        >
           ＋ 新建
         </button>
 

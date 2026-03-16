@@ -168,16 +168,249 @@ ipcMain.handle('gateway:isRunning', () => {
   return isGatewayRunning();
 });
 
+// Gateway RPC - 通过 WebSocket 调用 OpenClaw Gateway
+// 参数格式: invokeIpc('gateway:rpc', method, params, timeoutMs) => (method, params, timeoutMs)
+ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrUndef?: unknown, timeoutMsOrUndef?: number) => {
+  let method: string;
+  let params: Record<string, unknown>;
+  let timeout: number;
+
+  if (typeof methodOrPayload === 'string') {
+    method = methodOrPayload;
+    params = (paramsOrUndef && typeof paramsOrUndef === 'object' ? paramsOrUndef : {}) as Record<string, unknown>;
+    timeout = typeof timeoutMsOrUndef === 'number' ? timeoutMsOrUndef : 30000;
+  } else if (methodOrPayload && typeof methodOrPayload === 'object' && 'method' in (methodOrPayload as object)) {
+    const payload = methodOrPayload as { method: string; params?: unknown; timeoutMs?: number };
+    method = payload.method;
+    params = (payload.params && typeof payload.params === 'object' ? payload.params : {}) as Record<string, unknown>;
+    timeout = typeof payload.timeoutMs === 'number' ? payload.timeoutMs : 30000;
+  } else {
+    throw new Error('gateway:rpc invalid args');
+  }
+
+  console.log(`[GatewayRPC] ${method}`, params);
+  
+  return new Promise((resolve) => {
+    let resolved = false;
+    const WebSocket = require('ws');
+    const ws = new WebSocket('ws://127.0.0.1:18789/ws');
+    
+    const timeoutId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        console.error(`[GatewayRPC] ${method} timeout`);
+        ws.close();
+        resolve({ success: false, ok: false, error: 'Timeout' });
+      }
+    }, timeout);
+    
+    ws.on('open', () => {
+      console.log(`[GatewayRPC] ${method} WebSocket opened`);
+    });
+    
+    ws.on('message', (data: Buffer) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        
+        // 处理 challenge
+        if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: 'connect-' + Date.now(),
+            method: 'connect',
+            params: {
+              minProtocol: 3,
+              maxProtocol: 3,
+              client: { id: 'gateway-client', displayName: 'ClawX', version: '0.1.0', platform: process.platform, mode: 'ui' },
+              auth: { token: GATEWAY_TOKEN },
+              role: 'operator',
+              scopes: ['operator.admin'],
+            },
+          }));
+          return;
+        }
+        
+        // 处理 connect 响应
+        if (msg.type === 'res' && String(msg.id).startsWith('connect-')) {
+          if (!msg.ok) {
+            resolved = true;
+            clearTimeout(timeoutId);
+            ws.close();
+            resolve({ success: false, ok: false, error: String(msg.error?.message ?? msg.error ?? 'Connect failed') });
+            return;
+          }
+          // 发送实际请求
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: `rpc-${Date.now()}`,
+            method,
+            params,
+          }));
+          return;
+        }
+        
+        // 处理 RPC 响应
+        if (msg.type === 'res' && String(msg.id).startsWith('rpc-')) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeoutId);
+            ws.close();
+            console.log(`[GatewayRPC] ${method} result:`, msg.ok ? 'success' : 'error');
+            const ok = msg.ok !== false && !msg.error;
+            const result = msg.result ?? msg.payload;
+            const error = msg.error != null ? String(typeof msg.error === 'object' && msg.error && 'message' in msg.error ? (msg.error as { message?: string }).message : msg.error) : undefined;
+            resolve({
+              success: ok,
+              ok,
+              result,
+              error,
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`[GatewayRPC] ${method} parse error:`, err);
+      }
+    });
+    
+    ws.on('error', (err: Error) => {
+      console.error(`[GatewayRPC] ${method} WebSocket error:`, err.message);
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        resolve({ success: false, ok: false, error: err.message });
+      }
+    });
+    
+    ws.on('close', (code: number, reason: Buffer) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        console.log(`[GatewayRPC] ${method} WebSocket closed:`, code, reason.toString());
+        resolve({ success: false, ok: false, error: 'Connection closed' });
+      }
+    });
+  });
+});
+
 // Skills management
 ipcMain.handle('skills:openFolder', async () => {
   const skillsDir = path.join(os.homedir(), '.openclaw', 'skills');
   await shell.openPath(skillsDir);
 });
 
+// Sessions list - 代理到 OpenClaw Gateway
+ipcMain.handle('sessions.list', async (_event, { limit, agentId }) => {
+  console.log('[SessionsList] Fetching sessions...');
+  
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const WebSocket = require('ws');
+    const ws = new WebSocket('ws://127.0.0.1:18789/ws');
+    
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        console.error('[SessionsList] Timeout');
+        ws.close();
+        resolve({ sessions: [] }); // 超时返回空数组而不是 reject
+      }
+    }, 10000);
+    
+    ws.on('open', () => {
+      console.log('[SessionsList] WebSocket opened');
+    });
+    
+    ws.on('message', (data: Buffer) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        console.log('[SessionsList] Message:', msg.type, msg.event || msg.id || '');
+        
+        // 处理 challenge
+        if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          console.log('[SessionsList] Got challenge, sending connect...');
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: 'connect-' + Date.now(),
+            method: 'connect',
+            params: {
+              minProtocol: 3,
+              maxProtocol: 3,
+              client: { 
+                id: 'gateway-client', 
+                displayName: 'ClawX', 
+                version: '0.1.0',
+                platform: process.platform,
+                mode: 'ui',
+              },
+              auth: { token: GATEWAY_TOKEN },
+              role: 'operator',
+              scopes: ['operator.admin'],
+            },
+          }));
+          return;
+        }
+        
+        // 处理 connect 响应
+        if (msg.type === 'res' && String(msg.id).startsWith('connect-')) {
+          console.log('[SessionsList] Connect response:', msg.ok ? 'SUCCESS' : 'FAILED');
+          if (!msg.ok) {
+            resolved = true;
+            clearTimeout(timeout);
+            ws.close();
+            resolve({ sessions: [] });
+            return;
+          }
+          // 发送 sessions.list 请求
+          console.log('[SessionsList] Sending sessions.list request...');
+          ws.send(JSON.stringify({
+            type: 'req',
+            id: 'sessions-' + Date.now(),
+            method: 'sessions.list',
+            params: { limit: limit || 50, agentId: agentId || 'main' },
+          }));
+          return;
+        }
+        
+        // 处理 sessions.list 响应
+        if (msg.type === 'res' && String(msg.id).startsWith('sessions-')) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            ws.close();
+            const sessions = msg.payload?.sessions || msg.result?.sessions || [];
+            console.log('[SessionsList] Found', sessions.length, 'sessions');
+            resolve({ sessions });
+          }
+        }
+      } catch (err) {
+        console.error('[SessionsList] Parse error:', err);
+      }
+    });
+    
+    ws.on('error', (err: Error) => {
+      console.error('[SessionsList] WebSocket error:', err.message);
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({ sessions: [] });
+      }
+    });
+    
+    ws.on('close', (code: number, reason: Buffer) => {
+      console.log('[SessionsList] WebSocket closed:', code, reason.toString());
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({ sessions: [] });
+      }
+    });
+  });
+});
+
 // Host API proxy - Gateway REST API
 const GATEWAY_API_BASE = 'http://127.0.0.1:18789';
 const GATEWAY_WS_URL = 'ws://127.0.0.1:18789/ws';
-const GATEWAY_TOKEN = 'axonclaw-local-dev'; // 本地开发 token
+const GATEWAY_TOKEN = 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7'; // OpenClaw Gateway token
 
 ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) => {
   try {

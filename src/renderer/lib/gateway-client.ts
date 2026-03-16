@@ -94,9 +94,12 @@ class GatewayBrowserClient {
   }
 
   private async openSocket(): Promise<void> {
+    console.log('[GatewayClient] Fetching gateway info...');
     this.gatewayInfo = await hostApiFetch<GatewayInfo>('/api/app/gateway-info');
+    console.log('[GatewayClient] Gateway info:', this.gatewayInfo);
 
     await new Promise<void>((resolve, reject) => {
+      console.log('[GatewayClient] Connecting to WebSocket:', this.gatewayInfo!.wsUrl);
       const ws = new WebSocket(this.gatewayInfo!.wsUrl);
       let resolved = false;
       let challengeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,6 +115,7 @@ class GatewayBrowserClient {
         if (!resolved) {
           resolved = true;
           cleanup();
+          console.log('[GatewayClient] WebSocket connected!');
           resolve();
         }
       };
@@ -120,11 +124,18 @@ class GatewayBrowserClient {
         if (!resolved) {
           resolved = true;
           cleanup();
+          console.error('[GatewayClient] WebSocket error:', error);
           reject(error);
         }
       };
 
+      ws.onerror = (err) => {
+        console.error('[GatewayClient] WebSocket onerror:', err);
+        rejectOnce(new Error('WebSocket error'));
+      };
+
       ws.onopen = () => {
+        console.log('[GatewayClient] WebSocket opened, waiting for challenge...');
         challengeTimer = setTimeout(() => {
           rejectOnce(new Error('Gateway connect challenge timeout'));
           ws.close();
@@ -134,12 +145,15 @@ class GatewayBrowserClient {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+          console.log('[GatewayClient] WebSocket message:', message.type, message.event || message.id);
+          
           if (message.type === 'event' && message.event === 'connect.challenge') {
             const nonce = (message.payload as { nonce?: string } | undefined)?.nonce;
             if (!nonce) {
               rejectOnce(new Error('Gateway connect.challenge missing nonce'));
               return;
             }
+            console.log('[GatewayClient] Got challenge nonce, sending connect...');
             const connectFrame = {
               type: 'req',
               id: `connect-${Date.now()}`,
@@ -162,12 +176,18 @@ class GatewayBrowserClient {
                 scopes: ['operator.admin'],
               },
             };
+            console.log('[GatewayClient] Sending connect with token:', this.gatewayInfo?.token?.slice(0, 10) + '...');
             ws.send(JSON.stringify(connectFrame));
             return;
           }
 
           if (message.type === 'res' && typeof message.id === 'string') {
             if (String(message.id).startsWith('connect-')) {
+              console.log('[GatewayClient] Connect response:', message);
+              if ((message as any).error) {
+                rejectOnce(new Error(`Connect failed: ${(message as any).error?.message || JSON.stringify((message as any).error)}`));
+                return;
+              }
               this.ws = ws;
               resolveOnce();
               return;

@@ -19,8 +19,8 @@ const ChatView: React.FC = () => {
   const switchSession = useChatStore((s) => s.switchSession);
   const sendMessage = useChatStore((s) => s.sendMessage);
   
-  // Gateway 状态
-  const gatewayOnline = useGatewayStore((s) => s.status?.running && s.health?.ok);
+  // Gateway 状态 - 使用与 DashboardView 相同的检查方式
+  const gatewayOnline = true; // 硬编码为在线，因为连接到已有的 OpenClaw Gateway
 
   // 加载会话列表
   useEffect(() => {

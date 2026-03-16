@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import { TrendingUp, Users, Activity, Clock, Plus, Play, Search, Wifi, WifiOff, MessageSquare } from 'lucide-react';
 import { useGatewayStore } from '@/stores/gateway';
 import { useChatStore } from '@/stores/chat';
-import { gatewayClientWithFallback as gatewayClient } from '@/lib/gateway-client-fallback';
+import { gatewayClient } from '@/lib/gateway-client';
 
 interface SessionInfo {
   sessionKey: string;
@@ -50,17 +50,27 @@ const DashboardView: React.FC = () => {
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const result = await gatewayClient.request('sessions.list', { limit: 10 });
-      if (result?.sessions) {
-        setSessions(result.sessions.map((s: any) => ({
+      console.log('[Dashboard] Fetching sessions via IPC...');
+      
+      // 使用 Electron IPC 调用主进程的 sessions.list
+      const result = await window.electron.ipcRenderer.invoke('sessions.list', { limit: 10 });
+      console.log('[Dashboard] Raw IPC result:', result);
+      console.log('[Dashboard] Result type:', typeof result, Array.isArray(result?.sessions));
+      
+      if (result?.sessions && Array.isArray(result.sessions)) {
+        const mappedSessions = result.sessions.map((s: any) => ({
           sessionKey: s.sessionKey || s.key,
           label: s.label || s.displayName,
           lastMessage: s.lastMessage?.slice(0, 50),
           lastActivity: s.updatedAt || s.lastActivity,
-        })));
+        }));
+        console.log('[Dashboard] Mapped sessions:', mappedSessions.length, mappedSessions);
+        setSessions(mappedSessions);
+      } else {
+        console.log('[Dashboard] No sessions array in result, result=', result);
       }
     } catch (err) {
-      console.error('Failed to fetch sessions:', err);
+      console.error('[Dashboard] ERROR:', err);
     } finally {
       setLoading(false);
     }
