@@ -1126,7 +1126,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
 
         const tryDf = async (): Promise<boolean> => {
           if (process.platform === 'win32') return false;
-          const dfCmd = process.platform === 'darwin' ? '/usr/bin/df' : 'df';
+          // 使用 df 而非 /usr/bin/df，避免沙盒或部分 macOS 环境找不到
+          const dfCmd = 'df';
           for (const dirPath of pathsToTry) {
             if (!dirPath || typeof dirPath !== 'string') continue;
             try {
