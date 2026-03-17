@@ -25,7 +25,8 @@
     "cli:build": "tsc -p tsconfig.cli.json",
     "cli:test": "tsx cli/index.ts status",
     "package": "npm run electron:build",
-    "release": "npm run electron:build -- --publish always"
+    "release": "npm run electron:build -- --publish always",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -37,6 +38,8 @@
     "@radix-ui/react-slot": "^1.0.2",
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.0.4",
+    "better-sqlite3": "^12.8.0",
+    "check-disk-space": "^3.4.0",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.0",
@@ -57,6 +60,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
@@ -66,6 +70,7 @@
     "concurrently": "^8.2.0",
     "electron": "^33.0.0",
     "electron-builder": "^24.13.0",
+    "electron-rebuild": "^3.2.9",
     "playwright": "^1.58.2",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",

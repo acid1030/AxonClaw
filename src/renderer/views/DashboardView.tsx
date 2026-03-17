@@ -1,15 +1,59 @@
 /**
  * AxonClaw - Dashboard View
- * 项目仪表板 - 实时监控项目进度与 Agent 状态
- * 已连接真实 Gateway + Sessions 数据
+ * ClawDeckX 风格布局：Gateway Hero、KPI 卡片、最近会话
+ * 不改变技术架构，使用现有 stores + hostApiFetch + IPC
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { TrendingUp, Users, Activity, Clock, Plus, Play, Search, Wifi, WifiOff, MessageSquare, RefreshCw, FileText } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import {
+  MessageSquare,
+  RefreshCw,
+  FileText,
+  Bot,
+  Puzzle,
+  MessageCircle,
+  Calendar,
+  Cpu,
+  Router,
+  DollarSign,
+  Zap,
+  AlertTriangle,
+  Bell,
+  ExternalLink,
+  FolderOpen,
+  Monitor,
+  Shield,
+  ChevronRight,
+} from 'lucide-react';
 import { useGatewayStore } from '@/stores/gateway';
 import { useChatStore } from '@/stores/chat';
+import { useAgentsStore } from '@/stores/agents';
+import { useSkillsStore } from '@/stores/skills';
+import { useChannelsStore } from '@/stores/channels';
+import { useCronStore } from '@/stores/cron';
+import { useProviderStore } from '@/stores/providers';
 import { invokeIpc } from '@/lib/api-client';
+import { hostApiFetch } from '@/lib/host-api';
+import { HealthDot } from '@/components/common/HealthDot';
+import { GaugeCard, formatBytes, formatUptime } from '@/components/common/GaugeCard';
+import { MiniSparkline } from '@/components/common/MiniSparkline';
+import { DualTrendChart } from '@/components/common/DualTrendChart';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
 
 interface SessionInfo {
   sessionKey: string;
@@ -18,18 +62,111 @@ interface SessionInfo {
   lastActivity?: number;
 }
 
+interface HostInfo {
+  hostname: string;
+  platform: string;
+  arch: string;
+  numCpu: number;
+  cpuUsage?: number;
+  coroutineCount?: number;
+  sysMem?: {
+    total: number;
+    used: number;
+    free: number;
+    usedPct: number;
+  };
+  diskUsage?: Array<{
+    path: string;
+    total: number;
+    used: number;
+    free: number;
+    usedPct: number;
+  }>;
+  uptimeMs?: number;
+  openclawVersion?: string;
+  /** 进程内存 (Node.js process.memoryUsage) */
+  processMemory?: {
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+    rss: number;
+    stackMemory?: number;
+    gcCount?: number;
+  };
+  /** 进程运行时间 (秒) */
+  processUptime?: number;
+  /** Gateway 运行时间 (秒，来自 /health) */
+  gatewayUptime?: number;
+  /** 连接实例数 */
+  connectionsCount?: number;
+  /** 环境信息 */
+  env?: {
+    user: string;
+    shell: string;
+    cwd: string;
+  };
+}
+
+interface UsageCost {
+  totalCost?: number;
+  todayCost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  trend?: Array<{ date: string; cost: number; tokens?: number }>;
+}
+
+interface AlertItem {
+  id: string;
+  level: 'critical' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: string;
+}
+
 interface DashboardViewProps {
   onNavigateTo?: (viewId: string) => void;
 }
 
+const FAST_INTERVAL = 25000;
+
 const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
-  const gatewayStatus = useGatewayStore((state) => state.status);
-  const initGateway = useGatewayStore((state) => state.init);
-  
-  // 真实连接状态：通过 gateway:checkConnection 检测
+  const gatewayStatus = useGatewayStore((s) => s.status);
+  const lastError = useGatewayStore((s) => s.lastError);
+  const initGateway = useGatewayStore((s) => s.init);
+  const startGateway = useGatewayStore((s) => s.start);
+  const clearError = useGatewayStore((s) => s.clearError);
+
   const [connectionVerified, setConnectionVerified] = useState<boolean | null>(null);
+  const [starting, setStarting] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  
+  const [stopping, setStopping] = useState(false);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [logContent, setLogContent] = useState('');
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [refreshCountdown, setRefreshCountdown] = useState(FAST_INTERVAL / 1000);
+
+  // 主机信息状态
+  const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
+  const [loadingHostInfo, setLoadingHostInfo] = useState(false);
+
+  // 使用成本
+  const [usage, setUsage] = useState<UsageCost | null>(null);
+
+  // 最近告警 + 汇总
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertSummary, setAlertSummary] = useState<{
+    high: number;
+    medium: number;
+    count1h: number;
+    count24h: number;
+    healthScore: number;
+  } | null>(null);
+  // 从日志解析的异常事件（ClawDeckX 风格：ERROR/WARN/exception/failed）
+  const [logAbnormal, setLogAbnormal] = useState<Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }>>([]);
+
   const checkConnection = useCallback(async (showLoading = false) => {
     if (showLoading) setConnectionVerified(null);
     try {
@@ -42,46 +179,192 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     }
   }, []);
 
-  const isOnline = connectionVerified === true || (connectionVerified === null && gatewayStatus.state === 'running');
-  
-  // 从 ClawX chat store 获取 sessions
-  const chatSessions = useChatStore((s) => s.sessions);
+  const isOnline =
+    connectionVerified === true ||
+    (connectionVerified === null && gatewayStatus.state === 'running');
+  const hasStartError = Boolean(lastError || gatewayStatus?.error);
+  const isStarting = gatewayStatus?.state === 'starting' || starting;
+
   const loadSessions = useChatStore((s) => s.loadSessions);
-  
-  // 真实会话数据
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const agents = useAgentsStore((s) => s.agents);
+  const fetchAgents = useAgentsStore((s) => s.fetchAgents);
+  const skills = useSkillsStore((s) => s.skills);
+  const fetchSkills = useSkillsStore((s) => s.fetchSkills);
+  const channels = useChannelsStore((s) => s.channels);
+  const fetchChannels = useChannelsStore((s) => s.fetchChannels);
+  const cronJobs = useCronStore((s) => s.jobs);
+  const fetchCronJobs = useCronStore((s) => s.fetchJobs);
+  const providerStatuses = useProviderStore((s) => s.statuses);
+  const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
+
+  // 加载会话列表
+  const fetchSessions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = (await window.electron.ipcRenderer.invoke('sessions.list', {
+        limit: 10,
+      })) as { sessions?: Array<{ sessionKey?: string; key?: string; label?: string; displayName?: string; lastMessage?: string; updatedAt?: number; lastActivity?: number }> };
+      if (result?.sessions && Array.isArray(result.sessions)) {
+        setSessions(
+          result.sessions.map((s) => ({
+            sessionKey: s.sessionKey ?? s.key ?? '',
+            label: s.label ?? s.displayName,
+            lastMessage: s.lastMessage?.slice(0, 50),
+            lastActivity: s.updatedAt ?? s.lastActivity,
+          }))
+        );
+      }
+    } catch {
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 加载主机信息
+  const fetchHostInfo = useCallback(async () => {
+    setLoadingHostInfo(true);
+    try {
+      const data = await hostApiFetch<HostInfo>('/api/host-info', { method: 'GET' });
+      if (data && typeof data === 'object') {
+        setHostInfo(data);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Failed to fetch host info:', err);
+    } finally {
+      setLoadingHostInfo(false);
+    }
+  }, []);
+
+  // 加载使用成本
+  const fetchUsage = useCallback(async () => {
+    if (!isOnline) return;
+    try {
+      const data = await hostApiFetch<UsageCost>('/api/usage-cost?days=7').catch(() => null);
+      setUsage(data ?? null);
+    } catch {
+      setUsage(null);
+    }
+  }, [isOnline]);
+
+  // 加载告警
+  const fetchAlerts = useCallback(async () => {
+    type AlertsRes = { alerts?: AlertItem[]; summary?: { high: number; medium: number; count1h: number; count24h: number; healthScore: number } };
+    const empty: AlertsRes = {};
+    try {
+      const data: AlertsRes = await hostApiFetch<AlertsRes>('/api/alerts').catch(() => empty);
+      setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
+      setAlertSummary(data.summary ?? null);
+    } catch {
+      setAlerts([]);
+      setAlertSummary(null);
+    }
+  }, []);
+
+  // 从日志解析异常事件（ClawDeckX 风格）
+  const fetchLogAbnormal = useCallback(async () => {
+    try {
+      const res = await hostApiFetch<{ events?: Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> }>('/api/logs/abnormal?limit=10');
+      setLogAbnormal(Array.isArray(res?.events) ? res.events : []);
+    } catch {
+      setLogAbnormal([]);
+    }
+  }, []);
 
   useEffect(() => {
     initGateway().catch(console.error);
   }, [initGateway]);
 
-  // 真实连接检测（挂载时显示 loading，定期静默检测）
   useEffect(() => {
     checkConnection(true);
     const t = setInterval(() => checkConnection(false), 15000);
     return () => clearInterval(t);
   }, [checkConnection]);
 
-  // 加载真实会话列表
+  // 进程内存、环境、告警、日志异常、服务商来自主进程，不依赖 Gateway，始终加载并定期刷新
+  useEffect(() => {
+    void fetchHostInfo();
+    void fetchAlerts();
+    void fetchLogAbnormal();
+    void refreshProviderSnapshot();
+    const t = setInterval(() => {
+      void fetchHostInfo();
+      void fetchAlerts();
+      void fetchLogAbnormal();
+      void refreshProviderSnapshot();
+    }, 30000);
+    return () => clearInterval(t);
+  }, [fetchHostInfo, fetchAlerts, fetchLogAbnormal, refreshProviderSnapshot]);
+
   useEffect(() => {
     if (isOnline) {
       loadSessions().catch(console.error);
       fetchSessions();
+      void fetchAgents();
+      void fetchSkills();
+      void fetchChannels();
+      void fetchCronJobs();
+      void fetchHostInfo();
+      void fetchUsage();
+      void fetchAlerts();
+      void fetchLogAbnormal();
+      void refreshProviderSnapshot();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline]);
+  }, [isOnline, fetchAgents, fetchSkills, fetchChannels, fetchCronJobs, fetchHostInfo, fetchSessions, loadSessions, fetchUsage, fetchAlerts, fetchLogAbnormal, refreshProviderSnapshot]);
+
+  const refreshAll = useCallback(async () => {
+    await checkConnection(true);
+    void fetchHostInfo();
+    void fetchAlerts();
+    void fetchLogAbnormal();
+    if (isOnline) {
+      loadSessions().catch(console.error);
+      fetchSessions();
+      void fetchAgents();
+      void fetchSkills();
+      void fetchChannels();
+      void fetchCronJobs();
+      void fetchUsage();
+      void refreshProviderSnapshot();
+    }
+    setLastUpdate(new Date());
+    setRefreshCountdown(FAST_INTERVAL / 1000);
+  }, [checkConnection, isOnline, fetchHostInfo, fetchSessions, fetchAgents, fetchSkills, fetchChannels, fetchCronJobs, fetchUsage, fetchAlerts, fetchLogAbnormal, refreshProviderSnapshot, loadSessions]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setRefreshCountdown((p) => Math.max(p - 1, 0)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleStartGateway = async () => {
+    setStarting(true);
+    clearError();
+    try {
+      await startGateway();
+      // 启动请求已发出，等待几秒后验证连接
+      setTimeout(() => {
+        void checkConnection(true);
+      }, 3000);
+    } catch (e) {
+      console.error('Gateway start error:', e);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const restartGateway = useGatewayStore((s) => s.restart);
 
   const handleRestartGateway = async () => {
+    setShowRestartConfirm(false);
     setRestarting(true);
+    clearError();
     try {
-      const r = await invokeIpc<{ success: boolean; error?: string }>('gateway:restart');
-      if (r?.success) {
-        await initGateway();
-        await checkConnection();
-      } else {
-        console.error('Gateway restart failed:', r?.error);
-      }
+      await restartGateway();
+      await initGateway();
+      await checkConnection(true);
     } catch (e) {
       console.error('Gateway restart error:', e);
     } finally {
@@ -89,239 +372,785 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     }
   };
 
-  const fetchSessions = async () => {
-    setLoading(true);
+  const stopGateway = useGatewayStore((s) => s.stop);
+
+  const handleStopGateway = async () => {
+    setShowStopConfirm(false);
+    setStopping(true);
+    clearError();
     try {
-      console.log('[Dashboard] Fetching sessions via IPC...');
-      
-      // 使用 Electron IPC 调用主进程的 sessions.list
-      const result = await window.electron.ipcRenderer.invoke('sessions.list', { limit: 10 });
-      console.log('[Dashboard] Raw IPC result:', result);
-      console.log('[Dashboard] Result type:', typeof result, Array.isArray(result?.sessions));
-      
-      if (result?.sessions && Array.isArray(result.sessions)) {
-        const mappedSessions = result.sessions.map((s: any) => ({
-          sessionKey: s.sessionKey || s.key,
-          label: s.label || s.displayName,
-          lastMessage: s.lastMessage?.slice(0, 50),
-          lastActivity: s.updatedAt || s.lastActivity,
-        }));
-        console.log('[Dashboard] Mapped sessions:', mappedSessions.length, mappedSessions);
-        setSessions(mappedSessions);
-      } else {
-        console.log('[Dashboard] No sessions array in result, result=', result);
-      }
-    } catch (err) {
-      console.error('[Dashboard] ERROR:', err);
+      await stopGateway();
+      await initGateway();
+      await checkConnection(true);
+    } catch (e) {
+      console.error('Gateway stop error:', e);
     } finally {
-      setLoading(false);
+      setStopping(false);
     }
   };
 
-  const activeSessionCount = sessions.length;
-  const totalSessionCount = chatSessions.length;
+  const handleShowLogs = async () => {
+    setShowLogsModal(true);
+    setLoadingLogs(true);
+    setLogContent('');
+    try {
+      const data = await hostApiFetch<{ content?: string }>('/api/logs?tailLines=100');
+      setLogContent(data?.content ?? '(无日志内容)');
+    } catch {
+      setLogContent('(加载日志失败)');
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
 
-  // 动态统计数据
-  const stats = [
-    { 
-      label: '整体进度', 
-      value: '58%', 
-      change: '+5% 本周', 
-      color: 'blue', 
-      icon: TrendingUp 
-    },
-    { 
-      label: '活跃会话', 
-      value: `${activeSessionCount}/${totalSessionCount}`, 
-      change: isOnline ? 'Gateway 在线' : 'Gateway 离线', 
-      color: isOnline ? 'green' : 'red', 
-      icon: MessageSquare 
-    },
-    { 
-      label: '渠道在线', 
-      value: '4/6', 
-      change: '2 离线', 
-      color: 'purple', 
-      icon: Activity 
-    },
-    { 
-      label: '任务队列', 
-      value: '18', 
-      change: '3 进行中', 
-      color: 'amber', 
-      icon: Clock 
-    },
-  ];
+  const handleOpenLogDir = async () => {
+    try {
+      const { dir } = await hostApiFetch<{ dir: string | null }>('/api/logs/dir');
+      if (dir) await invokeIpc('shell:showItemInFolder', dir);
+    } catch {
+      /* ignore */
+    }
+  };
 
-  const recentActivities = [
-    { avatar: 'W', user: 'Writer Agent', action: '生成了新品文案', time: '5分钟前' },
-    { avatar: 'D', user: 'Diagnostic', action: '完成健康检查', time: '15分钟前' },
-    { avatar: 'Z', user: 'ZARA', action: '创建开发计划', time: '14:15' },
-  ];
+  const safeChannels = Array.isArray(channels) ? channels : [];
+  const safeAgents = Array.isArray(agents) ? agents : [];
+  const safeCronJobs = Array.isArray(cronJobs) ? cronJobs : [];
+  const activeChannels = safeChannels.filter((c) => c.status === 'connected').length;
+  const totalChannels = safeChannels.length || 1;
+  const eligibleSkills = Array.isArray(skills) ? skills.filter((s) => s.enabled || s.isCore).length : 0;
+  const skillCount = Array.isArray(skills) ? skills.length : 0;
 
-  const channelProgress = [
-    { name: 'Discord', progress: 80 },
-    { name: 'Telegram', progress: 80 },
-    { name: 'Slack', progress: 70 },
-    { name: 'Signal', progress: 0 },
+  const timeFormatter = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  // 资源告警：CPU/内存/磁盘 > 90%
+  const cpuPct = hostInfo?.cpuUsage ?? 0;
+  const memPct = hostInfo?.sysMem?.usedPct ?? 0;
+  const diskPct = hostInfo?.diskUsage?.[0]?.usedPct ?? 0;
+  const resourceAlerts: string[] = [];
+  if (cpuPct > 90) resourceAlerts.push(`CPU ${cpuPct.toFixed(0)}%`);
+  if (memPct > 90) resourceAlerts.push(`内存 ${memPct.toFixed(0)}%`);
+  if (diskPct > 90) resourceAlerts.push(`磁盘 ${diskPct.toFixed(0)}%`);
+  const hasResourceAlert = resourceAlerts.length > 0;
+
+  // 今日费用趋势（双线：令牌 + 费用）
+  const trend = usage?.trend ?? [];
+  const costTrend = trend.map((t) => t.cost);
+  const sparklineData = costTrend.length > 0 ? costTrend : [0, 0.1, 0.2, 0.15, 0.25, 0.2, (usage?.todayCost ?? 0) || 0.2];
+
+  const totalCost = usage?.totalCost ?? 0;
+  const todayCost = usage?.todayCost ?? 0;
+  const todayTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
+  const sevenDayTokens = trend.reduce((s, t) => s + (t.tokens ?? 0), 0);
+  const sevenDayCost = trend.reduce((s, t) => s + t.cost, 0);
+
+  const safeProviders = Array.isArray(providerStatuses) ? providerStatuses : [];
+  const trendChartRef = useRef<HTMLDivElement>(null);
+  const [trendChartWidth, setTrendChartWidth] = useState(480);
+  useEffect(() => {
+    const el = trendChartRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (el) setTrendChartWidth(Math.max(320, el.offsetWidth));
+    });
+    ro.observe(el);
+    setTrendChartWidth(Math.max(320, el.offsetWidth));
+    return () => ro.disconnect();
+  }, []);
+  // ClawDeckX 风格健康评分：告警 + 网关 + 服务商
+  const computedHealthScore = (() => {
+    const base = alertSummary?.healthScore ?? 100;
+    let score = base;
+    if (!isOnline) score -= 15;
+    if (safeProviders.length === 0) score -= 5;
+    else if (safeProviders.every((p) => !p.hasKey)) score -= 10;
+    return Math.max(0, Math.min(100, Math.round(score)));
+  })();
+
+  const kpiCards = [
+    { icon: MessageSquare, label: '会话', value: loading ? '--' : `${sessions.length}`, color: '#6366f1', borderClass: 'border-indigo-500/40', target: 'run' },
+    { icon: Zap, label: '今日 Token', value: todayTokens > 0 ? fmtTokens(todayTokens) : '--', color: '#f59e0b', borderClass: 'border-amber-500/40', target: 'usage' },
+    { icon: DollarSign, label: '总成本', value: totalCost > 0 ? `$${totalCost.toFixed(2)}` : '--', color: '#10b981', borderClass: 'border-emerald-500/40', target: 'usage' },
+    { icon: MessageCircle, label: '渠道', value: `${activeChannels}/${totalChannels}`, color: '#06b6d4', borderClass: 'border-cyan-500/40', target: 'channel' },
+    { icon: Bot, label: 'Agent', value: `${safeAgents.length}`, color: '#14b8a6', borderClass: 'border-teal-500/40', target: 'agent' },
+    { icon: Puzzle, label: '技能', value: skillCount > 0 ? `${eligibleSkills}/${skillCount}` : '0', color: '#ec4899', borderClass: 'border-pink-500/40', target: 'skill' },
+    { icon: Calendar, label: '定时任务', value: `${safeCronJobs.length}`, color: '#0ea5e9', borderClass: 'border-sky-500/40', target: 'cron' },
+    { icon: FileText, label: '日志', value: isOnline ? '在线' : '离线', color: isOnline ? '#22c55e' : '#94a3b8', borderClass: isOnline ? 'border-green-500/40' : 'border-slate-500/40', target: 'run' },
   ];
 
   return (
-    <div className="p-6 h-full overflow-y-auto">
-      {/* Topbar */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-white text-2xl font-semibold">项目仪表板</h1>
-          <p className="text-white/60 text-sm mt-1">实时监控项目进度与 Agent 状态</p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-            <input
-              type="text"
-              placeholder="搜索会话、模板、日志..."
-              className="pl-10 pr-4 py-2 w-64 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500/50"
-            />
+    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6">
+        {/* 顶部健康条 */}
+        <div
+          className={cn(
+            'h-[3px] w-full -mx-6 transition-all duration-700 shrink-0',
+            isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+          )}
+        />
+
+      <div className="flex flex-col flex-1 min-h-0 pt-4">
+        {/* 标题 + 刷新 */}
+        <div className="flex items-start sm:items-center justify-between gap-2 mb-4 shrink-0">
+          <div>
+            <h1 className="text-base font-bold text-foreground">概览</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              {lastUpdate && (
+                <p className="text-xs text-muted-foreground">
+                  更新: {timeFormatter.format(lastUpdate)}
+                </p>
+              )}
+              {refreshCountdown > 0 && refreshCountdown < FAST_INTERVAL / 1000 && (
+                <span className="text-xs text-muted-foreground/70 tabular-nums">
+                  {refreshCountdown}s 后刷新
+                </span>
+              )}
+            </div>
           </div>
-          
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span className="text-sm">新建...</span>
+          <button
+            aria-label="刷新"
+            onClick={refreshAll}
+            disabled={loading}
+            className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-all disabled:opacity-40 shrink-0"
+          >
+            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </button>
         </div>
-      </div>
 
-      {/* Gateway 状态指示器 - 真实连接状态 */}
-      <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-        {connectionVerified === null ? (
-          <>
-            <div className="w-4 h-4 rounded-full bg-amber-500/80 animate-pulse" />
-            <span className="text-sm text-amber-400">检测连接中…</span>
-          </>
-        ) : isOnline ? (
-          <>
-            <Wifi className="w-4 h-4 text-green-500" />
-            <span className="text-sm text-green-500">Gateway 在线</span>
-            <span className="text-xs text-white/40 ml-2">port: {gatewayStatus?.port || 18789}</span>
-            <button 
-              onClick={fetchSessions}
-              className="ml-2 text-xs text-blue-400 hover:text-blue-300"
-            >
-              🔄 刷新会话
-            </button>
-          </>
-        ) : (
-          <>
-            <WifiOff className="w-4 h-4 text-red-500" />
-            <span className="text-sm text-red-500">Gateway 离线</span>
-          </>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={handleRestartGateway}
-            disabled={restarting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors disabled:opacity-50"
-            title="重启 Gateway"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${restarting ? 'animate-spin' : ''}`} />
-            {restarting ? '重启中…' : '重启网管'}
-          </button>
-          <button
-            onClick={() => onNavigateTo?.('log')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors"
-            title="查看日志"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            显示日志
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        {stats.map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="p-4 rounded-lg bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-white/60 text-sm">{stat.label}</span>
-              <stat.icon className={`w-4 h-4 ${
-                stat.color === 'blue' ? 'text-blue-500' :
-                stat.color === 'green' ? 'text-green-500' :
-                stat.color === 'purple' ? 'text-purple-500' :
-                stat.color === 'red' ? 'text-red-500' :
-                'text-amber-500'
-              }`} />
+        <div className="space-y-4 flex-1 overflow-y-auto min-h-0 pb-4">
+          {/* 资源告警：CPU/内存/磁盘 > 90% */}
+          {hasResourceAlert && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>资源告警：{resourceAlerts.join('、')} 超过 90%</span>
             </div>
-            <div className="text-white text-2xl font-bold mb-1">
-              {loading && stat.label === '活跃会话' ? '...' : stat.value}
-            </div>
-            <div className="text-white/40 text-xs">{stat.change}</div>
-          </motion.div>
-        ))}
-      </div>
+          )}
 
-      {/* Main Content */}
-      <div className="grid grid-cols-3 gap-4">
-        {/* 真实会话列表 */}
-        <div className="col-span-2 p-4 rounded-lg bg-white/5 border border-white/10">
-          <h2 className="text-white font-semibold mb-4">
-            最近会话 
-            {sessions.length > 0 && <span className="text-white/40 text-sm ml-2">({sessions.length})</span>}
-          </h2>
-          <div className="space-y-3">
-            {sessions.length === 0 ? (
-              <div className="text-center text-white/40 py-8">
-                {loading ? '加载中...' : '暂无会话'}
-              </div>
-            ) : (
-              sessions.map((session, index) => (
-                <div key={session.sessionKey || index} className="flex items-center gap-3 p-2 rounded hover:bg-white/5 cursor-pointer">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
-                    {session.label?.[0]?.toUpperCase() || 'S'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white text-sm truncate">
-                      {session.label || session.sessionKey}
-                    </div>
-                    <div className="text-white/40 text-xs truncate">
-                      {session.lastMessage || '暂无消息'}
-                    </div>
-                  </div>
-                  <div className="text-white/40 text-xs whitespace-nowrap">
-                    {session.lastActivity ? new Date(session.lastActivity).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </div>
-                </div>
-              ))
+          {/* Gateway Hero */}
+          <div
+            className={cn(
+              'relative overflow-hidden rounded-xl border-2 p-4 sm:p-5',
+              isOnline
+                ? 'border-green-500/30 bg-[#1e293b]'
+                : 'border-amber-500/40 bg-[#1e293b]'
             )}
-          </div>
-        </div>
-
-        {/* Progress */}
-        <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-          <h2 className="text-white font-semibold mb-4">进度追踪</h2>
-          <div className="space-y-3">
-            {channelProgress.map((channel) => (
-              <div key={channel.name}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-white/60 text-xs">{channel.name}</span>
-                  <span className="text-white/40 text-xs">{channel.progress}%</span>
+          >
+            <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+              <div
+                className={cn(
+                  'w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-inner shrink-0',
+                  isOnline ? 'bg-green-500/15' : 'bg-slate-100 dark:bg-white/5'
+                )}
+              >
+                <Router
+                  className={cn(
+                    'w-7 h-7 sm:w-8 sm:h-8',
+                    isOnline ? 'text-green-500' : 'text-slate-400'
+                  )}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-lg font-black text-foreground">
+                    Gateway
+                  </h2>
+                  <div
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full',
+                      isOnline ? 'bg-green-500/15' : 'bg-slate-200 dark:bg-white/10'
+                    )}
+                  >
+                    <HealthDot ok={isOnline} />
+                    <span
+                      className={cn(
+                        'text-xs font-bold uppercase',
+                        isOnline ? 'text-green-500' : 'text-muted-foreground'
+                      )}
+                    >
+                      {isOnline ? '运行中' : '已停止'}
+                    </span>
+                  </div>
+                  {connectionVerified === null && (
+                    <span className="text-xs text-amber-500">检测中…</span>
+                  )}
                 </div>
-                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300"
-                    style={{ width: `${channel.progress}%` }}
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1.5 text-xs text-muted-foreground items-center">
+                  {gatewayStatus?.port && (
+                    <span className="font-mono">
+                      {gatewayStatus.port === 18789 ? '127.0.0.1:18789' : `port ${gatewayStatus.port}`}
+                    </span>
+                  )}
+                  {isOnline && (
+                    <span className="flex items-center gap-1.5">
+                      今日成本
+                      <MiniSparkline data={sparklineData} color="#f59e0b" width={64} height={20} />
+                      <span className="font-semibold text-amber-500">
+                        ${(todayCost || 0).toFixed(2)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  {hasStartError && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] text-red-400 max-w-[140px] truncate"
+                      title={lastError || gatewayStatus?.error}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {lastError || gatewayStatus?.error}
+                    </span>
+                  )}
+                  <div className="flex gap-1">
+                  {!isOnline ? (
+                    <button
+                      onClick={() => void handleStartGateway()}
+                      disabled={isStarting}
+                      className={cn(
+                        'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1',
+                        hasStartError
+                          ? 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/30'
+                          : 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                      )}
+                    >
+                      {isStarting ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          启动中…
+                        </>
+                      ) : (
+                        '启动'
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setShowRestartConfirm(true)}
+                        disabled={restarting}
+                        className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+                      >
+                        {restarting ? '重启中…' : '重启'}
+                      </button>
+                      <button
+                        onClick={() => setShowStopConfirm(true)}
+                        disabled={stopping}
+                        className="px-2 py-1 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+                      >
+                        {stopping ? '停止中…' : '停止'}
+                      </button>
+                      <button
+                        onClick={handleShowLogs}
+                        className="px-2 py-1 rounded-lg bg-slate-500/10 text-slate-600 dark:text-slate-400 text-xs font-bold hover:bg-slate-500/20 transition-colors"
+                      >
+                        日志
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 卡片 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {kpiCards.map((kpi) => (
+              <button
+                key={kpi.label}
+                onClick={() => onNavigateTo?.(kpi.target)}
+                className={cn(
+                  'relative overflow-hidden rounded-xl border-2 p-3.5 text-start transition-all cursor-pointer group',
+                  kpi.borderClass,
+                  'bg-[#1e293b] hover:bg-[#334155]/50'
+                )}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      {kpi.label}
+                    </p>
+                    <p className="text-base sm:text-lg font-black tabular-nums mt-0.5 text-foreground">
+                      {kpi.value}
+                    </p>
+                  </div>
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform"
+                    style={{ background: `${kpi.color}15` }}
+                  >
+                    <kpi.icon className="w-4 h-4" style={{ color: kpi.color }} />
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* 安全状态 (ClawDeckX) */}
+          {(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0) > 0 && (
+            <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Shield className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">安全状态</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    共{(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0)}项发现
+                  </p>
+                </div>
+                <span className="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-500 text-xs font-bold">
+                  {(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0)}项警告
+                </span>
+              </div>
+              <button
+                onClick={() => onNavigateTo?.('alerts')}
+                className="flex items-center gap-1 text-sm font-medium text-blue-500 hover:text-blue-400"
+              >
+                查看详情
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* 宿主机信息 (ClawDeckX) */}
+          <div className="rounded-xl border-2 border-cyan-500/40 bg-[#1e293b] px-5 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Monitor className="w-5 h-5 text-cyan-500" />
+              <div>
+                <h3 className="text-sm font-bold text-foreground">宿主机信息</h3>
+                <p className="text-xs text-muted-foreground font-mono truncate">
+                  {hostInfo?.hostname || (loadingHostInfo ? '加载中...' : '--')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {hostInfo?.platform && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-bold capitalize">
+                  {hostInfo.platform === 'darwin' ? 'macOS' : hostInfo.platform}
+                </span>
+              )}
+              {hostInfo?.arch && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-400 font-bold">
+                  {hostInfo.arch}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 主机信息：CPU | 系统内存 | 磁盘空间 (ClawDeckX GaugeCards) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <GaugeCard
+              pct={hostInfo?.cpuUsage ?? 0}
+              label="CPU 使用率"
+              color="#3b82f6"
+              gradient="bg-[#1e293b]"
+              borderColor="border-blue-500/40"
+            >
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {hostInfo?.numCpu ?? 0}核 - {hostInfo?.arch ?? '--'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                协程数: {hostInfo?.coroutineCount ?? 0} - GC: {hostInfo?.processMemory?.gcCount ?? 0}
+              </p>
+            </GaugeCard>
+            <GaugeCard
+              pct={hostInfo?.sysMem?.usedPct ?? 0}
+              label="系统内存"
+              color="#8b5cf6"
+              gradient="bg-[#1e293b]"
+              borderColor="border-violet-500/40"
+            >
+              {hostInfo?.sysMem && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {formatBytes(hostInfo.sysMem.used)} / {formatBytes(hostInfo.sysMem.total)}
+                </p>
+              )}
+            </GaugeCard>
+            <GaugeCard
+              pct={hostInfo?.diskUsage?.[0]?.usedPct ?? 0}
+              label="磁盘空间"
+              color="#10b981"
+              gradient="bg-[#1e293b]"
+              borderColor="border-emerald-500/40"
+            >
+              {hostInfo?.diskUsage?.[0] ? (
+                <>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {formatBytes(hostInfo.diskUsage[0].used)} / {formatBytes(hostInfo.diskUsage[0].total)}
+                  </p>
+                  <p className="text-xs text-muted-foreground/70 mt-0.5">
+                    可用: {formatBytes(hostInfo.diskUsage[0].free)} ({hostInfo.diskUsage[0].path})
+                  </p>
+                  <div className="h-1 bg-[#334155] rounded-full overflow-hidden mt-1">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${Math.min(hostInfo.diskUsage[0].usedPct, 100)}%`,
+                        background:
+                          hostInfo.diskUsage[0].usedPct > 90
+                            ? '#ef4444'
+                            : hostInfo.diskUsage[0].usedPct > 70
+                              ? '#f59e0b'
+                              : '#10b981',
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5">暂无数据</p>
+              )}
+            </GaugeCard>
+          </div>
+
+          {/* 路径信息 (ClawDeckX) */}
+          {hostInfo?.env?.cwd && hostInfo?.diskUsage?.[0] && (
+            <div className="rounded-xl border-2 border-emerald-500/40 bg-[#1e293b] p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FolderOpen className="w-5 h-5 text-emerald-500" />
+                <span className="font-mono text-sm text-foreground truncate" title={hostInfo.env.cwd}>
+                  {hostInfo.env.cwd}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {hostInfo.diskUsage[0].usedPct.toFixed(0)}% {formatBytes(hostInfo.diskUsage[0].used)}/{formatBytes(hostInfo.diskUsage[0].total)}
+              </span>
+            </div>
+          )}
+
+          {/* 协程数 | 进程运行 | 服务器运行 (ClawDeckX) */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+              <p className="text-2xl font-black tabular-nums text-indigo-400">{hostInfo?.coroutineCount ?? 0}</p>
+              <p className="text-xs text-slate-400 mt-1">协程数</p>
+            </div>
+            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+              <p className="text-2xl font-black tabular-nums text-amber-400">
+                {hostInfo?.processUptime != null ? formatUptime(hostInfo.processUptime * 1000) : '--'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">进程运行</p>
+            </div>
+            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+              <p className={cn(
+                'text-2xl font-black tabular-nums',
+                isOnline ? 'text-emerald-400' : 'text-slate-400'
+              )}>
+                {hostInfo?.gatewayUptime != null ? formatUptime(hostInfo.gatewayUptime * 1000) : (isOnline ? '运行中' : '0小时')}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">服务器运行</p>
+            </div>
+          </div>
+
+          {/* 进程内存 | 环境 (ClawDeckX 风格) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-xl border-2 border-violet-500/40 bg-[#1e293b] p-4">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
+                <RefreshCw className="w-3.5 h-3.5 text-violet-500" />
+                进程内存
+              </h3>
+              {loadingHostInfo && !hostInfo ? (
+                <div className="space-y-1.5 animate-pulse">
+                  <div className="h-4 w-24 bg-[#334155]/50 rounded" />
+                  <div className="h-4 w-20 bg-[#334155]/50 rounded" />
+                </div>
+              ) : hostInfo?.processMemory ? (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <span className="text-muted-foreground">堆内存</span>
+                  <span className="font-mono text-blue-400">{formatBytes(hostInfo.processMemory.heapUsed)}</span>
+                  <span className="text-muted-foreground">线程内存</span>
+                  <span className="font-mono text-blue-400">{formatBytes(hostInfo.processMemory.stackMemory ?? 0)}</span>
+                  <span className="text-muted-foreground">系统分配</span>
+                  <span className="font-mono text-foreground">{formatBytes(hostInfo.processMemory.rss)}</span>
+                  <span className="text-muted-foreground">GC 次数</span>
+                  <span className="font-mono text-emerald-500">{hostInfo.processMemory.gcCount ?? 0}</span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">暂无数据</p>
+              )}
+            </div>
+            <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
+                <FolderOpen className="w-3.5 h-3.5 text-indigo-500" />
+                环境
+              </h3>
+              {hostInfo?.env ? (
+                <div className="space-y-0.5 text-xs">
+                  <p className="truncate"><span className="text-muted-foreground">用户</span> {hostInfo.env.user}</p>
+                  <p className="truncate"><span className="text-muted-foreground">Shell</span> {hostInfo.env.shell.split('/').pop() || hostInfo.env.shell}</p>
+                  <p className="truncate font-mono" title={hostInfo.env.cwd}>
+                    <span className="text-muted-foreground">工作目录</span> {hostInfo.env.cwd.length > 24 ? '...' + hostInfo.env.cwd.slice(-21) : hostInfo.env.cwd}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">暂无数据</p>
+              )}
+            </div>
+          </div>
+
+          {/* 中部：系统健康 | 最近异常事件 */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Cpu className="w-3.5 h-3.5 text-indigo-500" />
+                  系统健康
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-500 text-xs font-bold">
+                  健康评分: {computedHealthScore}
+                </span>
+              </div>
+              {alertSummary != null && (
+                <div className="flex items-center gap-2 mb-3 flex-wrap flex-shrink-0">
+                  <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-medium">高:{alertSummary.high}</span>
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-medium">中:{alertSummary.medium}</span>
+                  <span className="text-xs text-muted-foreground">
+                    1小时:{alertSummary.count1h} - 24小时:{alertSummary.count24h}
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 flex-shrink-0">
+                <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <HealthDot ok={isOnline} />
+                    <span className="text-xs text-muted-foreground">网关状态</span>
+                  </div>
+                  <p className={cn('text-sm font-semibold', isOnline ? 'text-emerald-500' : 'text-slate-400')}>{isOnline ? '健康' : '离线'}</p>
+                </div>
+                <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span className="text-xs text-muted-foreground">频道</span>
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">{activeChannels}/{totalChannels}</p>
+                </div>
+                <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <HealthDot ok={true} />
+                    <span className="text-xs text-muted-foreground">定时任务</span>
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">{safeCronJobs.length}定时任务</p>
+                </div>
+                <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <HealthDot ok={true} />
+                    <span className="text-xs text-muted-foreground">代理</span>
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">{safeAgents.length}</p>
+                </div>
+              </div>
+              {/* 服务商状态（ClawDeckX：真实数据，在趋势图上方） */}
+              <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-indigo-500/20 flex-shrink-0">
+                {safeProviders.length > 0 ? (
+                  <>
+                    {safeProviders.slice(0, 8).map((p) => (
+                      <span key={p.id} className="flex items-center gap-1.5 text-xs">
+                        <HealthDot ok={p.hasKey} />
+                        <span className={cn('truncate max-w-[120px]', p.hasKey ? 'text-foreground' : 'text-muted-foreground')}>
+                          {p.name || p.id}
+                        </span>
+                        <span className={cn('text-[10px]', p.hasKey ? 'text-emerald-500' : 'text-slate-500')}>
+                          {p.hasKey ? '已配置' : '未配置'}
+                        </span>
+                      </span>
+                    ))}
+                    <span className="text-xs text-muted-foreground">服务商状态</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">服务商状态</span>
+                )}
+              </div>
+              {/* 今日费用 趋势（靠底部，无空白） */}
+              <div className="flex-1 min-h-0 flex flex-col justify-end pt-3 border-t border-indigo-500/20">
+                <div className="flex items-center justify-between mb-2 flex-shrink-0">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">今日费用 趋势</h3>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-1" />令牌</span>
+                    <span>-</span>
+                    <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />费用</span>
+                  </div>
+                </div>
+                <div ref={trendChartRef} className="flex-shrink-0 w-full min-w-0">
+                  <DualTrendChart
+                    data={trend.length ? trend.map((t) => ({ date: t.date, cost: t.cost, tokens: t.tokens ?? 0 })) : []}
+                    colorTokens="#8b5cf6"
+                    colorCost="#f59e0b"
+                    width={trendChartWidth}
+                    height={120}
                   />
                 </div>
               </div>
-            ))}
+            </div>
+            <div className="rounded-xl border-2 border-orange-500/40 bg-[#1e293b] p-4 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Bell className="w-3.5 h-3.5 text-orange-500" />
+                  最近异常事件
+                </h3>
+                {(alerts.length > 0 || logAbnormal.length > 0) && (
+                  <button
+                    onClick={() => onNavigateTo?.(alerts.length > 0 ? 'alerts' : 'logs')}
+                    className="text-xs text-primary font-bold hover:underline"
+                  >
+                    查看全部
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+                {(() => {
+                  // 合并告警 + 日志解析的异常（ClawDeckX：告警优先，不足时用日志补充）
+                  const merged = [
+                    ...alerts.slice(0, 5),
+                    ...logAbnormal.slice(0, Math.max(0, 5 - alerts.length)),
+                  ].slice(0, 5);
+                  if (merged.length === 0) {
+                    return <p className="text-xs text-muted-foreground py-4 text-center">暂无告警</p>;
+                  }
+                  return merged.map((a) => (
+                    <div
+                      key={a.id}
+                      className={cn(
+                        'flex items-start gap-2 px-2 py-1.5 rounded-lg text-xs',
+                        a.level === 'critical' && 'bg-red-500/10 text-red-400',
+                        a.level === 'warning' && 'bg-amber-500/10 text-amber-400',
+                        a.level === 'info' && 'bg-blue-500/10 text-blue-400'
+                      )}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{a.title}</p>
+                        <p className="text-muted-foreground truncate">{a.message}</p>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+              {/* 7天 Token（靠面板底部，仅保留合适高度） */}
+              <div className="flex-shrink-0 pt-4 mt-4 border-t border-orange-500/20">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-1.5">
+                  <Zap className="w-3.5 h-3.5 text-violet-500" />
+                  7天 Token
+                </h3>
+                <div className="flex items-baseline gap-4">
+                  <span className="text-2xl font-black text-foreground tabular-nums">{fmtTokens(sevenDayTokens) || '--'}</span>
+                  <span className="text-lg font-bold text-amber-500">${sevenDayCost.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 连接实例 */}
+          <div className="rounded-xl border-2 border-blue-500/40 bg-[#1e293b] p-4">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
+              连接实例 ({hostInfo?.connectionsCount ?? 0})
+            </h3>
+          </div>
+
+          {/* 最近会话 */}
+          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+                最近会话
+              </h3>
+              {sessions.length > 6 && (
+                <button
+                  onClick={() => onNavigateTo?.('run')}
+                  className="text-xs text-primary font-bold hover:underline"
+                >
+                  查看全部
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {sessions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                  <span className="text-xs">{loading ? '加载中…' : '暂无会话'}</span>
+                </div>
+              ) : (
+                sessions.slice(0, 6).map((session, i) => (
+                  <button
+                    key={session.sessionKey || i}
+                    onClick={() => onNavigateTo?.('run')}
+                    className="w-full flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-start cursor-pointer group"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex items-center justify-center text-xs font-bold text-indigo-500">
+                      {i + 1}
+                    </div>
+                    <span className="text-xs font-medium text-foreground truncate flex-1">
+                      {session.label || session.sessionKey || `会话 ${i + 1}`}
+                    </span>
+                    {(session.lastActivity || 0) > 0 && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {timeFormatter.format(new Date(session.lastActivity!))}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
+      </div>
+      </div>
+
+      {/* 重启确认 */}
+      <ConfirmDialog
+        open={showRestartConfirm}
+        title="重启 Gateway"
+        message="确定要重启 Gateway 吗？重启期间将短暂断开连接。"
+        confirmLabel="重启"
+        cancelLabel="取消"
+        variant="default"
+        onConfirm={handleRestartGateway}
+        onCancel={() => setShowRestartConfirm(false)}
+      />
+
+      {/* 停止确认 */}
+      <ConfirmDialog
+        open={showStopConfirm}
+        title="停止 Gateway"
+        message="确定要停止 Gateway 吗？停止后需手动重新启动。"
+        confirmLabel="停止"
+        cancelLabel="取消"
+        variant="destructive"
+        onConfirm={handleStopGateway}
+        onCancel={() => setShowStopConfirm(false)}
+      />
+
+      {/* 日志弹窗 */}
+      <Dialog open={showLogsModal} onOpenChange={setShowLogsModal}>
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              系统日志
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleShowLogs}
+                disabled={loadingLogs}
+                className="rounded-lg"
+              >
+                <RefreshCw className={cn('w-4 h-4 mr-1.5', loadingLogs && 'animate-spin')} />
+                刷新
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenLogDir}
+                className="rounded-lg"
+              >
+                <ExternalLink className="w-4 h-4 mr-1.5" />
+                打开日志目录
+              </Button>
+            </div>
+            <pre className="flex-1 overflow-auto rounded-xl border border-slate-600/30 bg-slate-900/40 p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words max-h-[50vh]">
+              {loadingLogs ? '加载中…' : logContent || '(无日志)'}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

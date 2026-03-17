@@ -101,6 +101,8 @@ export function Settings() {
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
+  const [dbPathDraft, setDbPathDraft] = useState('');
+  const [dbPathSaving, setDbPathSaving] = useState(false);
   const [doctorResult, setDoctorResult] = useState<{
     mode: 'diagnose' | 'fix';
     success: boolean;
@@ -323,6 +325,13 @@ export function Settings() {
     setProxyBypassRulesDraft(proxyBypassRules);
   }, [proxyBypassRules]);
 
+  useEffect(() => {
+    if (!devModeUnlocked) return;
+    hostApiFetch<{ dbPath?: string }>('/api/app/db-config')
+      .then((r) => setDbPathDraft(r.dbPath ?? ''))
+      .catch(() => setDbPathDraft(''));
+  }, [devModeUnlocked]);
+
   const handleSaveProxySettings = async () => {
     setSavingProxy(true);
     try {
@@ -445,6 +454,22 @@ export function Settings() {
         ? t('developer.wsDiagnosticEnabled')
         : t('developer.wsDiagnosticDisabled'),
     );
+  };
+
+  const handleSaveDbPath = async () => {
+    setDbPathSaving(true);
+    try {
+      await hostApiFetch('/api/app/db-config', {
+        method: 'POST',
+        body: JSON.stringify({ dbPath: dbPathDraft.trim() || undefined }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      toast.success(t('developer.dbPathSaved') || '数据库路径已保存，重启应用后生效');
+    } catch (error) {
+      toast.error(`${t('developer.dbPathSaveFailed') || '保存失败'}: ${toUserMessage(error)}`);
+    } finally {
+      setDbPathSaving(false);
+    }
   };
 
   return (
@@ -748,6 +773,30 @@ export function Settings() {
                         </div>
                       </div>
                     )}
+                  </div>
+                  <div className="space-y-4">
+                    <Label className="text-[14px] font-medium text-foreground/80">{t('developer.database') || '数据库'}</Label>
+                    <p className="text-[13px] text-muted-foreground">
+                      {t('developer.databaseDesc') || 'SQLite 数据库路径，修改后需重启应用生效。留空使用默认路径。'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        value={dbPathDraft}
+                        onChange={(e) => setDbPathDraft(e.target.value)}
+                        placeholder={t('developer.databasePlaceholder') || '~/.axonclaw/data/AxonClaw.db'}
+                        className="font-mono text-[13px] h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent flex-1 min-w-[200px]"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSaveDbPath}
+                        disabled={dbPathSaving}
+                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2${dbPathSaving ? ' animate-spin' : ''}`} />
+                        {dbPathSaving ? t('common:status.saving') : t('common:actions.save')}
+                      </Button>
+                    </div>
                   </div>
                   <div className="space-y-4 pt-4">
                     <Label className="text-[14px] font-medium text-foreground/80">{t('developer.gatewayToken')}</Label>

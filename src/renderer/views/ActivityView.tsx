@@ -1,0 +1,170 @@
+/**
+ * AxonClaw - Activity View
+ * 活动流：Gateway 事件、消息收发、工具调用记录
+ * ClawDeckX 风格
+ */
+
+import React, { useEffect, useState, useCallback } from 'react';
+import { RefreshCw, Filter, Zap } from 'lucide-react';
+import { useGatewayLogsStore } from '@/stores/gateway-logs';
+import { PageHeader } from '@/components/common/PageHeader';
+import { cn } from '@/lib/utils';
+
+type EventFilter = 'ALL' | 'MESSAGE' | 'TOOL' | 'SESSION' | 'INFO';
+
+interface ActivityViewProps {
+  /** 嵌入模式：在 RunView 等复合视图中使用 */
+  embedded?: boolean;
+}
+
+const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
+  const {
+    logs,
+    addStreamLog,
+    fetchSystemLogs,
+    clearLogs,
+    systemLogsLoading,
+    systemLogsError,
+  } = useGatewayLogsStore();
+
+  const [eventFilter, setEventFilter] = useState<EventFilter>('ALL');
+
+  useEffect(() => {
+    void fetchSystemLogs(200);
+  }, [fetchSystemLogs]);
+
+  useEffect(() => {
+    const ipc = window.electron?.ipcRenderer;
+    if (!ipc?.on) return;
+    const unsub = ipc.on(
+      'app:gateway-log',
+      (payload: { time?: string; level?: string; agent?: string; message?: string }) => {
+        addStreamLog({
+          time: payload.time ?? new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          level: payload.level ?? 'INFO',
+          agent: payload.agent ?? 'Gateway',
+          message: payload.message ?? '',
+        });
+      },
+    );
+    return unsub;
+  }, [addStreamLog]);
+
+  const filteredLogs = logs.filter((log) => {
+    if (eventFilter === 'ALL') return true;
+    const msg = (log.message ?? '').toLowerCase();
+    if (eventFilter === 'MESSAGE') return msg.includes('message') || msg.includes('chat') || msg.includes('send');
+    if (eventFilter === 'TOOL') return msg.includes('tool') || msg.includes('invoke');
+    if (eventFilter === 'SESSION') return msg.includes('session') || msg.includes('会话');
+    if (eventFilter === 'INFO') return log.level === 'INFO';
+    return true;
+  });
+
+  const eventFilters: { value: EventFilter; label: string }[] = [
+    { value: 'ALL', label: '全部' },
+    { value: 'MESSAGE', label: '消息' },
+    { value: 'TOOL', label: '工具' },
+    { value: 'SESSION', label: '会话' },
+    { value: 'INFO', label: '信息' },
+  ];
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col bg-[#0f172a] overflow-hidden',
+        embedded ? 'h-full min-h-0 -m-4' : '-m-6 h-[calc(100vh-2.5rem)]'
+      )}
+    >
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 min-h-0">
+        <PageHeader
+          title="活动流"
+          subtitle="Gateway 事件、消息收发、工具调用记录"
+          stats={[{ label: '事件数', value: filteredLogs.length }]}
+          onRefresh={() => void fetchSystemLogs(200)}
+          refreshing={systemLogsLoading}
+          statsBorderColor="border-amber-500/40"
+          actions={
+            <button
+              onClick={clearLogs}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors"
+            >
+              清空
+            </button>
+          }
+        />
+
+        {systemLogsError && (
+          <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm">
+            {systemLogsError}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          {eventFilters.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setEventFilter(f.value)}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
+                eventFilter === f.value
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : 'text-muted-foreground hover:bg-white/5'
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 rounded-xl border-2 border-amber-500/40 bg-[#1e293b] overflow-hidden flex flex-col min-h-[280px]">
+          <div className="flex-1 overflow-y-auto p-4 font-mono text-xs">
+            {filteredLogs.length === 0 ? (
+              <div className="text-muted-foreground py-8 text-center">
+                {systemLogsLoading
+                  ? '正在加载活动事件...'
+                  : eventFilter !== 'ALL'
+                    ? `无 ${eventFilter} 类型事件`
+                    : '暂无活动。发送消息或执行操作后查看。'}
+              </div>
+            ) : (
+              filteredLogs.map((log, index) => (
+                <div
+                  key={`${log.source}-${index}`}
+                  className="flex items-baseline gap-2 py-1 hover:bg-white/5 rounded px-1 -mx-1"
+                >
+                  <span className="text-muted-foreground/70 min-w-[70px] shrink-0">{log.time}</span>
+                  <span
+                    className={cn(
+                      'min-w-[52px] font-medium shrink-0',
+                      log.level === 'ERROR' && 'text-red-400',
+                      log.level === 'WARN' && 'text-amber-400',
+                      log.level === 'INFO' && 'text-cyan-400',
+                      log.level === 'DEBUG' && 'text-muted-foreground/70'
+                    )}
+                  >
+                    [{log.level}]
+                  </span>
+                  <span className="min-w-[80px] shrink-0 text-emerald-400/90">[{log.agent}]</span>
+                  <span className="text-slate-200 dark:text-foreground/90 flex-1 break-all">
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex items-center gap-4 px-4 py-2 border-t border-slate-700/50 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span>实时</span>
+            </div>
+            <span>{filteredLogs.length} 条</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export { ActivityView };
+export default ActivityView;

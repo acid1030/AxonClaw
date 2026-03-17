@@ -1,44 +1,89 @@
 /**
  * AxonClaw - Workflow View
- * 工作流界面 - 从设计稿实现
+ * 工作流界面 - ClawDeckX 风格内容复刻
  */
 
 import React from 'react';
+import { Plus, GitBranch, Play, Pause } from 'lucide-react';
+import { PageHeader } from '@/components/common/PageHeader';
+import { cn } from '@/lib/utils';
 
 const workflows = [
-  { id: '1', name: '日报生成', status: 'active', trigger: '每天 08:00', steps: 3 },
-  { id: '2', name: '内容发布', status: 'inactive', trigger: '手动', steps: 5 },
+  { id: '1', name: '日报生成', status: 'active' as const, trigger: '每天 08:00', steps: 3 },
+  { id: '2', name: '内容发布', status: 'inactive' as const, trigger: '手动', steps: 5 },
 ];
 
 const WorkflowView: React.FC = () => {
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">工作流</h1>
-          <p className="text-sm text-white/60">创建和管理自动化工作流</p>
-        </div>
-        <button className="px-4 py-2 bg-blue-500 rounded-lg text-white text-sm hover:bg-blue-600 transition-colors">
-          + 新建工作流
-        </button>
-      </div>
+    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 overflow-y-auto">
+        <PageHeader
+          title="工作流"
+          subtitle="创建和管理自动化工作流"
+          stats={[
+            { label: '总数', value: workflows.length },
+            { label: '运行中', value: workflows.filter((w) => w.status === 'active').length },
+          ]}
+          statsBorderColor="border-teal-500/40"
+          actions={
+            <button className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors">
+              <Plus className="w-4 h-4" />
+              新建工作流
+            </button>
+          }
+        />
 
-      <div className="space-y-3">
-        {workflows.map((workflow) => (
-          <div key={workflow.id} className="p-4 bg-white/5 border border-white/10 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-white font-medium">{workflow.name}</div>
-                <div className="text-xs text-white/40">触发: {workflow.trigger} · {workflow.steps} 步骤</div>
+        <div className="space-y-3 max-w-2xl">
+          {workflows.map((wf) => (
+            <div
+              key={wf.id}
+              className="rounded-xl border-2 border-teal-500/40 bg-[#1e293b] p-4 flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div
+                  className={cn(
+                    'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                    wf.status === 'active' ? 'bg-emerald-500/15' : 'bg-black/5 dark:bg-white/5'
+                  )}
+                >
+                  <GitBranch
+                    className={cn(
+                      'w-5 h-5',
+                      wf.status === 'active' ? 'text-emerald-500' : 'text-muted-foreground'
+                    )}
+                  />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-foreground">
+                    {wf.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    触发: {wf.trigger} · {wf.steps} 步骤
+                  </div>
+                </div>
               </div>
-              <span className={`px-2 py-1 rounded text-[10px] ${
-                workflow.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/50'
-              }`}>
-                {workflow.status === 'active' ? '运行中' : '已停止'}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span
+                  className={cn(
+                    'px-2 py-1 rounded-lg text-xs font-medium',
+                    wf.status === 'active'
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-black/5 dark:bg-white/5 text-muted-foreground'
+                  )}
+                >
+                  {wf.status === 'active' ? '运行中' : '已停止'}
+                </span>
+                <button className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                  {wf.status === 'active' ? (
+                    <Pause className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <Play className="w-4 h-4 text-emerald-500" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

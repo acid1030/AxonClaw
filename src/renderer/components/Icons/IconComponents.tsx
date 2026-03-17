@@ -19,6 +19,11 @@ import {
   PanelRightClose,
   PanelRightOpen,
   X,
+  PlayCircle,
+  TrendingUp,
+  Bell,
+  Network,
+  Layers,
 } from 'lucide-react';
 
 export const Icons = {
@@ -38,6 +43,12 @@ export const Icons = {
   setting: Settings,
   template: FileCode,
   plugin: Plug,
+  run: PlayCircle,
+  usage: TrendingUp,
+  alerts: Bell,
+  nodes: Network,
+  extensions: Layers,
+  system: Settings,
   chevronLeft: ChevronLeft,
   panelClose: PanelRightClose,
   panelOpen: PanelRightOpen,

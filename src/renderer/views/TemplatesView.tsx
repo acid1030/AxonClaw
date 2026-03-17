@@ -1,9 +1,16 @@
 /**
  * AxonClaw - Templates View
- * 模板中心界面 - 从设计稿实现
+ * 模板中心界面 - ClawDeckX 风格内容复刻
  */
 
 import React from 'react';
+import { Plus, FileText } from 'lucide-react';
+import { PageHeader } from '@/components/common/PageHeader';
+import { cn } from '@/lib/utils';
+
+interface TemplatesViewProps {
+  embedded?: boolean;
+}
 
 const templates = [
   { id: '1', name: '技术文档', category: '文档', uses: 128 },
@@ -11,29 +18,49 @@ const templates = [
   { id: '3', name: 'API 设计', category: '开发', uses: 56 },
 ];
 
-const TemplatesView: React.FC = () => {
+const TemplatesView: React.FC<TemplatesViewProps> = ({ embedded }) => {
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">模板中心</h1>
-          <p className="text-sm text-white/60">管理和使用预设模板</p>
-        </div>
-        <button className="px-4 py-2 bg-blue-500 rounded-lg text-white text-sm hover:bg-blue-600 transition-colors">
-          + 新建模板
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        {templates.map((template) => (
-          <div key={template.id} className="p-4 bg-white/5 border border-white/10 rounded-xl">
-            <div className="text-white font-medium mb-1">{template.name}</div>
-            <div className="text-xs text-white/40 mb-3">{template.category} · 使用 {template.uses} 次</div>
-            <button className="w-full py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white/70 hover:bg-white/10 transition-colors">
-              使用模板
+    <div
+      className={cn(
+        'flex flex-col bg-[#0f172a] overflow-hidden',
+        embedded ? 'h-full min-h-0 -m-4' : '-m-6 h-[calc(100vh-2.5rem)]'
+      )}
+    >
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 overflow-y-auto">
+        <PageHeader
+          title="模板中心"
+          subtitle="管理和使用预设模板"
+          stats={[{ label: '模板数', value: templates.length }]}
+          statsBorderColor="border-cyan-500/40"
+          actions={
+            <button className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors">
+              <Plus className="w-4 h-4" />
+              新建模板
             </button>
-          </div>
-        ))}
+          }
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl">
+          {templates.map((t) => (
+            <div
+              key={t.id}
+              className="rounded-xl border-2 border-cyan-500/40 bg-[#1e293b] p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium text-foreground">
+                  {t.name}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mb-3">
+                {t.category} · 使用 {t.uses} 次
+              </div>
+              <button className="w-full py-2 rounded-xl bg-black/5 dark:bg-white/5 text-xs font-medium text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+                使用模板
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

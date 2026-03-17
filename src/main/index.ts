@@ -15,6 +15,10 @@ process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 import {
   startGateway,
   stopGateway,
@@ -31,6 +35,19 @@ import {
   openSkillPath,
   scanSkillsFromDir,
 } from '../gateway/clawhub-cli';
+import { callGatewayRpc } from '../gateway/rpc';
+import {
+  initDatabase,
+  closeDatabase,
+  isInitialized,
+  listAlerts,
+  recentAlerts,
+  alertSummaryStats,
+  loadBootstrapConfig,
+  saveBootstrapConfig,
+  getConfigFilePath,
+  getDefaultConfig,
+} from '../database';
 
 // Global window reference
 let mainWindow: BrowserWindow | null = null;
@@ -85,6 +102,13 @@ function createWindow(): BrowserWindow {
     win.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
   }
 
+  // 开发者工具快捷键：Cmd+Option+I (Mac) / Ctrl+Shift+I (Win/Linux)
+  win.webContents.on('before-input-event', (_e, input) => {
+    if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i') {
+      win.webContents.toggleDevTools();
+    }
+  });
+
   win.on('closed', () => {
     mainWindow = null;
   });
@@ -113,7 +137,14 @@ function createWindow(): BrowserWindow {
  */
 async function initialize(): Promise<void> {
   console.log('[Main] Initializing AxonClaw...');
-  
+
+  // 初始化数据库（默认 SQLite，路径可通过 AXONCLAW_DB_PATH 或后续启动配置选择）
+  try {
+    initDatabase();
+  } catch (err) {
+    console.error('[Main] Database init failed:', err);
+  }
+
   // Create the main window
   mainWindow = createWindow();
   
@@ -135,15 +166,26 @@ async function initialize(): Promise<void> {
     safeSendToRenderer('gateway:error', error.message);
   });
   
-  // Start Gateway on app ready
-  // Note: AxonClaw connects to existing OpenClaw Gateway (port 18789)
-  // Don't start a new gateway to avoid port conflict
-  console.log('[Main] AxonClaw will connect to existing OpenClaw Gateway at port 18789');
-  safeSendToRenderer('gateway:status', { 
-    state: 'running', 
-    port: 18789,
-    note: 'Using existing OpenClaw Gateway'
-  });
+  // 程序启动时自动启动网关（若未运行）
+  if (!isGatewayRunning()) {
+    console.log('[Main] Auto-starting Gateway...');
+    try {
+      await startGateway();
+      console.log('[Main] Gateway started');
+      safeSendToRenderer('gateway:status', getGatewayStatus());
+    } catch (err) {
+      console.error('[Main] Gateway auto-start failed:', err);
+      safeSendToRenderer('gateway:status', {
+        ...getGatewayStatus(),
+        state: 'error',
+        error: String(err),
+      });
+      safeSendToRenderer('gateway:error', String(err));
+    }
+  } else {
+    console.log('[Main] Gateway already running');
+    safeSendToRenderer('gateway:status', getGatewayStatus());
+  }
 
   // Handle window activation (macOS)
   app.on('activate', () => {
@@ -185,6 +227,7 @@ app.on('will-quit', async () => {
 // App lifecycle - Before quit (for cleanup)
 app.on('before-quit', () => {
   console.log('[Main] App before quit');
+  closeDatabase();
 });
 
 // IPC Handlers
@@ -656,6 +699,121 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       };
     }
 
+    // 特殊处理：数据库配置（GET 读取 / POST 保存，修改后需重启生效）
+    if (path === '/api/app/db-config' && method === 'GET') {
+      const cfg = getDefaultConfig();
+      const bootstrap = loadBootstrapConfig();
+      return {
+        ok: true,
+        data: {
+          status: 200,
+          ok: true,
+          json: {
+            dbPath: cfg.sqlitePath ?? bootstrap.dbPath ?? '',
+            configFile: getConfigFilePath(),
+          },
+        },
+        success: true,
+        status: 200,
+        json: {
+          dbPath: cfg.sqlitePath ?? bootstrap.dbPath ?? '',
+          configFile: getConfigFilePath(),
+        },
+      };
+    }
+    if (path === '/api/app/db-config' && method === 'POST' && body) {
+      let payload: { dbPath?: string };
+      try {
+        payload = typeof body === 'string' ? JSON.parse(body) : (body as { dbPath?: string });
+      } catch {
+        return {
+          ok: false,
+          data: { status: 400, json: { error: 'Invalid JSON' }, ok: false },
+          success: false,
+          status: 400,
+          json: { error: 'Invalid JSON' },
+        };
+      }
+      saveBootstrapConfig({ dbPath: payload.dbPath });
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: { success: true } },
+        success: true,
+        status: 200,
+        json: { success: true },
+      };
+    }
+
+    // 特殊处理：/api/gateway/start 启动网关子进程（hostApiFetch 调用，非 Gateway 自身 API）
+    if (path === '/api/gateway/start' && method === 'POST') {
+      try {
+        await startGateway();
+        const status = getGatewayStatus();
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        const msg = String(err);
+        return {
+          ok: true,
+          data: { status: 200, json: { success: false, error: msg }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: false, error: msg },
+        };
+      }
+    }
+
+    // 特殊处理：/api/gateway/stop 停止网关
+    if (path === '/api/gateway/stop' && method === 'POST') {
+      try {
+        await stopGateway();
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: true,
+          data: { status: 200, json: { success: false, error: String(err) }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    // 特殊处理：/api/gateway/restart 重启网关
+    if (path === '/api/gateway/restart' && method === 'POST') {
+      try {
+        await stopGateway();
+        await new Promise((r) => setTimeout(r, 500));
+        await startGateway();
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: true,
+          data: { status: 200, json: { success: false, error: String(err) }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
     // 特殊处理：/api/gateway/health 用于心跳健康检查
     if (path === '/api/gateway/health' || path.startsWith('/api/gateway/health')) {
       try {
@@ -690,6 +848,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     if (path.startsWith('/api/logs')) {
       const tailMatch = path.match(/tailLines=(\d+)/);
       const tailLines = tailMatch ? parseInt(tailMatch[1], 10) : 200;
+      const limitMatch = path.match(/limit=(\d+)/);
+      const abnormalLimit = limitMatch ? parseInt(limitMatch[1], 10) : 10;
       try {
         const res = await fetch(`${GATEWAY_API_BASE}${path}`);
         if (res.ok) {
@@ -704,6 +864,42 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       const dirToUse = fs.existsSync(gatewayLogDir) ? gatewayLogDir : (fs.existsSync(openclawLogDir) ? openclawLogDir : gatewayLogDir);
       if (path === '/api/logs/dir' || path.startsWith('/api/logs/dir')) {
         return { ok: true, data: { status: 200, json: { dir: dirToUse }, ok: true }, success: true, status: 200, json: { dir: dirToUse } };
+      }
+      // /api/logs/abnormal：从日志解析异常事件（ClawDeckX 风格：ERROR/WARN/exception/failed）
+      if (path.startsWith('/api/logs/abnormal')) {
+        const readAbnormalFromDir = (dir: string): Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> => {
+          if (!fs.existsSync(dir)) return [];
+          const results: Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> = [];
+          const files = fs.readdirSync(dir)
+            .filter((f) => f.endsWith('.log') || f.match(/^openclaw-\d{4}-\d{2}-\d{2}\.log$/))
+            .sort()
+            .reverse();
+          for (const f of files.slice(0, 5)) {
+            try {
+              const full = nodePath.join(dir, f);
+              const buf = fs.readFileSync(full, 'utf8');
+              const lines = buf.split(/\r?\n/);
+              for (let i = lines.length - 1; i >= 0 && results.length < abnormalLimit; i--) {
+                const line = lines[i].trim();
+                if (!line || line.length < 10) continue;
+                const lower = line.toLowerCase();
+                let level: 'critical' | 'warning' | 'info' = 'info';
+                if (/\b(panic|fatal|critical)\b/i.test(lower) || (/\berror\b/i.test(lower) && !/\bwarn/i.test(lower))) level = 'critical';
+                else if (/\b(warn|exception|failed)\b/i.test(lower)) level = 'warning';
+                else continue;
+                const msg = line.length > 120 ? line.slice(0, 117) + '...' : line;
+                const title = level === 'critical' ? '错误' : '警告';
+                results.push({ id: `log-${f}-${i}`, level, title, message: msg });
+              }
+            } catch {
+              /* 忽略单文件读取失败 */
+            }
+          }
+          return results.slice(0, abnormalLimit);
+        };
+        const fromGateway = readAbnormalFromDir(gatewayLogDir);
+        const abnormal = fromGateway.length ? fromGateway : readAbnormalFromDir(openclawLogDir);
+        return { ok: true, data: { status: 200, json: { events: abnormal }, ok: true }, success: true, status: 200, json: { events: abnormal } };
       }
       const readFromDir = (dir: string) => {
         if (!fs.existsSync(dir)) return null;
@@ -725,6 +921,363 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       };
       const content = readFromDir(gatewayLogDir) ?? readFromDir(openclawLogDir) ?? '(Gateway 日志目录不存在: /tmp/openclaw 或 ~/.openclaw/logs)';
       return { ok: true, data: { status: 200, json: { content }, ok: true }, success: true, status: 200, json: { content } };
+    }
+
+    // 特殊处理：/api/usage-cost 使用成本（ClawDeckX gwApi.usageCost，透传 Gateway usage.cost RPC）
+    if (path.startsWith('/api/usage-cost')) {
+      try {
+        const url = new URL(path, 'http://localhost');
+        const days = parseInt(url.searchParams.get('days') || '7', 10) || 7;
+        const r = await callGatewayRpc('usage.cost', { days }, 30000);
+        if (!r.ok || r.error) {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              json: {
+                totalCost: 0,
+                todayCost: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                trend: [],
+              },
+              ok: true,
+            },
+            success: true,
+            status: 200,
+            json: {
+              totalCost: 0,
+              todayCost: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              trend: [],
+            },
+          };
+        }
+        const raw = (r.result ?? {}) as Record<string, unknown>;
+        const totals = (raw.totals ?? {}) as Record<string, unknown>;
+        const daily = (raw.daily ?? []) as Array<Record<string, unknown>>;
+        const totalCost = Number(totals.totalCost ?? 0);
+        const totalTokens = Number(totals.totalTokens ?? 0);
+        const inputTokens = Number(totals.input ?? totals.inputTokens ?? 0);
+        const outputTokens = Number(totals.output ?? totals.outputTokens ?? 0);
+        const todayEntry = daily.length > 0 ? daily[daily.length - 1] : null;
+        const todayCost = todayEntry ? Number(todayEntry.totalCost ?? 0) : 0;
+        const trend = daily.map((d) => {
+          const tokens = Number(d.totalTokens ?? 0) || (Number(d.input ?? 0) + Number(d.output ?? 0));
+          return {
+            date: String(d.date ?? ''),
+            cost: Number(d.totalCost ?? 0),
+            tokens,
+          };
+        });
+        const json = {
+          totalCost,
+          todayCost,
+          inputTokens,
+          outputTokens,
+          trend,
+        };
+        return {
+          ok: true,
+          data: { status: 200, json, ok: true },
+          success: true,
+          status: 200,
+          json,
+        };
+      } catch (err) {
+        console.error('[HostAPI] usage-cost error:', err);
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            json: {
+              totalCost: 0,
+              todayCost: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              trend: [],
+            },
+            ok: true,
+          },
+          success: true,
+          status: 200,
+          json: {
+            totalCost: 0,
+            todayCost: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            trend: [],
+          },
+        };
+      }
+    }
+
+    // 特殊处理：/api/alerts 告警列表（ClawDeckX alertApi.list，从 SQLite 读取 + 日志异常补充）
+    if (path === '/api/alerts' || path.startsWith('/api/alerts?')) {
+      try {
+        const url = new URL(path, 'http://localhost');
+        const page = parseInt(url.searchParams.get('page') || '1', 10) || 1;
+        const pageSize = parseInt(url.searchParams.get('page_size') || '50', 10) || 50;
+        let list: Array<{ id: number; alert_id: string; risk: string; message: string; detail: string; notified: number; created_at: string }> = [];
+        let stats = { high: 0, medium: 0, count1h: 0, count24h: 0 };
+        if (isInitialized()) {
+          const r = listAlerts({ page, page_size: pageSize });
+          list = r.list;
+          stats = alertSummaryStats();
+        }
+        // 合并日志异常统计（真实数据：无 DB 告警时用日志补充）
+        const gatewayLogDir = process.platform === 'win32' ? nodePath.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw';
+        const openclawLogDir = nodePath.join(os.homedir(), '.openclaw', 'logs');
+        const countLogAbnormal = (dir: string): { critical: number; warning: number } => {
+          if (!fs.existsSync(dir)) return { critical: 0, warning: 0 };
+          let critical = 0;
+          let warning = 0;
+          try {
+            const files = fs.readdirSync(dir)
+              .filter((f) => f.endsWith('.log') || f.match(/^openclaw-\d{4}-\d{2}-\d{2}\.log$/))
+              .sort()
+              .reverse();
+            for (const f of files.slice(0, 3)) {
+              const full = nodePath.join(dir, f);
+              const buf = fs.readFileSync(full, 'utf8');
+              const lines = buf.split(/\r?\n/);
+              for (let i = Math.max(0, lines.length - 500); i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line || line.length < 10) continue;
+                const lower = line.toLowerCase();
+                if (/\b(panic|fatal|critical)\b/i.test(lower) || (/\berror\b/i.test(lower) && !/\bwarn/i.test(lower))) critical++;
+                else if (/\b(warn|exception|failed)\b/i.test(lower)) warning++;
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+          return { critical, warning };
+        };
+        const logFromGw = countLogAbnormal(gatewayLogDir);
+        const logFromOc = countLogAbnormal(openclawLogDir);
+        const logCritical = logFromGw.critical || logFromOc.critical;
+        const logWarning = logFromGw.warning || logFromOc.warning;
+        const high = stats.high + logCritical;
+        const medium = stats.medium + logWarning;
+        const healthScore = Math.max(0, Math.min(100, 100 - high * 5 - medium * 2));
+        const alerts = list.map((a) => ({
+          id: String(a.id),
+          level: (['critical', 'warning', 'info'].includes(a.risk) ? a.risk : 'info') as
+            | 'critical'
+            | 'warning'
+            | 'info',
+          title: a.message?.split('\n')[0] || a.message || '告警',
+          message: a.detail || a.message || '',
+          timestamp: a.created_at,
+        }));
+        const json = {
+          alerts,
+          summary: {
+            high,
+            medium,
+            count1h: stats.count1h,
+            count24h: stats.count24h,
+            healthScore,
+          },
+        };
+        return {
+          ok: true,
+          data: { status: 200, json, ok: true },
+          success: true,
+          status: 200,
+          json,
+        };
+      } catch (err) {
+        console.error('[HostAPI] alerts error:', err);
+        const fallback = { alerts: [], summary: { high: 0, medium: 0, count1h: 0, count24h: 0, healthScore: 100 } };
+        return {
+          ok: true,
+          data: { status: 200, json: fallback, ok: true },
+          success: true,
+          status: 200,
+          json: fallback,
+        };
+      }
+    }
+
+    // 特殊处理：/api/host-info 主机信息（ClawDeckX 风格完整检测）
+    if (path === '/api/host-info') {
+      try {
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const memPct = totalMem > 0 ? (usedMem / totalMem) * 100 : 0;
+
+        // CPU 使用率估算（使用 loadavg 近似）
+        const loadAvg = os.loadavg();
+        const numCpu = os.cpus().length;
+        const cpuPct = numCpu > 0 ? Math.min((loadAvg[0] / numCpu) * 100, 100) : 0;
+
+        // 磁盘使用率：Unix 优先用 df（Electron 中更可靠），否则用 check-disk-space
+        let diskUsage: Array<{ path: string; total: number; used: number; free: number; usedPct: number }> = [];
+        const pathsToTry = [
+          os.homedir(),
+          process.cwd(),
+          process.env.HOME || process.env.USERPROFILE || (process.platform === 'win32' ? 'C:\\' : '/'),
+          process.platform === 'win32' ? 'C:\\' : '/',
+        ].filter(Boolean) as string[];
+
+        const tryDf = async (): Promise<boolean> => {
+          if (process.platform === 'win32') return false;
+          const dfCmd = process.platform === 'darwin' ? '/usr/bin/df' : 'df';
+          for (const dirPath of pathsToTry) {
+            if (!dirPath || typeof dirPath !== 'string') continue;
+            try {
+              const { stdout } = await execAsync(`${dfCmd} -Pk ${JSON.stringify(dirPath)}`, {
+                timeout: 5000,
+                maxBuffer: 64 * 1024,
+              });
+              const lines = stdout.trim().split('\n').filter((l) => l.trim());
+              if (lines.length >= 2) {
+                const parts = lines[1].trim().split(/\s+/);
+                const sizeK = parseInt(parts[1], 10);
+                const freeK = parseInt(parts[3], 10);
+                const mountPoint = parts.length > 5 ? parts.slice(5).join(' ') : (parts[5] ?? dirPath);
+                if (!isNaN(sizeK) && !isNaN(freeK) && sizeK > 0) {
+                  const size = sizeK * 1024;
+                  const free = freeK * 1024;
+                  const used = size - free;
+                  diskUsage = [{
+                    path: mountPoint,
+                    total: size,
+                    used,
+                    free,
+                    usedPct: Math.round((used / size) * 1000) / 10,
+                  }];
+                  return true;
+                }
+              }
+            } catch (err) {
+              console.warn('[HostAPI] df failed for', dirPath, err);
+            }
+          }
+          return false;
+        };
+
+        const tryCheckDiskSpace = async (): Promise<boolean> => {
+          let fn: (path: string) => Promise<{ diskPath: string; size: number; free: number }>;
+          try {
+            const mod = await import('check-disk-space');
+            fn = (mod.default ?? mod) as typeof fn;
+          } catch {
+            try {
+              fn = require('check-disk-space').default;
+            } catch {
+              return false;
+            }
+          }
+          for (const dirPath of pathsToTry) {
+            try {
+              const disk = await fn(dirPath);
+              if (disk && typeof disk.size === 'number' && typeof disk.free === 'number') {
+                const used = disk.size - disk.free;
+                diskUsage = [{
+                  path: disk.diskPath || dirPath,
+                  total: disk.size,
+                  used,
+                  free: disk.free,
+                  usedPct: disk.size > 0 ? Math.round((used / disk.size) * 1000) / 10 : 0,
+                }];
+                return true;
+              }
+            } catch {
+              /* continue */
+            }
+          }
+          return false;
+        };
+
+        // Unix: 优先 df（Electron 打包后 check-disk-space 可能失败）
+        if (process.platform !== 'win32') {
+          await tryDf();
+        }
+        if (diskUsage.length === 0) {
+          await tryCheckDiskSpace();
+        }
+
+        // 进程内存（ClawDeckX 风格：堆/系统分配/栈/GC）
+        const mem = process.memoryUsage();
+        const other = Math.max(0, mem.rss - mem.heapUsed - (mem.external || 0));
+        const processMemory = {
+          heapUsed: mem.heapUsed,
+          heapTotal: mem.heapTotal,
+          external: mem.external,
+          rss: mem.rss,
+          stackMemory: other,
+          gcCount: 0,
+        };
+
+        // Gateway 运行时间 + 连接实例数
+        let gatewayUptime: number | undefined;
+        let connectionsCount = 0;
+        try {
+          const res = await fetch('http://127.0.0.1:18789/health');
+          const json = (await res.json()) as { uptime?: number; connections?: number };
+          gatewayUptime = json.uptime;
+          connectionsCount = typeof json.connections === 'number' ? json.connections : 0;
+        } catch {
+          /* Gateway 未运行时忽略 */
+        }
+
+        let coroutineCount = 0;
+        try {
+          const handles = (process as NodeJS.Process & { _getActiveHandles?: () => unknown[] })._getActiveHandles?.();
+          coroutineCount = Array.isArray(handles) ? handles.length : 0;
+        } catch {
+          /* 不可用时保持 0 */
+        }
+
+        const hostInfo = {
+          hostname: os.hostname(),
+          platform: os.platform(),
+          arch: os.arch(),
+          numCpu,
+          cpuUsage: Math.round(cpuPct * 10) / 10,
+          coroutineCount,
+          sysMem: {
+            total: totalMem,
+            used: usedMem,
+            free: freeMem,
+            usedPct: Math.round(memPct * 10) / 10,
+          },
+          diskUsage,
+          uptimeMs: os.uptime() * 1000,
+          openclawVersion: undefined,
+          processMemory,
+          processUptime: process.uptime(),
+          gatewayUptime,
+          connectionsCount,
+          env: {
+            user: process.env.USER || process.env.USERNAME || process.env.LOGNAME || '--',
+            shell: process.env.SHELL || process.env.COMSPEC || '--',
+            cwd: process.cwd(),
+          },
+        };
+
+        return {
+          ok: true,
+          data: { status: 200, json: hostInfo, ok: true },
+          success: true,
+          status: 200,
+          json: hostInfo,
+        };
+      } catch (err) {
+        console.error('[HostAPI] host-info error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
     }
 
     // 特殊处理：/health 直接返回成功

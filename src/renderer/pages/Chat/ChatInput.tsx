@@ -98,7 +98,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
-  const agents = useAgentsStore((s) => s.agents);
+  const agents = useAgentsStore((s) => s.agents) ?? [];
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgentName = useMemo(
     () => agents.find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,

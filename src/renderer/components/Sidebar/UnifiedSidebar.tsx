@@ -15,12 +15,12 @@ const menuItems = [
   { id: 'skill', icon: Icons.skill, label: '技能' },
   { id: 'model', icon: Icons.model, label: '模型' },
   { id: 'cron', icon: Icons.cron, label: '定时任务' },
-  { id: 'diagnostic', icon: Icons.diagnostic, label: '诊断' },
-  { id: 'session', icon: Icons.session, label: '会话' },
-  { id: 'log', icon: Icons.log, label: '日志' },
-  { id: 'setting', icon: Icons.setting, label: '设置' },
-  { id: 'template', icon: Icons.template, label: '模板' },
-  { id: 'plugin', icon: Icons.plugin, label: '插件' },
+  { id: 'run', icon: Icons.run, label: '运行' },
+  { id: 'usage', icon: Icons.usage, label: '使用' },
+  { id: 'alerts', icon: Icons.alerts, label: '警报' },
+  { id: 'nodes', icon: Icons.nodes, label: '节点' },
+  { id: 'extensions', icon: Icons.extensions, label: '扩展' },
+  { id: 'system', icon: Icons.system, label: '系统' },
 ];
 
 interface UnifiedSidebarProps {

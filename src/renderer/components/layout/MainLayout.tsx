@@ -14,12 +14,13 @@ import { WorkflowView } from '@/views/WorkflowView';
 import { Skills } from '@/pages/Skills';
 import { ModelsView } from '@/views/ModelsView';
 import { CronView } from '@/views/CronView';
-import { DiagnosticsView } from '@/views/DiagnosticsView';
-import { SessionsView } from '@/views/SessionsView';
+import { RunView } from '@/views/RunView';
+import { UsageView } from '@/views/UsageView';
+import { AlertsView } from '@/views/AlertsView';
 import { LogsView } from '@/views/LogsView';
-import { SettingsView } from '@/views/SettingsView';
-import { TemplatesView } from '@/views/TemplatesView';
-import { PluginsView } from '@/views/PluginsView';
+import { NodesView } from '@/views/NodesView';
+import { ExtensionsView } from '@/views/ExtensionsView';
+import { SystemView } from '@/views/SystemView';
 import { UnifiedSidebar } from '@/components/Sidebar/UnifiedSidebar';
 import { FloatingPanel } from '@/components/Panel/FloatingPanel';
 import { PanelContent } from '@/components/Panel/PanelContent';
@@ -75,25 +76,27 @@ const MainLayout: React.FC = () => {
         return <ModelsView />;
       case 'cron':
         return <CronView />;
-      case 'diagnostic':
-        return <DiagnosticsView />;
-      case 'session':
-        return <SessionsView />;
-      case 'log':
+      case 'run':
+        return <RunView onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'usage':
+        return <UsageView />;
+      case 'alerts':
+        return <AlertsView />;
+      case 'logs':
         return <LogsView />;
-      case 'setting':
-        return <SettingsView />;
-      case 'template':
-        return <TemplatesView />;
-      case 'plugin':
-        return <PluginsView />;
+      case 'nodes':
+        return <NodesView />;
+      case 'extensions':
+        return <ExtensionsView />;
+      case 'system':
+        return <SystemView />;
       default:
         return <DashboardView />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
+    <div className="flex h-screen bg-[#0f172a] text-white overflow-hidden">
       {/* Unified Sidebar */}
       <UnifiedSidebar
         activeView={activeNav}
