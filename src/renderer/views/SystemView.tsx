@@ -1,9 +1,9 @@
 /**
  * AxonClaw - System View (Composite)
- * Tab: 诊断 | 设置
+ * Tab: 健康中心 | 设置
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DiagnosticsView } from './DiagnosticsView';
 import { SettingsView } from './SettingsView';
 import { cn } from '@/lib/utils';
@@ -11,16 +11,25 @@ import { cn } from '@/lib/utils';
 type SystemTab = 'diagnostic' | 'setting';
 
 const tabs: { id: SystemTab; label: string }[] = [
-  { id: 'diagnostic', label: '诊断' },
+  { id: 'diagnostic', label: '健康中心' },
   { id: 'setting', label: '设置' },
 ];
 
-const SystemView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<SystemTab>('diagnostic');
+interface SystemViewProps {
+  onNavigateTo?: (viewId: string) => void;
+  defaultTab?: SystemTab;
+}
+
+const SystemView: React.FC<SystemViewProps> = ({ onNavigateTo, defaultTab = 'diagnostic' }) => {
+  const [activeTab, setActiveTab] = useState<SystemTab>(defaultTab);
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
 
   return (
-    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="flex items-center gap-1 px-6 pt-4 pb-2 border-b border-white/10 shrink-0">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="flex items-center gap-1 pt-4 pb-2 border-b border-white/10 shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -37,7 +46,7 @@ const SystemView: React.FC = () => {
         ))}
       </div>
       <div className="flex-1 overflow-hidden min-h-0">
-        {activeTab === 'diagnostic' && <DiagnosticsView embedded />}
+        {activeTab === 'diagnostic' && <DiagnosticsView embedded onNavigateTo={onNavigateTo} />}
         {activeTab === 'setting' && <SettingsView embedded />}
       </div>
     </div>

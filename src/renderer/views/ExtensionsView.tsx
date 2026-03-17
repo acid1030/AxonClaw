@@ -19,8 +19,8 @@ const ExtensionsView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ExtTab>('template');
 
   return (
-    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="flex items-center gap-1 px-6 pt-4 pb-2 border-b border-white/10 shrink-0">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="flex items-center gap-1 pt-4 pb-2 border-b border-white/10 shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}

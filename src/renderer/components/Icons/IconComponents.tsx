@@ -24,6 +24,12 @@ import {
   Bell,
   Network,
   Layers,
+  HeartPulse,
+  BookOpen,
+  Rocket,
+  Wifi,
+  Wand2,
+  FileCheck,
 } from 'lucide-react';
 
 export const Icons = {
@@ -49,6 +55,13 @@ export const Icons = {
   nodes: Network,
   extensions: Layers,
   system: Settings,
+  health: HeartPulse,
+  knowledge: BookOpen,
+  install: Rocket,
+  config: FileCode,
+  guide: Wand2,
+  gatewayMonitor: Wifi,
+  approval: FileCheck,
   chevronLeft: ChevronLeft,
   panelClose: PanelRightClose,
   panelOpen: PanelRightOpen,

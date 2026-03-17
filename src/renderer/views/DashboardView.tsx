@@ -23,6 +23,7 @@ import {
   FolderOpen,
   Monitor,
   Shield,
+  ShieldCheck,
   ChevronRight,
 } from 'lucide-react';
 import { useGatewayStore } from '@/stores/gateway';
@@ -478,12 +479,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   ];
 
   return (
-    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="w-full flex flex-col h-full py-6">
         {/* 顶部健康条 */}
         <div
           className={cn(
-            'h-[3px] w-full -mx-6 transition-all duration-700 shrink-0',
+            'h-[3px] w-full transition-all duration-700 shrink-0',
             isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
           )}
         />
@@ -516,7 +517,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </button>
         </div>
 
-        <div className="space-y-4 flex-1 overflow-y-auto min-h-0 pb-4">
+        <div className="space-y-8 flex-1 overflow-y-auto min-h-0 pb-8">
           {/* 资源告警：CPU/内存/磁盘 > 90% */}
           {hasResourceAlert && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
@@ -652,7 +653,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* KPI 卡片 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
             {kpiCards.map((kpi) => (
               <button
                 key={kpi.label}
@@ -683,30 +684,62 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             ))}
           </div>
 
-          {/* 安全状态 (ClawDeckX) */}
-          {(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0) > 0 && (
-            <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-amber-500" />
-                <div>
-                  <h3 className="text-sm font-bold text-foreground">安全状态</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    共{(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0)}项发现
-                  </p>
-                </div>
-                <span className="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-500 text-xs font-bold">
-                  {(alertSummary?.high ?? 0) + (alertSummary?.medium ?? 0)}项警告
-                </span>
-              </div>
+          {/* 安全状态信息面板 (ClawDeckX 风格：宿主机上方，始终显示) */}
+          {(() => {
+            const secCritical = alertSummary?.high ?? 0;
+            const secWarn = alertSummary?.medium ?? 0;
+            const secTotal = secCritical + secWarn;
+            const secStatus = secCritical > 0 ? 'error' : secWarn > 0 ? 'warn' : 'ok';
+            const borderClass = secStatus === 'error' ? 'border-red-500/40 bg-gradient-to-r from-red-500/10 to-transparent' : secStatus === 'warn' ? 'border-amber-500/40 bg-gradient-to-r from-amber-500/10 to-transparent' : 'border-emerald-500/40 bg-gradient-to-r from-emerald-500/10 to-transparent';
+            const iconBgClass = secStatus === 'error' ? 'bg-red-500/10' : secStatus === 'warn' ? 'bg-amber-500/10' : 'bg-emerald-500/10';
+            const iconColorClass = secStatus === 'error' ? 'text-red-500' : secStatus === 'warn' ? 'text-amber-500' : 'text-emerald-500';
+            return (
               <button
-                onClick={() => onNavigateTo?.('alerts')}
-                className="flex items-center gap-1 text-sm font-medium text-blue-500 hover:text-blue-400"
+                type="button"
+                onClick={() => onNavigateTo?.('health')}
+                className={cn('w-full rounded-xl border-2 p-3.5 text-start transition-all hover:shadow-md', borderClass)}
               >
-                查看详情
-                <ChevronRight className="w-4 h-4" />
+                <div className="flex items-center gap-3">
+                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', iconBgClass)}>
+                    {secStatus === 'ok' ? (
+                      <ShieldCheck className={cn('w-5 h-5', iconColorClass)} />
+                    ) : (
+                      <Shield className={cn('w-5 h-5', iconColorClass)} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold text-foreground">安全状态</p>
+                      {secStatus === 'ok' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-500">
+                          全部通过
+                        </span>
+                      )}
+                      {secCritical > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/10 text-red-500">
+                          {secCritical} 项严重
+                        </span>
+                      )}
+                      {secWarn > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-500/10 text-amber-500">
+                          {secWarn} 项警告
+                        </span>
+                      )}
+                    </div>
+                    {secTotal > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        共 {secTotal} 项发现
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-bold text-primary shrink-0">
+                    <span>查看详情</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </div>
+                </div>
               </button>
-            </div>
-          )}
+            );
+          })()}
 
           {/* 宿主机信息 (ClawDeckX) */}
           <div className="rounded-xl border-2 border-cyan-500/40 bg-[#1e293b] px-5 py-3.5 flex items-center justify-between">
@@ -734,7 +767,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 主机信息：CPU | 系统内存 | 磁盘空间 (ClawDeckX GaugeCards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <GaugeCard
               pct={hostInfo?.cpuUsage ?? 0}
               label="CPU 使用率"
@@ -814,7 +847,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           )}
 
           {/* 协程数 | 进程运行 | 服务器运行 (ClawDeckX) */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-6">
             <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-indigo-400">{hostInfo?.coroutineCount ?? 0}</p>
               <p className="text-xs text-slate-400 mt-1">协程数</p>
@@ -837,7 +870,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 进程内存 | 环境 (ClawDeckX 风格) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="rounded-xl border-2 border-violet-500/40 bg-[#1e293b] p-4">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
                 <RefreshCw className="w-3.5 h-3.5 text-violet-500" />
@@ -883,7 +916,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 中部：系统健康 | 最近异常事件 */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">

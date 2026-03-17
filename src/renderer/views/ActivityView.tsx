@@ -72,10 +72,10 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
     <div
       className={cn(
         'flex flex-col bg-[#0f172a] overflow-hidden',
-        embedded ? 'h-full min-h-0 -m-4' : '-m-6 h-[calc(100vh-2.5rem)]'
+        'h-full min-h-0'
       )}
     >
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 min-h-0">
+      <div className="w-full flex flex-col h-full py-6 min-h-0">
         <PageHeader
           title="活动流"
           subtitle="Gateway 事件、消息收发、工具调用记录"

@@ -4,23 +4,33 @@ import { Icons } from '../Icons/IconComponents';
 import { SidebarItem } from './SidebarItem';
 import { CollapseButton } from './CollapseButton';
 
+// 按 ClawDeckX 主菜单顺序：概览、知识、安装向导、配置中心、用量、使用向导、网关监控、审批中心、系统、AI会话、智能代理、节点、活动、调度、技能、健康
 const menuItems = [
-  { id: 'dashboard', icon: Icons.dashboard, label: 'Dashboard' },
-  { id: 'chat', icon: Icons.chat, label: '对话' },
-  { id: 'agent', icon: Icons.agent, label: 'Agent' },
+  { id: 'dashboard', icon: Icons.dashboard, label: '概览仪表盘' },
+  { id: 'knowledge', icon: Icons.knowledge, label: '知识中心' },
+  { id: 'install', icon: Icons.install, label: '安装向导' },
+  { id: 'config', icon: Icons.config, label: '配置中心' },
+  { id: 'usage', icon: Icons.usage, label: '用量统计' },
+  { id: 'guide', icon: Icons.guide, label: '使用向导' },
+  { id: 'gateway-monitor', icon: Icons.gatewayMonitor, label: '网关监控' },
+  { id: 'approval', icon: Icons.approval, label: '审批中心' },
+  { id: 'system', icon: Icons.system, label: '系统设置' },
+  { id: 'chat', icon: Icons.chat, label: 'AI 会话' },
+  { id: 'agent', icon: Icons.agent, label: '智能代理' },
+  { id: 'nodes', icon: Icons.nodes, label: '节点管理' },
+  { id: 'activity', icon: Icons.diagnostic, label: '活动监控' },
+  { id: 'cron', icon: Icons.cron, label: '调度任务' },
+  { id: 'skill', icon: Icons.skill, label: '技能中心' },
+  { id: 'health', icon: Icons.health, label: '健康中心' },
+  // 以下为扩展菜单（保留原有入口）
   { id: 'channel', icon: Icons.channel, label: '渠道' },
   { id: 'memory', icon: Icons.memory, label: '记忆' },
   { id: 'content', icon: Icons.content, label: '内容' },
   { id: 'workflow', icon: Icons.workflow, label: '工作流' },
-  { id: 'skill', icon: Icons.skill, label: '技能' },
   { id: 'model', icon: Icons.model, label: '模型' },
-  { id: 'cron', icon: Icons.cron, label: '定时任务' },
   { id: 'run', icon: Icons.run, label: '运行' },
-  { id: 'usage', icon: Icons.usage, label: '使用' },
   { id: 'alerts', icon: Icons.alerts, label: '警报' },
-  { id: 'nodes', icon: Icons.nodes, label: '节点' },
   { id: 'extensions', icon: Icons.extensions, label: '扩展' },
-  { id: 'system', icon: Icons.system, label: '系统' },
 ];
 
 interface UnifiedSidebarProps {

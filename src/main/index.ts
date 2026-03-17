@@ -1102,6 +1102,177 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
+    // 特殊处理：/api/doctor 健康中心（ClawDeckX 风格：summary + run + fix）
+    if (path === '/api/doctor/summary' || path.startsWith('/api/doctor/summary')) {
+      try {
+        const gwRunning = isGatewayRunning();
+        const stats = isInitialized() ? alertSummaryStats() : { high: 0, medium: 0, count1h: 0, count24h: 0 };
+        const critical5m = stats.high;
+        const high5m = stats.high;
+        const medium5m = stats.medium;
+        const total1h = stats.count1h;
+        const total24h = stats.count24h;
+        let score = 100;
+        if (!gwRunning) score -= 35;
+        score -= Math.min(10, medium5m * 2);
+        score -= Math.min(30, high5m * 10);
+        score -= Math.min(50, critical5m * 25);
+        score = Math.max(0, score);
+        let status: 'ok' | 'warn' | 'error' = 'ok';
+        if (!gwRunning || critical5m > 0) status = 'error';
+        else if (high5m > 0 || medium5m > 0) status = 'warn';
+        let summary = '稳定，无近期异常';
+        if (status === 'error') {
+          summary = !gwRunning ? 'Gateway 离线，建议立即处理' : `近期严重异常: ${critical5m}`;
+        } else if (status === 'warn') {
+          summary = `近期异常 (1小时内 ${total1h} 项)`;
+        }
+        const recentList = isInitialized() ? listAlerts({ page: 1, page_size: 16 }).list : [];
+        const recentIssues = recentList.map((a) => ({
+          id: String(a.id),
+          source: 'alert',
+          category: 'alert',
+          risk: a.risk === 'critical' ? 'critical' : a.risk === 'warning' ? 'medium' : 'low',
+          title: a.message?.split('\n')[0] || a.message || '告警',
+          detail: a.detail || '',
+          timestamp: a.created_at,
+        }));
+        const json = {
+          score,
+          status,
+          summary,
+          updatedAt: new Date().toISOString(),
+          gateway: { running: gwRunning, detail: gwRunning ? '已连接' : '未运行' },
+          healthCheck: { enabled: false, failCount: 0, maxFails: 0, lastOk: '' },
+          exceptionStats: { medium5m, high5m, critical5m, total1h, total24h },
+          sessionErrors: { totalErrors: 0, sessionCount: 0, errorSessions: 0 },
+          recentIssues,
+          securityAudit: {
+            critical: stats.high,
+            warn: stats.medium,
+            info: 0,
+            total: stats.high + stats.medium,
+            items: [] as Array<{ id: string; name: string; status: 'ok' | 'warn' | 'error'; detail: string; suggestion?: string }>,
+          },
+        };
+        return {
+          ok: true,
+          data: { status: 200, json, ok: true },
+          success: true,
+          status: 200,
+          json,
+        };
+      } catch (err) {
+        console.error('[HostAPI] doctor/summary error:', err);
+        const fallback = {
+          score: 50,
+          status: 'warn' as const,
+          summary: '诊断加载失败',
+          updatedAt: new Date().toISOString(),
+          gateway: { running: false, detail: '未知' },
+          healthCheck: { enabled: false, failCount: 0, maxFails: 0, lastOk: '' },
+          exceptionStats: { medium5m: 0, high5m: 0, critical5m: 0, total1h: 0, total24h: 0 },
+          sessionErrors: { totalErrors: 0, sessionCount: 0, errorSessions: 0 },
+          recentIssues: [] as any[],
+          securityAudit: { critical: 0, warn: 0, info: 0, total: 0, items: [] as any[] },
+        };
+        return {
+          ok: true,
+          data: { status: 200, json: fallback, ok: true },
+          success: true,
+          status: 200,
+          json: fallback,
+        };
+      }
+    }
+
+    if (path === '/api/doctor' || path.startsWith('/api/doctor?')) {
+      try {
+        const gwRunning = isGatewayRunning();
+        const stats = isInitialized() ? alertSummaryStats() : { high: 0, medium: 0, count1h: 0, count24h: 0 };
+        const critical5m = stats.high;
+        const high5m = stats.high;
+        const medium5m = stats.medium;
+        let score = 100;
+        if (!gwRunning) score -= 35;
+        score -= Math.min(10, medium5m * 2);
+        score -= Math.min(30, high5m * 10);
+        score -= Math.min(50, critical5m * 25);
+        score = Math.max(0, score);
+        const items: Array<{ id: string; code?: string; name: string; status: 'ok' | 'warn' | 'error'; category?: string; detail: string; suggestion?: string; fixable?: boolean }> = [
+          {
+            id: 'gateway_status',
+            name: 'Gateway 状态',
+            status: gwRunning ? 'ok' : 'error',
+            category: 'gateway',
+            detail: gwRunning ? 'Gateway 已运行' : 'Gateway 未运行',
+            suggestion: gwRunning ? undefined : '请从 Dashboard 启动 Gateway',
+            fixable: false,
+          },
+          {
+            id: 'alerts_summary',
+            name: '告警汇总',
+            status: critical5m > 0 ? 'error' : high5m > 0 || medium5m > 0 ? 'warn' : 'ok',
+            category: 'alert',
+            detail: `严重:${critical5m} 高:${high5m} 中:${medium5m}`,
+            suggestion: critical5m > 0 ? '请查看告警页面处理' : undefined,
+            fixable: false,
+          },
+        ];
+        const json = { items, summary: score >= 70 ? '诊断通过' : '存在异常需关注', score };
+        return {
+          ok: true,
+          data: { status: 200, json, ok: true },
+          success: true,
+          status: 200,
+          json,
+        };
+      } catch (err) {
+        console.error('[HostAPI] doctor run error:', err);
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            json: { items: [], summary: '诊断失败', score: 0 },
+            ok: true,
+          },
+          success: true,
+          status: 200,
+          json: { items: [], summary: '诊断失败', score: 0 },
+        };
+      }
+    }
+
+    if (path === '/api/doctor/fix' && method === 'POST') {
+      try {
+        const json = {
+          fixed: [] as string[],
+          results: [] as Array<{ id: string; name: string; status: string; message: string }>,
+          selected: 0,
+        };
+        return {
+          ok: true,
+          data: { status: 200, json, ok: true },
+          success: true,
+          status: 200,
+          json,
+        };
+      } catch (err) {
+        console.error('[HostAPI] doctor fix error:', err);
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            json: { fixed: [], results: [], selected: 0 },
+            ok: true,
+          },
+          success: true,
+          status: 200,
+          json: { fixed: [], results: [], selected: 0 },
+        };
+      }
+    }
+
     // 特殊处理：/api/host-info 主机信息（ClawDeckX 风格完整检测）
     if (path === '/api/host-info') {
       try {
@@ -1385,6 +1556,42 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         return { ok: false, data: { status: 500, json: { success: false, error: String(err) }, ok: false }, success: false, status: 500, json: { success: false, error: String(err) } };
       }
     }
+    // OpenClaw 配置：Gateway 离线时从 ~/.openclaw/openclaw.json 读写
+    const OPENCLAW_CONFIG_PATH = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+    if (path === '/api/config' && method === 'GET') {
+      try {
+        if (fs.existsSync(OPENCLAW_CONFIG_PATH)) {
+          const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
+          // 支持 JSON5 注释：简单去除 // 和 /* */ 后解析
+          const cleaned = raw
+            .replace(/\/\/[^\n]*/g, '')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/,(\s*[}\]])/g, '$1');
+          const json = JSON.parse(cleaned) as Record<string, unknown>;
+          return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+        }
+        return { ok: true, data: { status: 200, json: {}, ok: true }, success: true, status: 200, json: {} };
+      } catch (err) {
+        console.error('[HostAPI] config get error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+    if (path === '/api/config' && method === 'POST' && body) {
+      try {
+        const dir = nodePath.dirname(OPENCLAW_CONFIG_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as Record<string, unknown>);
+        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf8');
+        return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+      } catch (err) {
+        console.error('[HostAPI] config set error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+    if (path === '/api/config/path' && method === 'GET') {
+      return { ok: true, data: { status: 200, json: { path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { path: OPENCLAW_CONFIG_PATH } };
+    }
+
     if (path === '/api/skills/configs' && method === 'GET') {
       try {
         const configPath = nodePath.join(os.homedir(), '.openclaw', 'skills-config.json');

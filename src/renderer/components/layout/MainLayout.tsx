@@ -21,6 +21,13 @@ import { LogsView } from '@/views/LogsView';
 import { NodesView } from '@/views/NodesView';
 import { ExtensionsView } from '@/views/ExtensionsView';
 import { SystemView } from '@/views/SystemView';
+import { KnowledgeView } from '@/views/KnowledgeView';
+import { ActivityMonitorView } from '@/views/ActivityMonitorView';
+import { InstallationWizardView } from '@/views/InstallationWizardView';
+import { ConfigurationCenterView } from '@/views/ConfigurationCenterView';
+import { UsageWizardView } from '@/views/UsageWizardView';
+import { GatewayMonitoringView } from '@/views/GatewayMonitoringView';
+import { ApprovalCenterView } from '@/views/ApprovalCenterView';
 import { UnifiedSidebar } from '@/components/Sidebar/UnifiedSidebar';
 import { FloatingPanel } from '@/components/Panel/FloatingPanel';
 import { PanelContent } from '@/components/Panel/PanelContent';
@@ -89,7 +96,23 @@ const MainLayout: React.FC = () => {
       case 'extensions':
         return <ExtensionsView />;
       case 'system':
-        return <SystemView />;
+        return <SystemView onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'health':
+        return <SystemView onNavigateTo={(view) => setActiveNav(view)} defaultTab="diagnostic" />;
+      case 'knowledge':
+        return <KnowledgeView />;
+      case 'activity':
+        return <ActivityMonitorView onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'install':
+        return <InstallationWizardView onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'config':
+        return <ConfigurationCenterView />;
+      case 'guide':
+        return <UsageWizardView onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'gateway-monitor':
+        return <GatewayMonitoringView />;
+      case 'approval':
+        return <ApprovalCenterView />;
       default:
         return <DashboardView />;
     }
@@ -103,8 +126,8 @@ const MainLayout: React.FC = () => {
         onViewChange={setActiveNav}
       />
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden">
+      {/* Main Content - 左右边距 10px，内容占满宽度 */}
+      <main className="flex-1 overflow-hidden px-[10px] w-full min-w-0">
         {renderContent()}
       </main>
 

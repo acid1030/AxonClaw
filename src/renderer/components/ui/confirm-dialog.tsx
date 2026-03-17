@@ -19,6 +19,8 @@ export interface ConfirmDialogProps {
   variant?: 'default' | 'destructive';
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
+  /** 可选：在 message 和 footer 之间渲染额外内容 */
+  children?: React.ReactNode;
 }
 
 export function ConfirmDialog({
@@ -30,6 +32,7 @@ export function ConfirmDialog({
   variant = 'default',
   onConfirm,
   onCancel,
+  children,
 }: ConfirmDialogProps) {
   const [loading, setLoading] = React.useState(false);
 
@@ -49,6 +52,7 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           {message && <DialogDescription>{message}</DialogDescription>}
         </DialogHeader>
+        {children}
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={onCancel} disabled={loading}>
             {cancelLabel}

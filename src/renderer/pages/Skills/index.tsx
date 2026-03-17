@@ -655,15 +655,15 @@ export function Skills() {
 
   if (loading) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
+      <div className="flex flex-col w-full min-h-full dark:bg-background items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6">
+    <div className="flex flex-col w-full h-full min-h-0 dark:bg-background overflow-hidden">
+      <div className="w-full flex flex-col h-full py-6">
 
         {/* Row 1: Filter Tabs */}
         <div className="flex items-center gap-2 shrink-0 mb-4">

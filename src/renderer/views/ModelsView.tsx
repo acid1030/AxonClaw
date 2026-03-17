@@ -25,8 +25,8 @@ const ModelsView: React.FC = () => {
   const unavailableCount = staticModels.filter((m) => !m.hasKey).length;
 
   return (
-    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 overflow-y-auto">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
           title="模型管理"
           subtitle={loading ? '加载中...' : `${staticModels.length} 个模型可用`}

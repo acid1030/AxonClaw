@@ -26,6 +26,12 @@ import {
   Cloud,
   Image,
   Send,
+  Bell,
+  Laptop,
+  Languages,
+  PenTool,
+  BookOpen,
+  LayoutTemplate,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
@@ -45,6 +51,7 @@ import type { AgentSummary } from '@/types/agent';
 import type { ChannelType } from '@/types/channel';
 import { CHANNEL_NAMES, CHANNEL_ICONS } from '@/types/channel';
 import { AgentSettingsModal } from '@/pages/Agents';
+import { agentFilesList, agentFileGet, agentFileSet, configGet, agentSkills, agentsDelete, wake } from '@/services/agent-api';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
@@ -53,9 +60,9 @@ const TABS = [
   { id: 'skills', label: 'Skills', icon: Puzzle },
   { id: 'channels', label: 'Channels', icon: MessageSquare },
   { id: 'cron', label: 'Cron Jobs', icon: Calendar },
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'scenarios', label: 'Scenarios', icon: FileText },
-  { id: 'multi-agent', label: 'Multi-Agent', icon: Sparkles },
+  { id: 'chat', label: '运行', icon: MessageSquare },
+  { id: 'scenarios', label: '场景', icon: LayoutTemplate },
+  { id: 'multi-agent', label: '多代理', icon: Sparkles },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -134,13 +141,12 @@ export const AgentsView: React.FC = () => {
     loading,
     fetchAgents,
     createAgent,
-    deleteAgent,
     assignChannel,
     removeChannel,
   } = useAgentsStore();
   const { channels, fetchChannels } = useChannelsStore();
   const { jobs, fetchJobs } = useCronStore();
-  const { skills, fetchSkills } = useSkillsStore();
+  const { fetchSkills } = useSkillsStore();
   const switchSession = useChatStore((s) => s.switchSession);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isOnline = gatewayStatus.state === 'running';
@@ -154,6 +160,9 @@ export const AgentsView: React.FC = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showChannelModal, setShowChannelModal] = useState(false);
   const [channelToRemove, setChannelToRemove] = useState<ChannelType | null>(null);
+  const [deleteFiles, setDeleteFiles] = useState(true);
+  const [waking, setWaking] = useState(false);
+  const [wakeResult, setWakeResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     void Promise.all([fetchAgents(), fetchChannels()]);
@@ -194,13 +203,18 @@ export const AgentsView: React.FC = () => {
 
   const handleDeleteAgent = useCallback(async () => {
     if (!agentToDelete) return;
-    await deleteAgent(agentToDelete.id);
-    setAgentToDelete(null);
-    if (selectedAgentId === agentToDelete.id) {
-      setSelectedAgentId(safeAgents[0]?.id ?? null);
+    try {
+      await agentsDelete({ agentId: agentToDelete.id, deleteFiles });
+      await fetchAgents();
+      setAgentToDelete(null);
+      if (selectedAgentId === agentToDelete.id) {
+        setSelectedAgentId(safeAgents.filter((a) => a.id !== agentToDelete.id)[0]?.id ?? null);
+      }
+      toast.success(t('toast.agentDeleted'));
+    } catch (e) {
+      toast.error(String(e));
     }
-    toast.success(t('toast.agentDeleted'));
-  }, [agentToDelete, deleteAgent, selectedAgentId, safeAgents, t]);
+  }, [agentToDelete, deleteFiles, fetchAgents, selectedAgentId, safeAgents, t]);
 
   const handleChannelSaved = useCallback(async (channelType: ChannelType) => {
     if (!selectedAgent) return;
@@ -236,7 +250,7 @@ export const AgentsView: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full bg-[#0f172a] text-white overflow-hidden -m-6">
+    <div className="flex h-full w-full min-w-0 bg-[#0f172a] text-white overflow-hidden">
       {/* Left Sidebar - Skills 风格 */}
       <aside className="w-64 shrink-0 flex flex-col border-r border-indigo-500/20 bg-[#1e293b]">
         <div className="p-4 border-b border-indigo-500/20">
@@ -299,7 +313,7 @@ export const AgentsView: React.FC = () => {
         {selectedAgent ? (
           <>
             {/* Agent Header */}
-            <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-indigo-500/20">
+            <div className="shrink-0 flex items-center justify-between py-4 border-b border-indigo-500/20">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-indigo-500/30 flex items-center justify-center border-2 border-indigo-500/40">
                   <span className="text-base font-medium">
@@ -311,7 +325,39 @@ export const AgentsView: React.FC = () => {
                   <p className="text-xs text-muted-foreground">{selectedAgent.id}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+                  title="唤醒 Agent"
+                  disabled={!isOnline || waking}
+                  onClick={async () => {
+                    setWaking(true);
+                    setWakeResult(null);
+                    try {
+                      await wake({ mode: 'now', text: '检查' });
+                      setWakeResult({ ok: true, text: '已唤醒' });
+                      setTimeout(() => setWakeResult(null), 3000);
+                    } catch (e) {
+                      setWakeResult({ ok: false, text: `唤醒失败: ${e}` });
+                    } finally {
+                      setWaking(false);
+                    }
+                  }}
+                >
+                  <Bell className={cn('h-4 w-4', waking && 'animate-spin')} />
+                </Button>
+                {wakeResult && (
+                  <span
+                    className={cn(
+                      'absolute top-12 right-0 px-3 py-1.5 rounded-xl text-xs font-bold z-30',
+                      wakeResult.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                    )}
+                  >
+                    {wakeResult.text}
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -344,7 +390,7 @@ export const AgentsView: React.FC = () => {
             </div>
 
             {/* Tabs */}
-            <div className="shrink-0 flex items-center gap-1 px-6 py-2 border-b border-indigo-500/20 overflow-x-auto">
+            <div className="shrink-0 flex items-center gap-1 py-2 border-b border-indigo-500/20 overflow-x-auto">
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -367,9 +413,9 @@ export const AgentsView: React.FC = () => {
               {activeTab === 'overview' && (
                 <OverviewTab agent={selectedAgent} channels={channels} />
               )}
-              {activeTab === 'files' && <FilesTab />}
-              {activeTab === 'tools' && <ToolsTab />}
-              {activeTab === 'skills' && <SkillsTab skills={skills} />}
+              {activeTab === 'files' && <FilesTab agent={selectedAgent} isOnline={isOnline} />}
+              {activeTab === 'tools' && <ToolsTab agent={selectedAgent} isOnline={isOnline} />}
+              {activeTab === 'skills' && <SkillsTab agent={selectedAgent} isOnline={isOnline} />}
               {activeTab === 'channels' && (
                 <ChannelsTab
                   agent={selectedAgent}
@@ -445,7 +491,17 @@ export const AgentsView: React.FC = () => {
         variant="destructive"
         onConfirm={handleDeleteAgent}
         onCancel={() => setAgentToDelete(null)}
-      />
+      >
+        <label className="flex items-center gap-2 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={deleteFiles}
+            onChange={(e) => setDeleteFiles(e.target.checked)}
+            className="rounded border-indigo-500/40"
+          />
+          <span className="text-sm text-muted-foreground">同时删除工作区文件</span>
+        </label>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={!!channelToRemove}
@@ -475,14 +531,14 @@ function OverviewTab({
   }));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-3xl space-y-6">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Overview</h2>
           <p className="text-sm text-muted-foreground mt-1">Agent 基本信息与配置</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Agent ID</p>
             <p className="font-mono text-sm text-foreground">{agent.id}</p>
@@ -491,7 +547,13 @@ function OverviewTab({
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Model</p>
             <p className="text-sm text-foreground">
               {agent.modelDisplay}
-              {agent.inheritedModel ? ' (inherited)' : ''}
+              {agent.inheritedModel ? ' (继承)' : ''}
+            </p>
+          </div>
+          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Workspace</p>
+            <p className="font-mono text-sm text-foreground truncate" title={agent.workspace}>
+              {agent.workspace || '—'}
             </p>
           </div>
         </div>
@@ -523,74 +585,378 @@ function OverviewTab({
   );
 }
 
-function FilesTab() {
+function fmtBytes(b?: number): string {
+  if (b == null) return '-';
+  if (b < 1024) return `${b} B`;
+  const u = ['KB', 'MB', 'GB'];
+  let s = b / 1024,
+    i = 0;
+  while (s >= 1024 && i < u.length - 1) {
+    s /= 1024;
+    i++;
+  }
+  return `${s.toFixed(s < 10 ? 1 : 0)} ${u[i]}`;
+}
+
+function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const [filesList, setFilesList] = useState<Array<{ name: string; size?: number; missing?: boolean }>>([]);
+  const [fileActive, setFileActive] = useState<string | null>(null);
+  const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  const [fileDrafts, setFileDrafts] = useState<Record<string, string>>({});
+  const [fileSaving, setFileSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadFiles = useCallback(async () => {
+    if (!agent?.id || !isOnline) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await agentFilesList(agent.id);
+      setFilesList(res?.files || []);
+    } catch (e) {
+      setError(String(e));
+      setFilesList([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agent?.id, isOnline]);
+
+  const loadFile = useCallback(
+    async (name: string) => {
+      if (!agent?.id || !isOnline) return;
+      setFileActive(name);
+      if (fileContents[name] != null) return;
+      try {
+        const res = await agentFileGet(agent.id, name);
+        const content = (res?.file?.content as string) || '';
+        setFileContents((prev) => ({ ...prev, [name]: content }));
+        setFileDrafts((prev) => ({ ...prev, [name]: content }));
+      } catch (e) {
+        toast.error(String(e));
+      }
+    },
+    [agent?.id, isOnline, fileContents]
+  );
+
+  const saveFile = useCallback(async () => {
+    if (!agent?.id || !fileActive) return;
+    setFileSaving(true);
+    try {
+      await agentFileSet(agent.id, fileActive, fileDrafts[fileActive] || '');
+      setFileContents((prev) => ({ ...prev, [fileActive!]: fileDrafts[fileActive!] || '' }));
+      toast.success('已保存');
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setFileSaving(false);
+    }
+  }, [agent?.id, fileActive, fileDrafts]);
+
+  useEffect(() => {
+    if (agent?.id && isOnline) {
+      loadFiles();
+    } else {
+      setFilesList([]);
+      setFileActive(null);
+      setFileContents({});
+      setFileDrafts({});
+    }
+  }, [agent?.id, isOnline, loadFiles]);
+
+  const hasUnsaved = fileActive && fileDrafts[fileActive] !== fileContents[fileActive];
+
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-3xl">
-        <h2 className="text-lg font-semibold text-foreground">Files</h2>
-        <p className="text-sm text-muted-foreground mt-1">工作区文件（IDENTITY.md、USER.md 等）</p>
-        <div className="mt-6 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
-          <FileText className="h-12 w-12 mb-3 opacity-50" />
-          <p className="text-sm">文件管理功能开发中</p>
+    <div className="flex-1 overflow-y-auto py-6">
+      <div className="max-w-5xl flex flex-col md:flex-row gap-4">
+        <div className="w-full md:w-48 shrink-0 space-y-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-muted-foreground uppercase">核心文件</span>
+            <button
+              onClick={loadFiles}
+              disabled={!isOnline || loading}
+              className="text-xs text-indigo-400 hover:underline disabled:opacity-40"
+            >
+              {loading ? '加载中…' : '刷新'}
+            </button>
+          </div>
+          {!isOnline ? (
+            <p className="text-xs text-muted-foreground py-4">Gateway 未连接</p>
+          ) : filesList.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">暂无文件</p>
+          ) : (
+            filesList.map((f) => (
+              <button
+                key={f.name}
+                onClick={() => loadFile(f.name)}
+                className={cn(
+                  'w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all border',
+                  fileActive === f.name
+                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                    : 'hover:bg-white/5 border-transparent'
+                )}
+              >
+                <p className="font-mono font-semibold truncate">{f.name}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {f.missing ? <span className="text-amber-500">缺失</span> : fmtBytes(f.size)}
+                </p>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {!fileActive ? (
+            <div className="flex items-center justify-center h-48 text-muted-foreground text-xs">
+              选择文件
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-foreground">{fileActive}</span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFileDrafts((prev) => ({ ...prev, [fileActive!]: fileContents[fileActive!] || '' }))}
+                    disabled={!hasUnsaved}
+                    className="h-7 text-xs border-indigo-500/40"
+                  >
+                    重置
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={saveFile}
+                    disabled={fileSaving || !hasUnsaved}
+                    className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600"
+                  >
+                    {fileSaving ? '保存中…' : '保存'}
+                  </Button>
+                </div>
+              </div>
+              <textarea
+                value={fileDrafts[fileActive] ?? fileContents[fileActive] ?? ''}
+                onChange={(e) => setFileDrafts((prev) => ({ ...prev, [fileActive!]: e.target.value }))}
+                className="w-full h-80 p-3 rounded-xl bg-[#1e293b] border-2 border-indigo-500/40 text-xs font-mono text-foreground resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                spellCheck={false}
+              />
+            </div>
+          )}
+          {error && (
+            <div className="mt-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+              {error}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function ToolsTab() {
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-3xl">
-        <h2 className="text-lg font-semibold text-foreground">Tools</h2>
-        <p className="text-sm text-muted-foreground mt-1">可用工具配置</p>
-        <div className="mt-6 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
-          <Wrench className="h-12 w-12 mb-3 opacity-50" />
-          <p className="text-sm">工具配置功能开发中</p>
-        </div>
-      </div>
-    </div>
-  );
+const TOOL_SECTIONS = [
+  { label: 'Files', tools: ['read', 'write', 'edit', 'apply_patch'] },
+  { label: 'Runtime', tools: ['exec', 'process'] },
+  { label: 'Web', tools: ['web_search', 'web_fetch'] },
+  { label: 'Memory', tools: ['memory_search', 'memory_get'] },
+  { label: 'Sessions', tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'session_status'] },
+  { label: 'UI', tools: ['browser', 'canvas'] },
+  { label: 'Messaging', tools: ['message'] },
+  { label: 'Automation', tools: ['cron', 'gateway'] },
+  { label: 'Agents', tools: ['agents_list'] },
+  { label: 'Media', tools: ['image'] },
+];
+
+interface AgentConfigEntry {
+  id: string;
+  tools?: Record<string, unknown>;
+}
+interface ConfigShape {
+  agents?: { list?: AgentConfigEntry[]; defaults?: { tools?: Record<string, unknown> } };
+  tools?: Record<string, unknown>;
 }
 
-function SkillsTab({ skills }: { skills: Array<{ id: string; slug?: string; name: string; enabled?: boolean }> }) {
-  const safe = Array.isArray(skills) ? skills : [];
-  const enabled = safe.filter((s) => s.enabled).length;
+function ToolsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const [config, setConfig] = useState<ConfigShape | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    setLoading(true);
+    configGet()
+      .then(setConfig)
+      .catch(() => setConfig(null))
+      .finally(() => setLoading(false));
+  }, [isOnline]);
+
+  const tools = (() => {
+    if (!config) return {};
+    const list = config.agents?.list || [];
+    const entry = list.find((e) => e?.id === agent?.id);
+    const defaults = config.agents?.defaults;
+    return entry?.tools || defaults?.tools || config.tools || {};
+  })();
+
+  const profile = (tools as { profile?: string }).profile || 'full';
+  const denyList = Array.isArray((tools as { deny?: string[] }).deny) ? (tools as { deny: string[] }).deny : [];
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-3xl">
-        <h2 className="text-lg font-semibold text-foreground">Skills</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {enabled}/{safe.length} 已启用
-        </p>
-        {safe.length === 0 ? (
-          <div className="mt-6 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
-            <Puzzle className="h-12 w-12 mb-3 opacity-50" />
-            <p className="text-sm">暂无技能</p>
+    <div className="flex-1 overflow-y-auto py-6">
+      <div className="max-w-5xl space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Tools</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Profile: <span className="font-mono text-indigo-400">{profile}</span>
+          </p>
+        </div>
+        {!isOnline ? (
+          <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
+            Gateway 未连接
+          </div>
+        ) : loading ? (
+          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
+            加载中…
           </div>
         ) : (
-          <div className="mt-4 space-y-2">
-            {safe.slice(0, 20).map((s) => (
-              <div
-                key={s.id}
-                className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-3 flex items-center justify-between"
-              >
-                <span className="text-sm font-medium text-foreground">{s.name || s.slug || s.id}</span>
-                <span
-                  className={cn(
-                    'px-2 py-0.5 rounded-lg text-xs',
-                    s.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
-                  )}
-                >
-                  {s.enabled ? '已启用' : '已禁用'}
-                </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {TOOL_SECTIONS.map((section) => (
+              <div key={section.label} className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-3">
+                <p className="text-xs font-bold text-muted-foreground uppercase mb-2">{section.label}</p>
+                <div className="space-y-1">
+                  {section.tools.map((tool) => {
+                    const denied = denyList.includes(tool);
+                    const allowed = !denied;
+                    return (
+                      <div key={tool} className="flex items-center justify-between py-1">
+                        <span className="text-xs font-mono text-foreground/70">{tool}</span>
+                        <div className={cn('w-2 h-2 rounded-full', allowed ? 'bg-emerald-500' : 'bg-slate-500/50')} />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
-            {safe.length > 20 && (
-              <p className="text-xs text-muted-foreground text-center py-2">共 {safe.length} 个技能</p>
-            )}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const [skillsReport, setSkillsReport] = useState<{ skills?: Array<{ name: string; description?: string; eligible?: boolean; bundled?: boolean; source?: string }> } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'ready' | 'notReady'>('ready');
+
+  const loadSkills = useCallback(async () => {
+    if (!agent?.id || !isOnline) return;
+    setLoading(true);
+    try {
+      const r = await agentSkills(agent.id);
+      setSkillsReport(r);
+    } catch {
+      setSkillsReport(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [agent?.id, isOnline]);
+
+  useEffect(() => {
+    if (agent?.id && isOnline) {
+      loadSkills();
+    } else {
+      setSkillsReport(null);
+    }
+  }, [agent?.id, isOnline, loadSkills]);
+
+  const allSkills = skillsReport?.skills || [];
+  const skills = allSkills.filter((sk) => {
+    if (filter === 'ready') return sk.eligible;
+    if (filter === 'notReady') return !sk.eligible;
+    return true;
+  });
+  const readyCount = allSkills.filter((s) => s.eligible).length;
+  const notReadyCount = allSkills.filter((s) => !s.eligible).length;
+
+  const groups: Record<string, typeof allSkills> = {};
+  skills.forEach((sk) => {
+    const src = sk.bundled ? '内置' : sk.source || '其他';
+    if (!groups[src]) groups[src] = [];
+    groups[src].push(sk);
+  });
+
+  return (
+    <div className="flex-1 overflow-y-auto py-6">
+      <div className="max-w-5xl space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Skills</h2>
+          <button onClick={loadSkills} disabled={!isOnline || loading} className="text-xs text-indigo-400 hover:underline disabled:opacity-40">
+            {loading ? '加载中…' : '刷新'}
+          </button>
+        </div>
+        {!isOnline ? (
+          <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
+            Gateway 未连接
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              {[
+                { key: 'ready' as const, label: `就绪 (${readyCount})` },
+                { key: 'notReady' as const, label: `未就绪 (${notReadyCount})` },
+                { key: 'all' as const, label: `全部 (${allSkills.length})` },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                    filter === key
+                      ? key === 'ready'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : key === 'notReady'
+                          ? 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                          : 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                      : 'bg-white/5 text-muted-foreground hover:bg-white/10'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {skills.length === 0 ? (
+              <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
+                <Puzzle className="h-12 w-12 mb-3 opacity-50" />
+                <p className="text-sm">{!loading ? '暂无技能' : '加载中…'}</p>
+              </div>
+            ) : (
+              Object.entries(groups).map(([group, items]) => (
+                <div key={group}>
+                  <p className="text-xs font-bold text-muted-foreground uppercase mb-2">{group} ({items.length})</p>
+                  <div className="space-y-1">
+                    {items.map((sk) => (
+                      <div
+                        key={sk.name}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b]"
+                      >
+                        <div className={cn('w-2 h-2 rounded-full shrink-0', sk.eligible ? 'bg-emerald-500' : 'bg-slate-500/50')} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-foreground truncate">{sk.name}</p>
+                          {sk.description && <p className="text-[11px] text-muted-foreground truncate">{sk.description}</p>}
+                        </div>
+                        <span
+                          className={cn(
+                            'text-xs px-1.5 py-0.5 rounded-full font-bold shrink-0',
+                            sk.eligible ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
+                          )}
+                        >
+                          {sk.eligible ? '就绪' : '未就绪'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </>
         )}
       </div>
     </div>
@@ -616,7 +982,7 @@ function ChannelsTab({
   }));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -696,7 +1062,7 @@ function CronTab({
   const safe = Array.isArray(jobs) ? jobs : [];
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -753,15 +1119,98 @@ function CronTab({
   );
 }
 
+const SCENARIO_TEMPLATES = [
+  {
+    id: 'tech-assistant',
+    title: '技术助手',
+    desc: '编程、调试、代码审查、技术文档编写',
+    icon: Laptop,
+    iconColor: 'text-blue-400',
+    tag: '开发',
+    tagColor: 'bg-blue-500/20 text-blue-400',
+  },
+  {
+    id: 'translator',
+    title: '翻译助手',
+    desc: '多语言翻译、本地化、术语一致性',
+    icon: Languages,
+    iconColor: 'text-emerald-400',
+    tag: '语言',
+    tagColor: 'bg-emerald-500/20 text-emerald-400',
+  },
+  {
+    id: 'writer',
+    title: '写作助手',
+    desc: '文章撰写、润色、结构化写作',
+    icon: PenTool,
+    iconColor: 'text-amber-400',
+    tag: '内容',
+    tagColor: 'bg-amber-500/20 text-amber-400',
+  },
+  {
+    id: 'content-factory',
+    title: '内容工厂',
+    desc: '研究 → 撰写 → 编辑 → 发布的完整内容生产流水线',
+    icon: BookOpen,
+    iconColor: 'text-violet-400',
+    tag: '工作流',
+    tagColor: 'bg-violet-500/20 text-violet-400',
+  },
+];
+
 function ScenariosTab() {
+  const handleApply = (id: string) => {
+    toast.info('场景应用需配合 OpenClaw 模板系统。请确保 Gateway 已配置并支持 templates API。', {
+      description: `场景 ID: ${id}`,
+    });
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-3xl">
-        <h2 className="text-lg font-semibold text-foreground">Scenarios</h2>
-        <p className="text-sm text-muted-foreground mt-1">场景模板</p>
-        <div className="mt-6 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
-          <FileText className="h-12 w-12 mb-3 opacity-50" />
-          <p className="text-sm">场景库功能开发中</p>
+    <div className="flex-1 overflow-y-auto py-6">
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">场景库</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            ClawDeckX 风格：从场景库选择模板，一键应用到 Agent 工作区（IDENTITY.md、USER.md 等）
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {SCENARIO_TEMPLATES.map((tpl) => (
+            <div
+              key={tpl.id}
+              className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-5 hover:border-indigo-500/50 transition-colors"
+            >
+              <div className="flex items-start gap-4">
+                <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center shrink-0 bg-[#0f172a]', tpl.iconColor)}>
+                  <tpl.icon className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">{tpl.title}</h3>
+                    <span className={cn('text-[10px] px-2 py-0.5 rounded-full', tpl.tagColor)}>
+                      {tpl.tag}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.desc}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 h-8 border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
+                    onClick={() => handleApply(tpl.id)}
+                  >
+                    应用到当前 Agent
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-xl border-2 border-indigo-500/20 bg-[#0f172a]/50 p-4">
+          <p className="text-xs text-muted-foreground">
+            💡 场景模板需配合 OpenClaw 模板系统使用。配置 Gateway 后，可从场景库选择并应用到当前 Agent 的 IDENTITY.md、USER.md 等工作区文件。
+          </p>
         </div>
       </div>
     </div>
@@ -780,19 +1229,19 @@ function MultiAgentTab({
   onDeploymentModeChange: (m: 'enhance' | 'independent') => void;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto py-6">
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Multi-Agent</h2>
+          <h2 className="text-xl font-semibold text-foreground">多代理协作</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Deploy multi-agent collaboration workflows for complex automation
+            ClawDeckX 风格：部署多代理协作工作流，实现复杂自动化任务
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Workflow Templates
+              工作流模板
             </p>
             <div className="space-y-2 max-h-[320px] overflow-y-auto">
               {WORKFLOW_TEMPLATES.map((tpl) => (
@@ -827,7 +1276,7 @@ function MultiAgentTab({
           <div className="space-y-6">
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                Choose Deployment Mode
+                部署模式
               </p>
               <div className="space-y-2">
                 <button
@@ -842,13 +1291,13 @@ function MultiAgentTab({
                   <Sparkles className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">Enhance Existing Agent</h3>
+                      <h3 className="text-sm font-semibold text-foreground">增强当前 Agent</h3>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-                        Recommended for beginners
+                        推荐
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Add workflow capabilities to the current agent, enabling it to call subagents.
+                      为当前 Agent 添加工作流能力，使其可调用子代理。
                     </p>
                   </div>
                 </button>
@@ -864,13 +1313,13 @@ function MultiAgentTab({
                   <Rocket className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">Deploy Independent Subagents</h3>
+                      <h3 className="text-sm font-semibold text-foreground">部署独立子代理</h3>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
-                        Advanced usage
+                        高级
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Create multiple independent subagents that can be called by the main agent.
+                      创建多个独立子代理，供主代理调用。
                     </p>
                   </div>
                 </button>
@@ -879,12 +1328,12 @@ function MultiAgentTab({
 
             <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl border-2 border-emerald-500/40">
               <Play className="h-5 w-5 mr-2" />
-              Run
+              部署
             </Button>
 
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                Team Members
+                团队成员
               </p>
               <div className="flex flex-wrap gap-4">
                 {TEAM_ROLES.map((role) => (

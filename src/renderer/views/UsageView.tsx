@@ -49,8 +49,8 @@ const UsageView: React.FC = () => {
   const outputTokens = usage?.outputTokens ?? 0;
 
   return (
-    <div className="flex flex-col -m-6 bg-[#0f172a] h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6 min-h-0">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="w-full flex flex-col h-full py-6 min-h-0">
         <PageHeader
           title="使用情况"
           subtitle="Token 使用量、成本统计、7天趋势"
