@@ -57,6 +57,7 @@ export function createChatActions(
   | 'newSession'
   | 'deleteSession'
   | 'cleanupEmptySession'
+  | 'setSessionLabel'
   | 'loadHistory'
   | 'sendMessage'
   | 'abortRun'

@@ -11,7 +11,7 @@ import { ChannelsView } from '@/views/ChannelsView';
 import { MemoryView } from '@/views/MemoryView';
 import { ContentView } from '@/views/ContentView';
 import { WorkflowView } from '@/views/WorkflowView';
-import { SkillsView } from '@/views/SkillsView';
+import { Skills } from '@/pages/Skills';
 import { ModelsView } from '@/views/ModelsView';
 import { CronView } from '@/views/CronView';
 import { DiagnosticsView } from '@/views/DiagnosticsView';
@@ -56,7 +56,7 @@ const MainLayout: React.FC = () => {
   const renderContent = () => {
     switch (activeNav) {
       case 'dashboard':
-        return <DashboardView />;
+        return <DashboardView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'chat':
         return <ChatView />;
       case 'agent':
@@ -70,7 +70,7 @@ const MainLayout: React.FC = () => {
       case 'workflow':
         return <WorkflowView />;
       case 'skill':
-        return <SkillsView />;
+        return <Skills />;
       case 'model':
         return <ModelsView />;
       case 'cron':

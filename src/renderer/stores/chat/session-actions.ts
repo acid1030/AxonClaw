@@ -25,7 +25,7 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'cleanupEmptySession'> {
+): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'cleanupEmptySession' | 'setSessionLabel'> {
   return {
     loadSessions: async () => {
       try {
@@ -273,6 +273,14 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
+      }));
+    },
+
+    // ── Set session alias (custom label) ──
+
+    setSessionLabel: (sessionKey: string, label: string) => {
+      set((s) => ({
+        sessionLabels: { ...s.sessionLabels, [sessionKey]: label.trim() || s.sessionLabels[sessionKey] || '' },
       }));
     },
 

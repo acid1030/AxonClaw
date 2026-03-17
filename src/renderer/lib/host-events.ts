@@ -2,8 +2,9 @@ import { createHostEventSource } from './host-api';
 
 let eventSource: EventSource | null = null;
 
+// AxonClaw: 使用与 main 进程 webContents.send 一致的 channel 名
 const HOST_EVENT_TO_IPC_CHANNEL: Record<string, string> = {
-  'gateway:status': 'gateway:status-changed',
+  'gateway:status': 'gateway:status',
   'gateway:error': 'gateway:error',
   'gateway:notification': 'gateway:notification',
   'gateway:chat-message': 'gateway:chat-message',

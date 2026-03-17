@@ -1,145 +1,550 @@
 /**
  * AxonClaw - Agents View
- * Agent 管理界面 - 从设计稿实现
+ * ClawDeckX 风格：左侧 Agent 列表 + 右侧详情（含 Multi-Agent 等标签页）
  */
 
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  Plus,
+  RefreshCw,
+  Clock,
+  Pencil,
+  Trash2,
+  Bot,
+  FileText,
+  Wrench,
+  Puzzle,
+  MessageSquare,
+  Calendar,
+  Sparkles,
+  Rocket,
+  Search,
+  BarChart3,
+  Play,
+  Headphones,
+  Cloud,
+  Image,
+  Send,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useAgentsStore } from '@/stores/agents';
+import { useChannelsStore } from '@/stores/channels';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import type { AgentSummary } from '@/types/agent';
+import { AgentSettingsModal } from '@/pages/Agents';
 
-const mockAgents = [
-  { id: 'main', name: 'main', icon: '🛠', status: 'offline', desc: '默认主 Agent，负责处理所有通用对话和任务分发。需要先配置 Anthropic API key 才能运行。', tools: ['通用', 'web_search', 'code_exec'], stats: { calls: '—', success: '—', time: '—' } },
-  { id: 'researcher', name: 'researcher', icon: '🔍', status: 'online', desc: '专注于网络搜索和资料整理，自动从多个来源聚合信息并生成结构化报告。', tools: ['搜索', '报告', 'web_search', 'fetch_url'], stats: { calls: '1,284', success: '98.2%', time: '2.4s' } },
-  { id: 'coder', name: 'coder', icon: '💻', status: 'idle', desc: '专业代码生成与审查 Agent，支持 20+ 编程语言，内置代码执行沙箱和单元测试。', tools: ['代码', '测试', 'code_exec', 'file_write'], stats: { calls: '3,560', success: '96.7%', time: '3.8s' } },
-  { id: 'analyst', name: 'analyst', icon: '📊', status: 'idle', desc: '数据分析 Agent，可处理 CSV、JSON 数据，生成可视化图表并输出分析洞察报告。', tools: ['数据', '图表', 'code_exec', 'file_read'], stats: { calls: '892', success: '99.1%', time: '5.2s' } },
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'files', label: 'Files', icon: FileText },
+  { id: 'tools', label: 'Tools', icon: Wrench },
+  { id: 'skills', label: 'Skills', icon: Puzzle },
+  { id: 'channels', label: 'Channels', icon: MessageSquare },
+  { id: 'cron', label: 'Cron Jobs', icon: Calendar },
+  { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'scenarios', label: 'Scenarios', icon: FileText },
+  { id: 'multi-agent', label: 'Multi-Agent', icon: Sparkles },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
+const WORKFLOW_TEMPLATES = [
+  {
+    id: 'content-factory',
+    title: 'Content Factory',
+    desc: 'End-to-end content production pipeline with research, writing, editing, and publishing',
+    roles: 4,
+    tag: 'Sequential',
+    tagColor: 'bg-blue-500/20 text-blue-400',
+    icon: FileText,
+    iconColor: 'text-violet-400',
+  },
+  {
+    id: 'research-team',
+    title: 'Research Team',
+    desc: 'Collaborative research team with lead researcher, analysts, and critics',
+    roles: 4,
+    tag: 'Collaborative',
+    tagColor: 'bg-violet-500/20 text-violet-400',
+    icon: Search,
+    iconColor: 'text-blue-400',
+  },
+  {
+    id: 'devops-team',
+    title: 'DevOps Team',
+    desc: 'Automated incident response and infrastructure management team',
+    roles: 4,
+    tag: 'Event-Driven',
+    tagColor: 'bg-amber-500/20 text-amber-400',
+    icon: Cloud,
+    iconColor: 'text-orange-400',
+  },
+  {
+    id: 'support-team',
+    title: 'Customer Support Team',
+    desc: 'Tiered customer support with routing and escalation',
+    roles: 3,
+    tag: 'Routing',
+    tagColor: 'bg-blue-500/20 text-blue-400',
+    icon: Headphones,
+    iconColor: 'text-emerald-400',
+  },
 ];
 
-const AgentsView: React.FC = () => {
+const TEAM_ROLES = [
+  { id: 'researcher', label: 'Researcher', icon: Search, color: 'text-blue-400' },
+  { id: 'writer', label: 'Writer', icon: Pencil, color: 'text-emerald-400' },
+  { id: 'editor', label: 'Editor', icon: Image, color: 'text-amber-400' },
+  { id: 'publisher', label: 'Publisher', icon: Send, color: 'text-violet-400' },
+];
+
+export const AgentsView: React.FC = () => {
+  const { t } = useTranslation('agents');
+  const {
+    agents,
+    loading,
+    fetchAgents,
+    createAgent,
+    deleteAgent,
+  } = useAgentsStore();
+  const { channels, fetchChannels } = useChannelsStore();
+
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>('multi-agent');
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string>('content-factory');
+  const [deploymentMode, setDeploymentMode] = useState<'enhance' | 'independent'>('enhance');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  useEffect(() => {
+    void Promise.all([fetchAgents(), fetchChannels()]);
+  }, [fetchAgents, fetchChannels]);
+
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? agents[0] ?? null;
+  const safeAgents = Array.isArray(agents) ? agents : [];
+
+  useEffect(() => {
+    if (!selectedAgentId && safeAgents.length > 0) {
+      setSelectedAgentId(safeAgents[0].id);
+    }
+  }, [selectedAgentId, safeAgents]);
+
+  const handleRefresh = useCallback(() => {
+    void Promise.all([fetchAgents(), fetchChannels()]);
+  }, [fetchAgents, fetchChannels]);
+
+  const handleAddAgent = useCallback(async (name: string) => {
+    await createAgent(name);
+    setShowAddDialog(false);
+    toast.success(t('toast.agentCreated'));
+  }, [createAgent, t]);
+
+  const handleDeleteAgent = useCallback(async () => {
+    if (!agentToDelete) return;
+    await deleteAgent(agentToDelete.id);
+    setAgentToDelete(null);
+    if (selectedAgentId === agentToDelete.id) {
+      setSelectedAgentId(safeAgents[0]?.id ?? null);
+    }
+    toast.success(t('toast.agentDeleted'));
+  }, [agentToDelete, deleteAgent, selectedAgentId, safeAgents, t]);
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-[#0d1117]">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full overflow-y-auto p-6">
-      {/* Topbar */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Agent 管理</h1>
-          <p className="text-sm text-white/60">创建、配置、分配任务</p>
+    <div className="flex h-full bg-[#0d1117] text-white overflow-hidden">
+      {/* Left Sidebar */}
+      <aside className="w-64 shrink-0 flex flex-col border-r border-white/10 bg-[#161b22]">
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-white">Agents</h2>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-white/60 hover:text-white hover:bg-white/10"
+                onClick={() => setShowAddDialog(true)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-white/60 hover:text-white hover:bg-white/10"
+                onClick={handleRefresh}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-white/50">{safeAgents.length} agents</p>
         </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            placeholder="搜索 Agent…"
-            className="w-48 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 outline-none"
-          />
-          <button className="px-4 py-1.5 bg-blue-500 rounded-lg text-sm text-white">+ 新建 Agent</button>
+        <div className="flex-1 overflow-y-auto p-2">
+          {safeAgents.map((agent) => (
+            <button
+              key={agent.id}
+              onClick={() => setSelectedAgentId(agent.id)}
+              className={cn(
+                'w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors',
+                selectedAgentId === agent.id
+                  ? 'bg-blue-500/20 text-white'
+                  : 'hover:bg-white/5 text-white/80'
+              )}
+            >
+              <div className="h-9 w-9 shrink-0 rounded-full bg-blue-500/30 flex items-center justify-center">
+                <span className="text-sm font-medium">
+                  {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{agent.name}</p>
+                <p className="text-xs text-white/50 truncate">{agent.id}</p>
+              </div>
+              {agent.isDefault && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70 shrink-0">
+                  default
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-      </div>
+      </aside>
 
-      {/* 状态过滤 */}
-      <div className="flex gap-2 mb-5">
-        <span className="px-3 py-1.5 bg-white/10 rounded-lg text-sm text-white cursor-pointer">全部 (4)</span>
-        <span className="px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-sm cursor-pointer">运行中 (1)</span>
-        <span className="px-3 py-1.5 bg-amber-500/15 text-amber-400 rounded-lg text-sm cursor-pointer">空闲 (2)</span>
-        <span className="px-3 py-1.5 bg-white/10 rounded-lg text-sm text-white/60 cursor-pointer">离线 (1)</span>
-      </div>
-
-      {/* API Key 警告 */}
-      <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-5">
-        <span className="text-xl">⚠</span>
-        <div className="flex-1 text-sm">
-          <strong className="text-amber-400">main</strong>
-          <span className="text-white/70"> agent 未配置 API key — 运行 </span>
-          <code className="px-1.5 py-0.5 bg-white/10 rounded text-xs text-white/80">openclaw agents add main</code>
-          <span className="text-white/70"> 完成配置</span>
-        </div>
-        <button className="px-3 py-1.5 bg-white/10 border border-white/10 rounded-lg text-sm text-white/80">配置 Key</button>
-      </div>
-
-      {/* Agent 卡片网格 */}
-      <div className="grid grid-cols-3 gap-4">
-        {mockAgents.map((agent) => (
-          <div
-            key={agent.id}
-            className={`relative overflow-hidden p-4 rounded-xl border ${
-              agent.status === 'online' ? 'bg-green-500/5 border-green-500/20' :
-              agent.status === 'idle' ? 'bg-blue-500/5 border-blue-500/20' :
-              'bg-white/5 border-white/10'
-            }`}
-          >
-            {/* 顶部色条 */}
-            <div className={`absolute top-0 left-0 right-0 h-1 ${
-              agent.status === 'online' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-              agent.status === 'idle' ? 'bg-gradient-to-r from-blue-500 to-indigo-500' :
-              'bg-gradient-to-r from-red-500 to-orange-500'
-            }`} />
-            
-            {/* 头部 */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg ${
-                  agent.status === 'online' ? 'bg-green-500/15' :
-                  agent.status === 'idle' ? 'bg-blue-500/15' :
-                  'bg-red-500/15'
-                }`}>{agent.icon}</div>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {selectedAgent ? (
+          <>
+            {/* Agent Header */}
+            <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-blue-500/30 flex items-center justify-center">
+                  <span className="text-base font-medium">
+                    {(selectedAgent.name || selectedAgent.id).charAt(0).toUpperCase()}
+                  </span>
+                </div>
                 <div>
-                  <div className="text-sm font-medium text-white">{agent.name}</div>
-                  <div className="text-[10px] text-white/40 font-mono">id: {agent.id}</div>
+                  <h1 className="text-lg font-semibold text-white">{selectedAgent.name}</h1>
+                  <p className="text-xs text-white/50">{selectedAgent.id}</p>
                 </div>
               </div>
-              <div className={`w-2 h-2 rounded-full ${
-                agent.status === 'online' ? 'bg-green-500 shadow-green-500/40 shadow-sm' :
-                agent.status === 'idle' ? 'bg-amber-500' :
-                'bg-white/30'
-              }`} />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10"
+                  title="History"
+                >
+                  <Clock className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10"
+                  title="Edit"
+                  onClick={() => setShowSettingsModal(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                {!selectedAgent.isDefault && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-white/60 hover:text-red-400 hover:bg-red-500/10"
+                    title="Delete"
+                    onClick={() => setAgentToDelete(selectedAgent)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {/* 描述 */}
-            <p className="text-xs text-white/60 leading-relaxed mb-3">{agent.desc}</p>
-
-            {/* 标签 */}
-            <div className="flex flex-wrap gap-1 mb-3">
-              {agent.tools.map((tool) => (
-                <span
-                  key={tool}
-                  className={`px-2 py-0.5 rounded text-[10px] ${
-                    tool.includes('_') ? 'bg-blue-500/15 text-blue-400' : 'bg-white/5 text-white/50'
-                  }`}
-                >{tool}</span>
+            {/* Tabs */}
+            <div className="shrink-0 flex items-center gap-1 px-6 py-2 border-b border-white/10 overflow-x-auto">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap',
+                    activeTab === tab.id
+                      ? 'text-blue-400 border-b-2 border-blue-400 -mb-[1px]'
+                      : 'text-white/60 hover:text-white'
+                  )}
+                >
+                  <tab.icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
               ))}
             </div>
 
-            {/* 统计 */}
-            <div className="grid grid-cols-3 gap-1.5 mb-3">
-              <div className="p-1.5 bg-white/5 rounded text-center">
-                <div className="text-xs font-medium text-white">{agent.stats.calls}</div>
-                <div className="text-[9px] text-white/40">调用次数</div>
-              </div>
-              <div className="p-1.5 bg-white/5 rounded text-center">
-                <div className="text-xs font-medium text-white">{agent.stats.success}</div>
-                <div className="text-[9px] text-white/40">成功率</div>
-              </div>
-              <div className="p-1.5 bg-white/5 rounded text-center">
-                <div className="text-xs font-medium text-white">{agent.stats.time}</div>
-                <div className="text-[9px] text-white/40">平均耗时</div>
-              </div>
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {activeTab === 'multi-agent' ? (
+                <MultiAgentTab
+                  selectedWorkflow={selectedWorkflow}
+                  onSelectWorkflow={setSelectedWorkflow}
+                  deploymentMode={deploymentMode}
+                  onDeploymentModeChange={setDeploymentMode}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-white/50">
+                  <Bot className="h-12 w-12 mb-4 opacity-50" />
+                  <p className="text-sm">
+                    {TABS.find((t) => t.id === activeTab)?.label ?? activeTab} — Coming soon
+                  </p>
+                </div>
+              )}
             </div>
-
-            {/* 操作按钮 */}
-            <div className="flex gap-1.5">
-              <button className="flex-1 py-1.5 bg-blue-500 rounded text-[11px] text-white">
-                {agent.status === 'offline' ? '配置 Key' : '启动'}
-              </button>
-              <button className="flex-1 py-1.5 bg-white/5 border border-white/10 rounded text-[11px] text-white/70">编辑</button>
-              <button className="flex-1 py-1.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400">删除</button>
-            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-white/50">
+            <Bot className="h-16 w-16 mb-4 opacity-50" />
+            <p className="text-sm mb-4">No agents yet</p>
+            <Button
+              onClick={() => setShowAddDialog(true)}
+              className="bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Agent
+            </Button>
           </div>
-        ))}
+        )}
+      </main>
 
-        {/* 新建 Agent 卡片 */}
-        <div className="flex flex-col items-center justify-center p-8 border border-dashed border-white/20 rounded-xl text-white/40 cursor-pointer hover:border-blue-500/40 hover:bg-blue-500/5 transition-colors">
-          <div className="text-2xl mb-1">＋</div>
-          <div className="text-xs">新建 Agent</div>
-        </div>
-      </div>
+      {/* Add Agent Dialog */}
+      {showAddDialog && (
+        <AgentsAddDialogInline
+          onClose={() => setShowAddDialog(false)}
+          onCreate={handleAddAgent}
+        />
+      )}
+
+      {/* Settings Modal - full agent settings from Agents page */}
+      {showSettingsModal && selectedAgent && (
+        <AgentSettingsModal
+          agent={selectedAgent}
+          channels={channels}
+          onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!agentToDelete}
+        title={t('deleteDialog.title')}
+        message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''}
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
+        variant="destructive"
+        onConfirm={handleDeleteAgent}
+        onCancel={() => setAgentToDelete(null)}
+      />
     </div>
   );
 };
 
-export { AgentsView };
+function MultiAgentTab({
+  selectedWorkflow,
+  onSelectWorkflow,
+  deploymentMode,
+  onDeploymentModeChange,
+}: {
+  selectedWorkflow: string;
+  onSelectWorkflow: (id: string) => void;
+  deploymentMode: 'enhance' | 'independent';
+  onDeploymentModeChange: (m: 'enhance' | 'independent') => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-white">Multi-Agent</h2>
+        <p className="text-sm text-white/60 mt-1">
+          Deploy multi-agent collaboration workflows for complex automation
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: Workflow Templates */}
+        <div className="lg:col-span-2 space-y-3">
+          <p className="text-xs font-medium text-white/60 uppercase tracking-wider">
+            Workflow Templates
+          </p>
+          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+            {WORKFLOW_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => onSelectWorkflow(tpl.id)}
+                className={cn(
+                  'w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-colors',
+                  selectedWorkflow === tpl.id
+                    ? 'border-blue-500/60 bg-blue-500/10'
+                    : 'border-white/10 hover:border-white/20 bg-white/5'
+                )}
+              >
+                <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center shrink-0', tpl.iconColor)}>
+                  <tpl.icon className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-white">{tpl.title}</h3>
+                  <p className="text-xs text-white/60 mt-1 line-clamp-2">{tpl.desc}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[11px] text-white/50">{tpl.roles} Agent Roles</span>
+                    <span className={cn('text-[10px] px-2 py-0.5 rounded-full', tpl.tagColor)}>
+                      {tpl.tag}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Deployment Mode + Team */}
+        <div className="space-y-6">
+          <div>
+            <p className="text-xs font-medium text-white/60 uppercase tracking-wider mb-3">
+              Choose Deployment Mode
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => onDeploymentModeChange('enhance')}
+                className={cn(
+                  'w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-colors',
+                  deploymentMode === 'enhance'
+                    ? 'border-blue-500/60 bg-blue-500/10'
+                    : 'border-white/10 hover:border-white/20 bg-white/5'
+                )}
+              >
+                <Sparkles className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">Enhance Existing Agent</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                      Recommended for beginners
+                    </span>
+                  </div>
+                  <p className="text-xs text-white/60 mt-1">
+                    Add workflow capabilities to the current agent, enabling it to call subagents.
+                    Best for quick start and single-agent scenarios.
+                  </p>
+                </div>
+              </button>
+              <button
+                onClick={() => onDeploymentModeChange('independent')}
+                className={cn(
+                  'w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-colors',
+                  deploymentMode === 'independent'
+                    ? 'border-blue-500/60 bg-blue-500/10'
+                    : 'border-white/10 hover:border-white/20 bg-white/5'
+                )}
+              >
+                <Rocket className="h-5 w-5 text-white/60 shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">Deploy Independent Subagents</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                      Advanced usage
+                    </span>
+                  </div>
+                  <p className="text-xs text-white/60 mt-1">
+                    Create multiple independent subagents that can be called by the main agent.
+                    Best for complex tasks requiring specialized roles.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl">
+            <Play className="h-5 w-5 mr-2" />
+            Run
+          </Button>
+
+          <div>
+            <p className="text-xs font-medium text-white/60 uppercase tracking-wider mb-3">
+              Team Members
+            </p>
+            <div className="flex flex-wrap gap-4">
+              {TEAM_ROLES.map((role) => (
+                <div key={role.id} className="flex flex-col items-center gap-2">
+                  <div className={cn('h-10 w-10 rounded-full bg-white/10 flex items-center justify-center', role.color)}>
+                    <role.icon className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs text-white/70">{role.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Inline Add Agent Dialog */
+function AgentsAddDialogInline({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const { t } = useTranslation('agents');
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onCreate(name.trim());
+      onClose();
+    } catch (e) {
+      toast.error(t('toast.agentCreateFailed', { error: String(e) }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-[#1e1e1e] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-white mb-2">{t('createDialog.title')}</h3>
+        <p className="text-sm text-white/60 mb-4">{t('createDialog.description')}</p>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('createDialog.namePlaceholder')}
+          className="w-full h-11 px-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 outline-none focus:border-blue-500"
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" onClick={onClose} className="border-white/20 text-white/80">
+            {t('common:actions.cancel')}
+          </Button>
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={saving || !name.trim()}
+            className="bg-blue-500 hover:bg-blue-600 text-white"
+          >
+            {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default AgentsView;

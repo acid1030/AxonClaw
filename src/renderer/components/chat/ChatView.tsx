@@ -1,39 +1,45 @@
 /**
  * ChatView - 对话界面
- * 参考 axonclaw-prototype.html 样式
+ * 按 design_v2.html 布局与样式实现
+ * 支持图片/文件展示、上传、粘贴
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { motion } from 'framer-motion';
-import { ChevronDown, ChevronRight, Send, Paperclip, Bot, Wrench, Lightbulb } from 'lucide-react';
+import { ChevronDown, ChevronsDown, Bot, Wrench, Lightbulb, RefreshCw, File, LightbulbOff, Pencil, History } from 'lucide-react';
+import { MarkdownContent } from './MarkdownContent';
+import { TypewriterMarkdown } from './TypewriterMarkdown';
+import { ChatInput, AttachmentPreview } from '@/pages/Chat/ChatInput';
+import type { FileAttachment } from '@/pages/Chat/ChatInput';
+import { extractImages, extractText, extractThinking } from '@/pages/Chat/message-utils';
+import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 
 // 可折叠组件
-const CollapsibleBlock: React.FC<{ 
-  icon: React.ReactNode; 
-  label: string; 
+const CollapsibleBlock: React.FC<{
+  icon: React.ReactNode;
+  label: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
 }> = ({ icon, label, children, defaultOpen = false }) => {
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
-  
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden">
+    <div className="border border-[#4b5563]/50 rounded-lg overflow-hidden my-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-[#0a0a0a] hover:bg-[#111] transition-colors text-xs"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-[#1f2937] hover:bg-[#374151] transition-colors text-xs"
       >
         {isOpen ? (
-          <ChevronDown className="w-3 h-3 text-white/60" />
+          <ChevronDown className="w-3 h-3 text-[#94a3b8]" />
         ) : (
-          <ChevronRight className="w-3 h-3 text-white/60" />
+          <span className="w-3 h-3 text-[#94a3b8]">▶</span>
         )}
         {icon}
-        <span className="text-white/60">{label}</span>
+        <span className="text-[#94a3b8]">{label}</span>
       </button>
       {isOpen && (
-        <div className="px-3 py-2 bg-[#0f0f0f] text-xs text-white/80 whitespace-pre-wrap">
+        <div className="px-3 py-2 bg-[#111827] text-xs text-[#e2e8f0] whitespace-pre-wrap">
           {children}
         </div>
       )}
@@ -41,7 +47,6 @@ const CollapsibleBlock: React.FC<{
   );
 };
 
-// 当前会话显示名：优先 sessionLabels，其次 session.displayName，最后 session.key
 function getSessionDisplayName(
   sessionKey: string,
   sessions: { key: string; displayName?: string }[],
@@ -52,338 +57,796 @@ function getSessionDisplayName(
     || sessionKey;
 }
 
+function imageSrc(img: { url?: string; data?: string; mimeType: string }): string | null {
+  if (img.url) return img.url;
+  if (img.data) return `data:${img.mimeType};base64,${img.data}`;
+  return null;
+}
+
 export const ChatView: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [input, setInput] = useState('');
-  
-  // 使用 ClawX stores
-  const { status: gatewayStatus } = useGatewayStore();
-  const { 
-    messages, 
-    sending, 
-    sendMessage, 
+  const [loadHistoryOpen, setLoadHistoryOpen] = useState(false);
+  const [loadHistoryDate, setLoadHistoryDate] = useState('');
+  const [aliasEditOpen, setAliasEditOpen] = useState(false);
+  const [aliasEditSessionKey, setAliasEditSessionKey] = useState<string | null>(null);
+  const [aliasEditValue, setAliasEditValue] = useState('');
+
+  // 附件状态镜像，由 ChatInput 通过 onAttachmentsChange 同步
+  const [viewAttachments, setViewAttachments] = useState<FileAttachment[]>([]);
+  const removeAttachmentRef = useRef<(id: string) => void>(() => {});
+  const handleAttachmentsChange = useCallback((atts: FileAttachment[], removeFn: (id: string) => void) => {
+    setViewAttachments(atts);
+    removeAttachmentRef.current = removeFn;
+  }, []);
+
+  const { status: gatewayStatus, health, checkHealth } = useGatewayStore();
+  const {
+    messages,
+    sending,
+    sendMessage,
+    abortRun,
     sessions,
     currentSessionKey,
     sessionLabels,
+    streamingText,
+    streamingMessage,
+    error,
+    clearError,
     switchSession,
     newSession,
-    loadSessions,
-    loadHistory
+    refresh,
+    loadHistory,
+    loadHistoryWithOptions,
+    loading,
+    showThinking,
+    toggleThinking,
+    setSessionLabel,
   } = useChatStore();
-  
+
+  const handleRefresh = async () => {
+    try {
+      await refresh();
+      await checkHealth();
+    } catch (err) {
+      console.error('刷新失败:', err);
+    }
+  };
+
+  const openAliasEdit = (sessionKey: string) => {
+    const current = sessionLabels[sessionKey] || sessions.find((s) => s.key === sessionKey)?.displayName || sessionKey;
+    setAliasEditSessionKey(sessionKey);
+    setAliasEditValue(typeof current === 'string' ? current : sessionKey);
+    setAliasEditOpen(true);
+  };
+
+  const confirmAliasEdit = () => {
+    if (aliasEditSessionKey) {
+      setSessionLabel(aliasEditSessionKey, aliasEditValue.trim());
+      setAliasEditOpen(false);
+      setAliasEditSessionKey(null);
+    }
+  };
+
+  const handleEditSessionLabel = (e: React.MouseEvent, sessionKey: string) => {
+    e.stopPropagation();
+    openAliasEdit(sessionKey);
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // 判断连接状态
+  const chatAreaRef = useRef<HTMLDivElement>(null);
+  const loadHistoryRef = useRef<HTMLDivElement>(null);
+  const aliasInputRef = useRef<HTMLInputElement>(null);
+  const [showBackToBottom, setShowBackToBottom] = useState(false);
   const isConnected = gatewayStatus.state === 'running';
 
-  // 初始化加载会话和历史
+  // thinking 动画完成标记：thinking 打字机追赶到末尾后才显示正文
+  const [thinkingAnimDone, setThinkingAnimDone] = useState(false);
+  const prevThinkingLenRef = useRef(0);
+  // 打字机仅用于「模型实时流式返回」；messages 来自本地会话，一律用 MarkdownContent 直接显示
+  const prevStreamingLenRef = useRef({ thinking: 0, text: 0 });
+  const [useTypewriterForThinking, setUseTypewriterForThinking] = useState(false);
+  const [useTypewriterForText, setUseTypewriterForText] = useState(false);
+
+  // 安全防护：阻止粘贴剪贴板图片/文件时导致 Electron 页面跳转空白
+  // ChatInput 的 document capture handler 在 clipboardData 为 null 时会 early return，
+  // 导致 e.preventDefault() 未被调用，Electron/Chromium 触发默认导航行为。
+  // 此处作为兜底，在 capture 阶段拦截所有可能导致页面跳转的粘贴事件。
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const dt = e.clipboardData;
+      // clipboardData 为 null 或 types 为空 → Electron 中常见的图片粘贴场景，必须阻止默认导航
+      if (!dt || dt.types.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      // 检测文件/图片类型
+      const hasNonText =
+        (dt.files?.length ?? 0) > 0 ||
+        Array.from(dt.items || []).some((it) => it.kind === 'file') ||
+        dt.types.some(
+          (t) => t === 'Files' || t.startsWith('image/') || t === 'public.png' || t === 'public.jpeg',
+        );
+      if (hasNonText) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('paste', onPaste, true);
+    return () => document.removeEventListener('paste', onPaste, true);
+  }, []);
+
   useEffect(() => {
     if (isConnected) {
-      loadSessions();
-      loadHistory();
+      refresh();
     }
-  }, [isConnected, loadSessions, loadHistory]);
+  }, [isConnected, refresh]);
 
-  // 自动滚动
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // 发送消息
-  const handleSend = async () => {
-    if (!input.trim() || sending) return;
-    
-    try {
-      await sendMessage(input);
-      setInput('');
-    } catch (error) {
-      console.error('发送消息失败:', error);
+    if (dropdownOpen && isConnected) {
+      checkHealth();
     }
-  };
+  }, [dropdownOpen, isConnected, checkHealth]);
 
-  // 处理键盘事件
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.altKey) {
-      // Alt+Enter 换行
-      const textarea = e.target as HTMLTextAreaElement;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const value = textarea.value;
-      setInput(value.substring(0, start) + '\n' + value.substring(end));
-      e.preventDefault();
-    } else if (e.key === 'Enter' && !e.altKey && !e.shiftKey) {
-      // Enter 发送
-      e.preventDefault();
-      handleSend();
+  const scrollToBottom = useCallback(() => {
+    const el = chatAreaRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
     }
-  };
+  }, []);
 
-  // 渲染消息内容
-  const renderMessageContent = (content: unknown): string => {
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter((b: { type?: string; text?: string }) => b.type === 'text' && b.text)
-        .map((b: { type?: string; text?: string }) => b.text)
-        .join('\n');
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, streamingText, streamingMessage, scrollToBottom]);
+
+  const handleChatAreaScroll = useCallback(() => {
+    const el = chatAreaRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const threshold = 10;
+    const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
+    setShowBackToBottom(!nearBottom);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(handleChatAreaScroll, 100);
+    return () => clearTimeout(t);
+  }, [messages, streamingText, streamingMessage, handleChatAreaScroll]);
+
+  useEffect(() => {
+    if (!loadHistoryOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (loadHistoryRef.current && !loadHistoryRef.current.contains(e.target as Node)) {
+        setLoadHistoryOpen(false);
+      }
+    };
+    document.addEventListener('click', onDocClick, { capture: true });
+    return () => document.removeEventListener('click', onDocClick, { capture: true });
+  }, [loadHistoryOpen]);
+
+  useEffect(() => {
+    if (aliasEditOpen) {
+      aliasInputRef.current?.focus();
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setAliasEditOpen(false);
+          setAliasEditSessionKey(null);
+        }
+      };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
     }
-    return '';
-  };
+  }, [aliasEditOpen]);
 
-  // 提取 thinking 内容
-  const extractThinking = (content: unknown): string | null => {
-    if (!Array.isArray(content)) return null;
-    const thinkingBlock = content.find((b: { type?: string }) => b.type === 'thinking');
-    return thinkingBlock?.thinking || null;
-  };
 
-  // 提取 tool use 内容
+  // 检查流式内容是否已在 messages 中（避免重复 + 会话消息一律直接显示）
+  const lastAssistantMsg = messages.length > 0
+    ? [...messages].reverse().find(m => m.role === 'assistant')
+    : null;
+  const lastMsgText = lastAssistantMsg ? extractText(lastAssistantMsg) : '';
+  const rawStreamingText = streamingText || (streamingMessage && typeof streamingMessage === 'object'
+    ? extractText(streamingMessage as RawMessage)
+    : '');
+  const rawStreamingTrim = rawStreamingText.trim();
+  const lastMsgTrim = lastMsgText.trim();
+  // 流式内容已在会话中：完全一致，或最后一条已包含流式内容（已写入）；避免短前缀误判
+  const isStreamingMsgAlreadyInHistory = !!(
+    rawStreamingTrim &&
+    lastMsgTrim &&
+    (rawStreamingTrim === lastMsgTrim || (rawStreamingTrim.length >= 20 && lastMsgTrim.includes(rawStreamingTrim)))
+  );
+
+  const streamingDisplayText = isStreamingMsgAlreadyInHistory ? '' : rawStreamingText;
+
+  const streamingThinking = isStreamingMsgAlreadyInHistory
+    ? null
+    : streamingMessage && typeof streamingMessage === 'object'
+      ? extractThinking(streamingMessage as RawMessage)
+      : null;
+
+  // 仅当 sending 且流式内容尚未写入 messages 时显示流式块；会话消息一律从 messages 渲染，用 MarkdownContent
+  const isFromModelStream = sending && !isStreamingMsgAlreadyInHistory && (!!streamingDisplayText || !!streamingThinking);
+
+  // 流式输出期间持续滚动到底部
+  useEffect(() => {
+    if (!sending && !streamingDisplayText && !streamingThinking) return;
+    scrollToBottom();
+    const timer = setInterval(scrollToBottom, 150);
+    return () => clearInterval(timer);
+  }, [sending, streamingDisplayText, streamingThinking, scrollToBottom]);
+
+  // 当 thinking 文本增长（新 token 到达），重置完成标记
+  useEffect(() => {
+    const len = streamingThinking?.length ?? 0;
+    if (len > prevThinkingLenRef.current) {
+      setThinkingAnimDone(false);
+    }
+    if (len === 0) {
+      // 无 thinking 时直接标记完成，不阻塞正文
+      setThinkingAnimDone(true);
+    }
+    prevThinkingLenRef.current = len;
+  }, [streamingThinking]);
+
+  // 发送结束时立即关闭打字机（流式块会消失，历史消息用 MarkdownContent）
+  useEffect(() => {
+    if (!sending) {
+      setUseTypewriterForThinking(false);
+      setUseTypewriterForText(false);
+    }
+  }, [sending]);
+
+  // 仅当来源为模型实时流且内容增量到达时使用打字机；本地会话消息一律不用
+  const STREAMING_DELTA_THRESHOLD = 80; // 单次增长超过此值视为非流式
+  const STABLE_MS = 180; // 内容无增长超过此时间视为完成，不再打字机
+  useEffect(() => {
+    if (!isFromModelStream) {
+      setUseTypewriterForThinking(false);
+      setUseTypewriterForText(false);
+      return;
+    }
+    const thinkingLen = streamingThinking?.length ?? 0;
+    const textLen = streamingDisplayText?.length ?? 0;
+    const prev = prevStreamingLenRef.current;
+    const thinkingDelta = thinkingLen - prev.thinking;
+    const textDelta = textLen - prev.text;
+    prevStreamingLenRef.current = { thinking: thinkingLen, text: textLen };
+
+    const thinkingStreaming = thinkingLen > 0 && thinkingDelta > 0 && thinkingDelta < STREAMING_DELTA_THRESHOLD;
+    const textStreaming = textLen > 0 && textDelta > 0 && textDelta < STREAMING_DELTA_THRESHOLD;
+
+    if (thinkingStreaming || textStreaming) {
+      setUseTypewriterForThinking(thinkingStreaming);
+      setUseTypewriterForText(textStreaming);
+      return;
+    }
+    const bigChunk = (thinkingDelta > 0 && thinkingDelta >= STREAMING_DELTA_THRESHOLD) ||
+      (textDelta > 0 && textDelta >= STREAMING_DELTA_THRESHOLD);
+    if (bigChunk) {
+      setUseTypewriterForThinking(false);
+      setUseTypewriterForText(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setUseTypewriterForThinking(false);
+      setUseTypewriterForText(false);
+    }, STABLE_MS);
+    return () => clearTimeout(timer);
+  }, [isFromModelStream, streamingThinking, streamingDisplayText]);
+
   const extractToolUse = (content: unknown): string | null => {
     if (!Array.isArray(content)) return null;
-    const toolBlock = content.find((b: { type?: string }) => b.type === 'tool_use' || b.type === 'toolCall');
-    if (toolBlock) {
-      return `${toolBlock.name || 'tool'}(${JSON.stringify(toolBlock.input || toolBlock.arguments || {})})`;
-    }
+    const b = content.find((x: { type?: string }) => x.type === 'tool_use' || x.type === 'toolCall');
+    if (b) return `${(b as { name?: string }).name || 'tool'}(${JSON.stringify((b as { input?: unknown }).input || (b as { arguments?: unknown }).arguments || {})})`;
     return null;
   };
 
-  return (
-    <div className="h-full flex flex-col bg-[#0f172a]">
-      {/* 顶部栏 */}
-      <div className="h-14 border-b border-white/10 flex items-center px-4 gap-3 flex-shrink-0">
-        {/* 连接状态指示器 */}
-        <div className={`w-1.5 h-1.5 rounded-full ${
-          isConnected ? 'bg-green-400' : 
-          gatewayStatus.state === 'starting' ? 'bg-yellow-400' :
-          gatewayStatus.state === 'reconnecting' ? 'bg-orange-400' :
-          'bg-red-400'
-        }`} />
-        
-        {/* 对话下拉菜单 */}
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm hover:bg-white/10 transition-colors min-w-[200px]"
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-            <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || '选择对话'}</span>
-            <ChevronDown className="w-3 h-3 text-white/40 ml-auto" />
-          </button>
+  const fmtTime = (ts?: number) =>
+    ts ? new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
 
-          {/* 下拉菜单 */}
-          {dropdownOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="absolute top-full left-0 mt-1 w-80 max-h-96 overflow-y-auto bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50"
+  return (
+    <div className="chat-page h-full flex flex-col bg-[#0f172a]">
+      {/* page-header - design_v2 */}
+      <div className="page-header">
+        <div className="header-actions flex-1">
+          {/* 网关状态 + 心跳健康，下拉框左侧 */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1e293b] border border-[#334155] text-xs">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-green-500' : 'bg-red-500'
+              }`}
+              title={gatewayStatus.state}
+            />
+            <span className="text-[#94a3b8]">
+              {isConnected ? '已连接' : gatewayStatus.state}
+            </span>
+            {health && (
+              <span className="text-[#64748b]">
+                | {health.ok ? '✓ 健康' : `✗ ${health.error || '异常'}`}
+                {health.uptime != null ? ` (${Math.round(health.uptime)}s)` : ''}
+              </span>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="btn-outline flex items-center gap-2 min-w-[200px] justify-between"
             >
-              <div className="px-3 py-2 text-xs text-white/40 uppercase">
-                {sessions.length > 0 ? '对话列表' : '暂无对话'}
-              </div>
-              {sessions.length > 0 ? (
-                sessions.map((session) => (
+              <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || '选择对话'}</span>
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {dropdownOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50"
+              >
+                {sessions.map((s) => (
                   <div
-                    key={session.key}
+                    key={s.key}
                     onClick={() => {
-                      switchSession(session.key);
+                      switchSession(s.key);
                       setDropdownOpen(false);
                       loadHistory();
                     }}
-                    className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer text-sm border-b border-white/5 ${
-                      session.key === currentSessionKey
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'text-white/70 hover:bg-white/5'
+                    className={`px-4 py-3 cursor-pointer text-sm border-b border-[#334155] last:border-0 flex items-center justify-between group ${
+                      s.key === currentSessionKey ? 'bg-[#6366f1]/10 text-[#6366f1]' : 'text-[#e2e8f0] hover:bg-[#334155]'
                     }`}
                   >
-                    💬 {getSessionDisplayName(session.key, sessions, sessionLabels)}
+                    <span>💬 {getSessionDisplayName(s.key, sessions, sessionLabels)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleEditSessionLabel(e, s.key)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#334155] transition-opacity"
+                      title="设置别名"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" />
+                    </button>
                   </div>
-                ))
-              ) : (
-                <div className="px-3 py-4 text-sm text-white/50 text-center">
-                  连接 OpenClaw Gateway 后将显示对话列表
+                ))}
+                <div
+                  onClick={() => {
+                    newSession();
+                    setDropdownOpen(false);
+                    loadHistory();
+                  }}
+                  className="px-4 py-3 cursor-pointer text-sm text-[#6366f1] hover:bg-[#334155]"
+                >
+                  ＋ 新建对话
                 </div>
-              )}
-            </motion.div>
-          )}
+              </motion.div>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              setDropdownOpen(false);
+              handleRefresh();
+            }}
+            className="btn-outline flex items-center justify-center p-2"
+            title="刷新会话列表"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={toggleThinking}
+            className={`btn-outline flex items-center justify-center p-2 ${showThinking ? 'border-[#6366f1] text-[#6366f1]' : ''}`}
+            title={showThinking ? '隐藏思考过程' : '显示思考过程'}
+          >
+            {showThinking ? <Lightbulb className="w-4 h-4" /> : <LightbulbOff className="w-4 h-4" />}
+          </button>
+          <div className="relative" ref={loadHistoryRef}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLoadHistoryOpen(!loadHistoryOpen);
+              }}
+              className="btn-outline flex items-center justify-center p-2"
+              title="加载历史会话数据"
+              disabled={loading}
+            >
+              <History className="w-4 h-4" />
+            </button>
+            {loadHistoryOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-full right-0 mt-1 w-64 max-h-80 overflow-y-auto bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50 p-3"
+              >
+                <div className="text-xs text-[#94a3b8] mb-2">加载历史会话</div>
+                <button
+                  onClick={() => {
+                    void loadHistoryWithOptions({ limit: 500 });
+                    setLoadHistoryOpen(false);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-[#e2e8f0] hover:bg-[#334155] rounded-lg transition-colors"
+                >
+                  加载更多（最近 500 条）
+                </button>
+                <div className="border-t border-[#334155] my-2" />
+                <div className="text-xs text-[#94a3b8] mb-2">加载到指定日期</div>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={loadHistoryDate}
+                    onChange={(e) => setLoadHistoryDate(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-[#0f172a] border border-[#334155] rounded-lg text-sm text-[#e2e8f0]"
+                  />
+                  <button
+                    onClick={() => {
+                      if (loadHistoryDate) {
+                        const [y, m, d] = loadHistoryDate.split('-').map(Number);
+                        const endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+                        void loadHistoryWithOptions({ beforeTs: endOfDay, limit: 500 });
+                        setLoadHistoryOpen(false);
+                        setLoadHistoryDate('');
+                      }
+                    }}
+                    disabled={!loadHistoryDate}
+                    className="px-3 py-2 bg-[#6366f1] text-white text-sm rounded-lg hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    加载
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
         </div>
-
-        {/* 搜索框 */}
-        <input
-          type="text"
-          placeholder="搜索对话…"
-          className="w-44 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500/50"
-        />
-
-        {/* 新建按钮 */}
-        <button
-          onClick={() => {
-            newSession();
-            setDropdownOpen(false);
-            loadHistory();
-          }}
-          className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm hover:bg-white/10 transition-colors"
-        >
-          ＋ 新建
-        </button>
-
-        <div className="flex-1" />
-
-        {/* 操作按钮 */}
-        <button className="w-8 h-8 rounded-lg hover:bg-white/10 text-white/40 transition-colors">🔍</button>
-        <button className="w-8 h-8 rounded-lg hover:bg-white/10 text-white/40 transition-colors">⬇</button>
-        <button className="w-8 h-8 rounded-lg hover:bg-white/10 text-white/40 transition-colors">⚙</button>
+        {currentSessionKey && (
+          <button
+            onClick={() => openAliasEdit(currentSessionKey)}
+            className="btn-outline flex items-center justify-center p-2"
+            title="给当前会话设置别名"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      {/* 消息区域 - 可滚动 */}
-      <div className="flex-1 overflow-y-auto py-5">
-        <div className="max-w-5xl mx-auto px-6 space-y-4">
+      {/* 错误提示 */}
+      {error && (
+        <div className="flex-shrink-0 px-6 py-2 bg-red-500/20 border-b border-red-500/30 flex items-center justify-between">
+          <span className="text-red-300 text-sm">{error}</span>
+          <button onClick={clearError} className="text-red-300 hover:text-white text-xs px-2 py-1 rounded hover:bg-red-500/20">
+            关闭
+          </button>
+        </div>
+      )}
+
+      {/* 设置别名弹层 */}
+      {aliasEditOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+          onClick={() => {
+            setAliasEditOpen(false);
+            setAliasEditSessionKey(null);
+          }}
+        >
+          <div
+            className="w-[360px] rounded-xl bg-[#1e293b] border border-[#334155] shadow-xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-medium text-[#e2e8f0] mb-3">设置会话别名</div>
+            <input
+              ref={aliasInputRef}
+              type="text"
+              value={aliasEditValue}
+              onChange={(e) => setAliasEditValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmAliasEdit()}
+              placeholder="输入别名"
+              className="w-full px-3 py-2.5 bg-[#0f172a] border border-[#334155] rounded-lg text-[#e2e8f0] placeholder-[#64748b] focus:border-[#6366f1] focus:outline-none mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setAliasEditOpen(false);
+                  setAliasEditSessionKey(null);
+                }}
+                className="px-4 py-2 text-sm text-[#94a3b8] hover:text-[#e2e8f0]"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmAliasEdit}
+                className="px-4 py-2 text-sm bg-[#6366f1] text-white rounded-lg hover:bg-[#4f46e5]"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* chat-area - 与输入框同宽 */}
+      <div
+        ref={chatAreaRef}
+        className="chat-area"
+        onScroll={handleChatAreaScroll}
+      >
+        <div className="chat-area-inner">
+          {/* 本地会话消息（loadHistory 等）：一律用 MarkdownContent 直接显示，无打字机 */}
           {messages.length > 0 ? (
-            messages.map((message, index) => {
-              const content = renderMessageContent(message.content);
-              const thinking = extractThinking(message.content);
-              const toolUse = extractToolUse(message.content);
-              const timestamp = message.timestamp 
-                ? new Date(message.timestamp < 1e12 ? message.timestamp * 1000 : message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-                : '';
-              
-              // 系统消息
-              if (message.role === 'system') {
+            messages.map((msg, i) => {
+              const content = extractText(msg);
+              const images = extractImages(msg);
+              const attachedFiles = (msg as RawMessage)._attachedFiles || [];
+              const thinking = extractThinking(msg);
+              const toolUse = extractToolUse(msg.content);
+              const ts = fmtTime(msg.timestamp);
+
+              if (msg.role === 'system') {
                 return (
-                  <div key={message.id || index} className="text-center text-white/40 text-xs py-1">
+                  <div key={msg.id || i} className="text-center text-[#64748b] text-xs py-2">
                     {content}
                   </div>
                 );
               }
 
-              // 用户消息
-              if (message.role === 'user') {
-                return (
-                  <motion.div
-                    key={message.id || index}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-end gap-2 flex-row-reverse"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      T
-                    </div>
-                    <div className="max-w-[70%]">
-                      <div className="bg-blue-500 text-white px-4 py-2.5 rounded-2xl rounded-br-sm text-sm leading-relaxed">
-                        {content}
+              const renderAttachments = (files: AttachedFileMeta[]) => (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {files.map((file, fi) => {
+                    const isImage = file.mimeType.startsWith('image/');
+                    if (isImage && images.length > 0) return null;
+                    if (isImage) {
+                      return file.preview ? (
+                        <img
+                          key={fi}
+                          src={file.preview}
+                          alt={file.fileName}
+                          className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-[#334155]"
+                        />
+                      ) : (
+                        <div
+                          key={fi}
+                          className="w-24 h-24 rounded-lg border border-[#334155] bg-[#1e293b] flex items-center justify-center"
+                        >
+                          <File className="w-8 h-8 text-[#64748b]" />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={fi}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#334155] bg-[#1e293b] text-sm text-[#e2e8f0]"
+                      >
+                        <File className="w-4 h-4 text-[#64748b]" />
+                        <span className="truncate max-w-[120px]">{file.fileName}</span>
                       </div>
-                      {timestamp && <div className="text-white/30 text-xs mt-1 text-right">{timestamp}</div>}
+                    );
+                  })}
+                </div>
+              );
+
+              const renderImages = () =>
+                images.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {images.map((img, ii) => {
+                      const src = imageSrc(img);
+                      if (!src) return null;
+                      return (
+                        <img
+                          key={ii}
+                          src={src}
+                          alt=""
+                          className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-[#334155]"
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null;
+
+              if (msg.role === 'user') {
+                return (
+                  <div
+                    key={msg.id || i}
+                    className="msg user"
+                  >
+                    <div className="msg-avatar user">T</div>
+                    <div className="msg-body">
+                      <div className="msg-meta">
+                        <span className="msg-time">{ts}</span>
+                        <span className="msg-name">我</span>
+                      </div>
+                      {renderImages()}
+                      {attachedFiles.length > 0 && renderAttachments(attachedFiles)}
+                      <div className="msg-bubble">{content || (attachedFiles.length > 0 ? '(附件)' : '')}</div>
                     </div>
-                  </motion.div>
+                  </div>
                 );
               }
 
-              // AI 消息
-              if (message.role === 'assistant') {
+              if (msg.role === 'assistant') {
+                const hasVisibleContent = !!((typeof content === 'string' ? content.trim() : content) || images.length > 0 || attachedFiles.length > 0);
+                const hasThinkingOrTool = !!(thinking || toolUse);
+                const wouldShowSomething = hasVisibleContent || (showThinking && hasThinkingOrTool);
+                if (!wouldShowSomething) return null;
+
                 return (
-                  <motion.div
-                    key={message.id || index}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-end gap-2"
+                  <div
+                    key={msg.id || i}
+                    className="msg ai"
                   >
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center flex-shrink-0">
+                    <div className="msg-avatar ai">
                       <Bot className="w-4 h-4 text-white" />
                     </div>
-                    <div className="max-w-[70%]">
-                      <div className="bg-[#1e293b] border border-white/10 text-white px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm leading-relaxed space-y-2">
-                        {/* Thinking 折叠 */}
-                        {thinking && (
-                          <CollapsibleBlock 
+                    <div className="msg-body">
+                      <div className="msg-meta">
+                        <span className="msg-name">Claw</span>
+                        <span className="msg-time">{ts}</span>
+                      </div>
+                      {/* Thinking 无气泡包裹，可开关，默认展开 */}
+                      {showThinking && thinking && (
+                        <div className="msg-block-thinking">
+                          <CollapsibleBlock
                             icon={<Lightbulb className="w-3 h-3" />}
                             label="Thinking"
+                            defaultOpen
                           >
-                            {thinking}
+                            <span className="whitespace-pre-wrap">{thinking}</span>
                           </CollapsibleBlock>
-                        )}
-                        
-                        {/* Tool Use 折叠 */}
-                        {toolUse && (
-                          <CollapsibleBlock 
-                            icon={<Wrench className="w-3 h-3" />}
-                            label="Tool Use"
-                          >
+                        </div>
+                      )}
+                      {/* 执行命令无气泡包裹，隐藏思考时一并隐藏 */}
+                      {showThinking && toolUse && (
+                        <div className="msg-block-tool">
+                          <CollapsibleBlock icon={<Wrench className="w-3 h-3" />} label="Tool Use">
                             {toolUse}
                           </CollapsibleBlock>
-                        )}
-                        
-                        {/* 主要内容 */}
-                        {content && (
-                          <div className="whitespace-pre-wrap">
-                            {content}
-                          </div>
-                        )}
-                      </div>
-                      {timestamp && <div className="text-white/30 text-xs mt-1">{timestamp}</div>}
+                        </div>
+                      )}
+                      {(content || images.length > 0 || attachedFiles.length > 0) && (
+                        <div className="msg-bubble">
+                          {content && <MarkdownContent content={content} />}
+                          {renderImages()}
+                          {attachedFiles.length > 0 && renderAttachments(attachedFiles)}
+                        </div>
+                      )}
                     </div>
-                  </motion.div>
+                  </div>
                 );
               }
-
               return null;
             })
           ) : (
-            // 空状态提示
-            <div className="text-center text-white/40 py-20">
+            <div className="text-center text-[#64748b] py-20">
               <div className="text-4xl mb-4">💬</div>
               <div>开始新对话</div>
             </div>
           )}
+
+          {/* 正在加载 - 三圆点 */}
+          {sending && !streamingDisplayText && !streamingThinking && (
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="msg ai">
+              <div className="msg-avatar ai">
+                <Bot className="w-4 h-4 text-white" />
+              </div>
+              <div className="msg-body">
+                <div className="msg-meta">
+                  <span className="msg-name">Claw</span>
+                  <span className="msg-time">{fmtTime(Date.now() / 1000)}</span>
+                </div>
+                <div className="msg-bubble">
+                  <div className="typing-indicator">
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* 模型实时流式返回：仅此处用 TypewriterMarkdown，来源 = 模型对话 */}
+          {isFromModelStream && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="msg ai"
+            >
+              <div className="msg-avatar ai">
+                <Bot className="w-4 h-4 text-white" />
+              </div>
+              <div className="msg-body">
+                <div className="msg-meta">
+                  <span className="msg-name">Claw</span>
+                  <span className="msg-time">{fmtTime(Date.now() / 1000)}</span>
+                </div>
+                {showThinking && streamingThinking && (
+                  <div className="msg-block-thinking">
+                    <CollapsibleBlock icon={<Lightbulb className="w-3 h-3" />} label="Thinking" defaultOpen>
+                      {useTypewriterForThinking ? (
+                        <TypewriterMarkdown
+                          content={streamingThinking}
+                          plainText
+                          animate
+                          isStreaming={sending}
+                          onComplete={() => setThinkingAnimDone(true)}
+                        />
+                      ) : (
+                        <span className="whitespace-pre-wrap">{streamingThinking}</span>
+                      )}
+                    </CollapsibleBlock>
+                  </div>
+                )}
+                {streamingDisplayText && thinkingAnimDone && (
+                  <div className="msg-bubble">
+                    {useTypewriterForText ? (
+                      <TypewriterMarkdown content={streamingDisplayText} isStreaming={sending} animate />
+                    ) : (
+                      <MarkdownContent content={streamingDisplayText} />
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* 输入区域 - 固定底部 */}
-      <div className="p-3 border-t border-white/10 flex-shrink-0">
-        <div className="max-w-5xl mx-auto bg-white/5 border border-white/10 rounded-xl">
-          {/* 输入框 + 附件按钮 + 发送按钮 */}
-          <div className="flex items-end">
-            <button className="p-3 text-white/50 hover:text-white/70 transition-colors flex-shrink-0">
-              <Paperclip className="w-4 h-4" />
-            </button>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={sending ? "发送中..." : "发消息…"}
-              disabled={sending}
-              className="flex-1 bg-transparent border-none outline-none resize-none px-2 py-3 text-white text-sm leading-6 placeholder-white/40 disabled:opacity-50"
-              style={{ 
-                minHeight: '48px',
-                height: 'auto',
-                overflow: 'hidden'
-              }}
-              rows={1}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = 'auto';
-                target.style.height = Math.min(target.scrollHeight, 192) + 'px';
-              }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || sending}
-              className={`w-9 h-9 rounded-lg m-1.5 flex items-center justify-center transition-colors flex-shrink-0 ${
-                input.trim() && !sending
-                  ? 'bg-blue-500 hover:bg-blue-600 cursor-pointer'
-                  : 'bg-white/10 cursor-not-allowed'
-              }`}
-            >
-              <Send className={`w-4 h-4 text-white ${sending ? 'animate-pulse' : ''}`} />
-            </button>
-          </div>
+      {/* 回到底部 - 浮动在输入框上方，输入框横向正中 */}
+      {showBackToBottom && (
+        <div className="chat-back-to-bottom-wrap">
+          <button
+            onClick={scrollToBottom}
+            className="chat-back-to-bottom"
+            title="回到底部"
+          >
+            <ChevronsDown className="w-5 h-5" />
+            回到底部
+          </button>
+        </div>
+      )}
 
-          {/* 快捷键提示 */}
-          <div className="px-3 pb-2 text-center">
-            <span className="text-white/30 text-xs">
-              ↩ 发送 · Alt+↩ 换行
-            </span>
+      {/* 附件预览 - 显示在输入框面板上方 */}
+      {viewAttachments.length > 0 && (
+        <div className="flex-shrink-0 px-[28px]">
+          <div className="chat-input-bar-inner">
+            <div className="flex gap-2 flex-wrap items-start py-2">
+              {viewAttachments.map((att) => (
+                <AttachmentPreview
+                  key={att.id}
+                  attachment={att}
+                  onRemove={() => removeAttachmentRef.current(att.id)}
+                  variant="chat-page"
+                />
+              ))}
+            </div>
           </div>
         </div>
+      )}
+
+      {/* chat-input-bar - 支持上传、粘贴图片和文件，缓存到临时目录后传路径给 OpenClaw */}
+      <div className="chat-input-bar">
+        <div className="chat-input-bar-inner">
+          <ChatInput
+            variant="chat-page"
+            onAttachmentsChange={handleAttachmentsChange}
+            onSend={(text, attachments, _targetAgentId) => {
+              clearError();
+              const att = attachments?.map((a) => ({
+                fileName: a.fileName,
+                mimeType: a.mimeType,
+                fileSize: a.fileSize,
+                stagedPath: a.stagedPath,
+                preview: a.preview,
+              }));
+              void sendMessage(text, att);
+            }}
+            onStop={abortRun}
+            disabled={!isConnected}
+            sending={sending}
+            isEmpty={messages.length === 0}
+          />
+        </div>
+      </div>
+
+      {/* status-bar - design_v2 */}
+      <div className="status-bar">
+        <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+        <span>
+          gateway {isConnected ? '已连接' : '未连接'} | port: {gatewayStatus.port ?? 18789}
+          {gatewayStatus.pid != null ? ` | pid: ${gatewayStatus.pid}` : ''}
+        </span>
       </div>
     </div>
   );

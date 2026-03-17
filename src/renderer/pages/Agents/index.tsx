@@ -343,7 +343,7 @@ function AddAgentDialog({
   );
 }
 
-function AgentSettingsModal({
+export function AgentSettingsModal({
   agent,
   channels,
   onClose,

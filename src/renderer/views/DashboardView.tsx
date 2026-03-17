@@ -4,12 +4,12 @@
  * 已连接真实 Gateway + Sessions 数据
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, Users, Activity, Clock, Plus, Play, Search, Wifi, WifiOff, MessageSquare } from 'lucide-react';
+import { TrendingUp, Users, Activity, Clock, Plus, Play, Search, Wifi, WifiOff, MessageSquare, RefreshCw, FileText } from 'lucide-react';
 import { useGatewayStore } from '@/stores/gateway';
 import { useChatStore } from '@/stores/chat';
-import { gatewayClient } from '@/lib/gateway-client';
+import { invokeIpc } from '@/lib/api-client';
 
 interface SessionInfo {
   sessionKey: string;
@@ -18,13 +18,31 @@ interface SessionInfo {
   lastActivity?: number;
 }
 
-const DashboardView: React.FC = () => {
+interface DashboardViewProps {
+  onNavigateTo?: (viewId: string) => void;
+}
+
+const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   const gatewayStatus = useGatewayStore((state) => state.status);
-  const gatewayHealth = useGatewayStore((state) => state.health);
   const initGateway = useGatewayStore((state) => state.init);
   
-  // AxonClaw: 始终显示在线（连接到 OpenClaw Gateway）
-  const isOnline = true;
+  // 真实连接状态：通过 gateway:checkConnection 检测
+  const [connectionVerified, setConnectionVerified] = useState<boolean | null>(null);
+  const [restarting, setRestarting] = useState(false);
+  
+  const checkConnection = useCallback(async (showLoading = false) => {
+    if (showLoading) setConnectionVerified(null);
+    try {
+      const r = await invokeIpc<{ success: boolean; error?: string }>('gateway:checkConnection');
+      setConnectionVerified(r?.success ?? false);
+      return r?.success ?? false;
+    } catch {
+      setConnectionVerified(false);
+      return false;
+    }
+  }, []);
+
+  const isOnline = connectionVerified === true || (connectionVerified === null && gatewayStatus.state === 'running');
   
   // 从 ClawX chat store 获取 sessions
   const chatSessions = useChatStore((s) => s.sessions);
@@ -38,6 +56,13 @@ const DashboardView: React.FC = () => {
     initGateway().catch(console.error);
   }, [initGateway]);
 
+  // 真实连接检测（挂载时显示 loading，定期静默检测）
+  useEffect(() => {
+    checkConnection(true);
+    const t = setInterval(() => checkConnection(false), 15000);
+    return () => clearInterval(t);
+  }, [checkConnection]);
+
   // 加载真实会话列表
   useEffect(() => {
     if (isOnline) {
@@ -46,6 +71,23 @@ const DashboardView: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
+
+  const handleRestartGateway = async () => {
+    setRestarting(true);
+    try {
+      const r = await invokeIpc<{ success: boolean; error?: string }>('gateway:restart');
+      if (r?.success) {
+        await initGateway();
+        await checkConnection();
+      } else {
+        console.error('Gateway restart failed:', r?.error);
+      }
+    } catch (e) {
+      console.error('Gateway restart error:', e);
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   const fetchSessions = async () => {
     setLoading(true);
@@ -150,16 +192,21 @@ const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Gateway 状态指示器 */}
+      {/* Gateway 状态指示器 - 真实连接状态 */}
       <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-        {isOnline ? (
+        {connectionVerified === null ? (
+          <>
+            <div className="w-4 h-4 rounded-full bg-amber-500/80 animate-pulse" />
+            <span className="text-sm text-amber-400">检测连接中…</span>
+          </>
+        ) : isOnline ? (
           <>
             <Wifi className="w-4 h-4 text-green-500" />
             <span className="text-sm text-green-500">Gateway 在线</span>
             <span className="text-xs text-white/40 ml-2">port: {gatewayStatus?.port || 18789}</span>
             <button 
               onClick={fetchSessions}
-              className="ml-auto text-xs text-blue-400 hover:text-blue-300"
+              className="ml-2 text-xs text-blue-400 hover:text-blue-300"
             >
               🔄 刷新会话
             </button>
@@ -170,6 +217,25 @@ const DashboardView: React.FC = () => {
             <span className="text-sm text-red-500">Gateway 离线</span>
           </>
         )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={handleRestartGateway}
+            disabled={restarting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors disabled:opacity-50"
+            title="重启 Gateway"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${restarting ? 'animate-spin' : ''}`} />
+            {restarting ? '重启中…' : '重启网管'}
+          </button>
+          <button
+            onClick={() => onNavigateTo?.('log')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs transition-colors"
+            title="查看日志"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            显示日志
+          </button>
+        </div>
       </div>
 
       {/* Stats Grid */}

@@ -15,9 +15,12 @@ import {
   Trash2,
   RefreshCw,
   FolderOpen,
+  FolderPlus,
   FileCode,
   Globe,
   Copy,
+  Settings,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,6 +65,19 @@ function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
   if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: 'Project .agents' });
   return source;
+}
+
+/** 根据技能来源返回边框颜色类名 */
+function getSkillBorderClass(skill: Skill): string {
+  const source = (skill.source || '').trim().toLowerCase();
+  if (!source && skill.isBundled) return 'border-violet-500/60 dark:border-violet-400/50';
+  if (source === 'openclaw-bundled') return 'border-violet-500/60 dark:border-violet-400/50';
+  if (source === 'openclaw-managed') return 'border-cyan-500/60 dark:border-cyan-400/50';
+  if (source === 'openclaw-workspace') return 'border-emerald-500/60 dark:border-emerald-400/50';
+  if (source === 'openclaw-extra') return 'border-amber-500/60 dark:border-amber-400/50';
+  if (source === 'agents-skills-personal') return 'border-orange-500/60 dark:border-orange-400/50';
+  if (source === 'agents-skills-project') return 'border-amber-500/60 dark:border-amber-400/50';
+  return 'border-slate-400/50 dark:border-slate-500/50';
 }
 
 function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
@@ -403,6 +419,7 @@ export function Skills() {
     searchSkills,
     installSkill,
     uninstallSkill,
+    loadSkillsFromDir,
     searching,
     searchError,
     installing
@@ -413,7 +430,8 @@ export function Skills() {
   const [installQuery, setInstallQuery] = useState('');
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
-  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+  const [selectedSource, setSelectedSource] = useState<'all' | 'workspace' | 'managed' | 'bundled'>('all');
+  const [selectedTab, setSelectedTab] = useState<'all' | 'available' | 'unavailable' | 'market'>('all');
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [showGatewayWarning, setShowGatewayWarning] = useState(false);
@@ -433,12 +451,14 @@ export function Skills() {
   }, [isGatewayRunning]);
 
   useEffect(() => {
-    if (isGatewayRunning) {
-      fetchSkills();
-    }
-  }, [fetchSkills, isGatewayRunning]);
+    fetchSkills();
+  }, [fetchSkills]);
 
   const safeSkills = Array.isArray(skills) ? skills : [];
+  const availableCount = safeSkills.filter(s => s.enabled || s.isCore).length;
+  const unavailableCount = safeSkills.filter(s => !s.enabled && !s.isCore).length;
+  const bundledCount = safeSkills.filter(s => s.isBundled || (s.source || '').toLowerCase().includes('bundled')).length;
+
   const filteredSkills = safeSkills.filter((skill) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -450,13 +470,25 @@ export function Skills() {
       (skill.author || '').toLowerCase().includes(q);
 
     let matchesSource = true;
-    if (selectedSource === 'built-in') {
-      matchesSource = !!skill.isBundled;
-    } else if (selectedSource === 'marketplace') {
-      matchesSource = !skill.isBundled;
+    const src = (skill.source || '').toLowerCase();
+    if (selectedSource === 'workspace') {
+      matchesSource = src.includes('workspace');
+    } else if (selectedSource === 'managed') {
+      matchesSource = src.includes('managed') || (src.includes('agents') && !skill.isBundled);
+    } else if (selectedSource === 'bundled') {
+      matchesSource = !!skill.isBundled || src.includes('bundled');
     }
 
-    return matchesSearch && matchesSource;
+    let matchesTab = true;
+    if (selectedTab === 'available') {
+      matchesTab = skill.enabled || !!skill.isCore;
+    } else if (selectedTab === 'unavailable') {
+      matchesTab = !skill.enabled && !skill.isCore;
+    } else if (selectedTab === 'market') {
+      matchesTab = false; // 市场在单独面板，此处不显示技能卡片
+    }
+
+    return matchesSearch && matchesSource && matchesTab;
   }).sort((a, b) => {
     if (a.enabled && !b.enabled) return -1;
     if (!a.enabled && b.enabled) return 1;
@@ -467,8 +499,9 @@ export function Skills() {
 
   const sourceStats = {
     all: safeSkills.length,
-    builtIn: safeSkills.filter(s => s.isBundled).length,
-    marketplace: safeSkills.filter(s => !s.isBundled).length,
+    workspace: safeSkills.filter(s => (s.source || '').toLowerCase().includes('workspace')).length,
+    managed: safeSkills.filter(s => (s.source || '').toLowerCase().includes('managed') || ((s.source || '').toLowerCase().includes('agents') && !s.isBundled)).length,
+    bundled: safeSkills.filter(s => s.isBundled || (s.source || '').toLowerCase().includes('bundled')).length,
   };
 
   const bulkToggleVisible = useCallback(async (enable: boolean) => {
@@ -534,6 +567,24 @@ export function Skills() {
       toast.error(t('toast.failedOpenFolder') + ': ' + String(err));
     }
   }, [t]);
+
+  const [loadingFromDir, setLoadingFromDir] = useState(false);
+  const handleLoadFromDir = useCallback(async () => {
+    try {
+      const result = await invokeIpc<{ canceled?: boolean; filePaths?: string[] }>('dialog:open', {
+        properties: ['openDirectory'],
+      });
+      if (result?.canceled || !result?.filePaths?.length) return;
+      const dirPath = result.filePaths[0];
+      setLoadingFromDir(true);
+      await loadSkillsFromDir(dirPath);
+      toast.success(t('toast.loadedFromDir', { count: 1, defaultValue: '已加载工作目录下的技能' }));
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoadingFromDir(false);
+    }
+  }, [loadSkillsFromDir, t]);
 
   const handleOpenSkillFolder = useCallback(async (skill: Skill) => {
     try {
@@ -612,199 +663,209 @@ export function Skills() {
 
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full px-6 py-6">
 
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
-          <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-              {t('title')}
-            </h1>
-            <p className="text-[17px] text-foreground/70 font-medium">
-              {t('subtitle')}
-            </p>
-          </div>
+        {/* Row 1: Filter Tabs */}
+        <div className="flex items-center gap-2 shrink-0 mb-4">
+          <button
+            onClick={() => setSelectedTab('all')}
+            className={cn(
+              "text-sm font-medium px-4 py-2 rounded-full transition-colors",
+              selectedTab === 'all' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('filter.all', { count: sourceStats.all, defaultValue: 'All' })} {sourceStats.all}
+          </button>
+          <button
+            onClick={() => setSelectedTab('available')}
+            className={cn(
+              "text-sm font-medium px-4 py-2 rounded-full transition-colors",
+              selectedTab === 'available' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('available', { defaultValue: 'Available' })} {availableCount}
+          </button>
+          <button
+            onClick={() => setSelectedTab('unavailable')}
+            className={cn(
+              "text-sm font-medium px-4 py-2 rounded-full transition-colors",
+              selectedTab === 'unavailable' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('unavailable', { defaultValue: 'Unavailable' })} {unavailableCount}
+          </button>
+          <button
+            onClick={() => { setSelectedTab('market'); setInstallSheetOpen(true); }}
+            className={cn(
+              "text-sm font-medium px-4 py-2 rounded-full transition-colors",
+              selectedTab === 'market' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('marketplace.sourceClawHub', { defaultValue: 'ClawHub Market' })}
+          </button>
+        </div>
 
-          <div className="flex items-center gap-3 md:mt-2">
-            {hasInstalledSkills && (
-              <button
-                onClick={handleOpenSkillsFolder}
-                className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0 text-[13px] font-medium px-4 h-8 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center text-foreground/80 hover:text-foreground"
-              >
-                <FolderOpen className="h-4 w-4 mr-2" />
-                {t('openFolder')}
+        {/* Row 2: Search bar + Actions (inline) */}
+        <div className="flex items-center gap-2 shrink-0 mb-4">
+          <div className="relative flex-1 flex items-center bg-black/5 dark:bg-white/5 rounded-xl px-4 py-2.5 border border-black/10 dark:border-white/10 min-w-0">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <input
+              placeholder={t('searchPlaceholder', { defaultValue: 'Search skills... (Ctrl+K)' })}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="ml-3 bg-transparent outline-none flex-1 font-normal placeholder:text-foreground/50 text-[13px] text-foreground min-w-0"
+            />
+            {searchQuery && (
+              <button type="button" onClick={() => setSearchQuery('')} className="text-foreground/50 hover:text-foreground shrink-0 ml-1">
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
+          <Button variant="outline" size="icon" onClick={fetchSkills} disabled={loading} className="h-9 w-9 rounded-lg shrink-0" title={t('refresh')}>
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </Button>
+          <select
+            className="h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-transparent text-muted-foreground text-[13px] font-medium shrink-0"
+            defaultValue="name"
+          >
+            <option value="name">{t('sort.name', { defaultValue: 'Name' })}</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={() => { setInstallQuery(''); setInstallSheetOpen(true); }} className="h-9 px-3 rounded-lg shrink-0 text-[13px]">
+            {t('actions.installSkill')}
+          </Button>
+          <Button variant="outline" size="icon" onClick={handleLoadFromDir} disabled={loadingFromDir} className="h-9 w-9 rounded-lg shrink-0" title={t('actions.loadFromDir', { defaultValue: '加载目录' })}>
+            {loadingFromDir ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
+          </Button>
+          {hasInstalledSkills && (
+            <Button variant="outline" size="icon" onClick={handleOpenSkillsFolder} className="h-9 w-9 rounded-lg shrink-0" title={t('openFolder')}>
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* Source Filter */}
+        <div className="flex items-center gap-2 mb-4 shrink-0">
+          {(['all', 'workspace', 'managed', 'bundled'] as const).map((src) => (
+            <button
+              key={src}
+              onClick={() => setSelectedSource(src)}
+              className={cn(
+                "text-xs font-medium px-2.5 py-1 rounded-md transition-colors",
+                selectedSource === src ? "bg-black/10 dark:bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {src === 'all' ? t('filter.all', { count: sourceStats.all, defaultValue: '全部' }) :
+               src === 'workspace' ? t('filter.workspace', { count: sourceStats.workspace, defaultValue: '工作区' }) :
+               src === 'managed' ? t('filter.managed', { count: sourceStats.managed, defaultValue: '托管' }) :
+               t('filter.bundled', { count: sourceStats.bundled, defaultValue: '内置' })}
+            </button>
+          ))}
         </div>
 
         {/* Gateway Warning */}
         {showGatewayWarning && (
-          <div className="mb-6 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-            <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
-              {t('gatewayWarning')}
-            </span>
+          <div className="mb-4 p-3 rounded-lg border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-2 text-foreground/80 text-sm font-medium">
+            <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0" />
+            {t('gatewayWarning')}
           </div>
         )}
 
-        {/* Sub Navigation and Actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-black/10 dark:border-white/10 pb-4 mb-4 shrink-0 gap-4">
-          <div className="flex items-center flex-wrap gap-4 text-[14px]">
-            <div className="relative group flex items-center bg-black/5 dark:bg-white/5 rounded-full px-3 py-1.5 focus-within:bg-black/10 transition-colors border border-transparent focus-within:border-black/10 dark:focus-within:border-white/10 mr-2">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                placeholder={t('search')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="ml-2 bg-transparent outline-none w-28 md:w-40 font-normal placeholder:text-foreground/50 text-[13px] text-foreground"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="text-foreground/50 hover:text-foreground shrink-0 ml-1"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => setSelectedSource('all')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'all' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.all', { count: sourceStats.all })}
-              </button>
-              <button
-                onClick={() => setSelectedSource('built-in')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'built-in' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.builtIn', { count: sourceStats.builtIn })}
-              </button>
-              <button
-                onClick={() => setSelectedSource('marketplace')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'marketplace' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.marketplace', { count: sourceStats.marketplace })}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => bulkToggleVisible(true)}
-              className="h-8 text-[13px] font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.enableVisible')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => bulkToggleVisible(false)}
-              className="h-8 text-[13px] font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.disableVisible')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setInstallQuery('');
-                setInstallSheetOpen(true);
-              }}
-              className="h-8 text-[13px] font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.installSkill')}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={fetchSkills}
-              disabled={!isGatewayRunning}
-              className="h-8 w-8 ml-1 rounded-md border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-muted-foreground hover:text-foreground"
-              title={t('refresh')}
-            >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            </Button>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        {/* Content: Grid of Cards */}
+        <div className="flex-1 overflow-y-auto min-h-0 pb-4">
           {error && (
             <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
-              <span>
-                {['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError'].includes(error)
-                  ? t(`toast.${error}`, { path: skillsDirPath })
-                  : error}
-              </span>
+              <span>{['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError'].includes(error) ? t(`toast.${error}`, { path: skillsDirPath }) : error}</span>
             </div>
           )}
 
-          <div className="flex flex-col gap-1">
-            {filteredSkills.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-                <Puzzle className="h-10 w-10 mb-4 opacity-50" />
-                <p>{searchQuery ? t('noSkillsSearch') : t('noSkillsAvailable')}</p>
-              </div>
-            ) : (
-              filteredSkills.map((skill) => (
-                <div
-                  key={skill.id}
-                  className="group flex flex-row items-center justify-between py-3.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border-b border-black/5 dark:border-white/5 last:border-0"
-                  onClick={() => setSelectedSkill(skill)}
-                >
-                  <div className="flex items-start gap-4 flex-1 overflow-hidden pr-4">
-                    <div className="h-10 w-10 shrink-0 flex items-center justify-center text-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl overflow-hidden">
-                      {skill.icon || '🧩'}
-                    </div>
-                    <div className="flex flex-col overflow-hidden">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-[15px] font-semibold text-foreground truncate">{skill.name}</h3>
-                        {skill.isCore ? (
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                        ) : skill.isBundled ? (
-                          <Puzzle className="h-3 w-3 text-blue-500/70" />
-                        ) : null}
-                        {skill.slug && skill.slug !== skill.name ? (
-                          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-black/10 dark:border-white/10 text-muted-foreground">
-                            {skill.slug}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="text-[13.5px] text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
-                        {skill.description}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground/55">
-                        <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none">
-                          {resolveSkillSourceLabel(skill, t)}
-                        </Badge>
-                        <span className="truncate font-mono">
-                          {skill.baseDir || t('detail.pathUnavailable')}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6 shrink-0" onClick={e => e.stopPropagation()}>
-                    {skill.version && (
-                      <span className="text-[13px] font-mono text-muted-foreground">
-                        v{skill.version}
-                      </span>
+          {selectedTab === 'market' ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <Package className="h-12 w-12 mb-4 opacity-50" />
+              <p className="mb-4">{t('marketplace.emptyPrompt', { defaultValue: '在 ClawHub 搜索并安装技能' })}</p>
+              <Button onClick={() => { setInstallQuery(''); setInstallSheetOpen(true); }} className="rounded-full">
+                {t('marketplace.installDialogTitle', { defaultValue: '打开 ClawHub 市场' })}
+              </Button>
+            </div>
+          ) : filteredSkills.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <Puzzle className="h-10 w-10 mb-4 opacity-50" />
+              <p>{searchQuery ? t('noSkillsSearch') : t('noSkillsAvailable')}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredSkills.map((skill) => {
+                const isAvailable = skill.enabled || !!skill.isCore;
+                return (
+                  <div
+                    key={skill.id}
+                    className={cn(
+                      "group relative flex flex-col rounded-xl border-2 bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/5 dark:hover:bg-white/5 transition-colors overflow-hidden",
+                      getSkillBorderClass(skill)
                     )}
-                    <Switch
-                      checked={skill.enabled}
-                      onCheckedChange={(checked) => handleToggle(skill.id, checked)}
-                      disabled={skill.isCore}
-                    />
+                  >
+                    <div className="p-4 cursor-pointer" onClick={() => setSelectedSkill(skill)}>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-10 w-10 shrink-0 flex items-center justify-center text-xl bg-black/5 dark:bg-white/5 rounded-lg overflow-hidden">
+                            {skill.icon || '🧩'}
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-[15px] font-semibold text-foreground truncate">{skill.name}</h3>
+                            <p className="text-[11px] text-muted-foreground font-mono truncate">
+                              {resolveSkillSourceLabel(skill, t)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          <span className={cn(
+                            "text-[11px] font-medium px-2 py-0.5 rounded-full",
+                            isAvailable ? "bg-green-500/20 text-green-600 dark:text-green-400" : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                          )}>
+                            {isAvailable ? (t('available', { defaultValue: 'Available' })) : (t('unavailable', { defaultValue: 'Unavailable' }))}
+                          </span>
+                          {!skill.isCore && (
+                            <Switch
+                              checked={skill.enabled}
+                              onCheckedChange={(checked) => handleToggle(skill.id, checked)}
+                              className="scale-90"
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[13px] text-muted-foreground line-clamp-2 leading-relaxed">
+                        {skill.description || '—'}
+                      </p>
+                      {!isAvailable && !skill.isCore && (
+                        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>{t('unavailableHint', { defaultValue: '配置后启用' })}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-4 pb-3 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <Button variant="outline" size="sm" className="h-8 text-[12px] rounded-lg shrink-0" onClick={() => setSelectedSkill(skill)}>
+                        <Settings className="h-3 w-3 mr-1.5" />
+                        {t('detail.configure', { defaultValue: 'Configure' })}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Status Bar */}
+        <div className="flex items-center justify-between shrink-0 pt-3 border-t border-black/10 dark:border-white/10 text-[12px] text-muted-foreground">
+          <div className="flex items-center gap-4">
+            <span className="font-medium text-foreground/80">{sourceStats.all} SKILLS</span>
+            <span className="text-green-600 dark:text-green-400">{availableCount} READY</span>
+            <span className="text-red-500 dark:text-red-400">{unavailableCount} MISSING</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Shield className="h-3.5 w-3.5" />
+            <span>BUNDLED: {bundledCount}</span>
           </div>
         </div>
       </div>

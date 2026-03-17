@@ -38,6 +38,10 @@ interface ChatInputProps {
   disabled?: boolean;
   sending?: boolean;
   isEmpty?: boolean;
+  /** chat-page: 深色主题、更宽、附件在输入框左上角、单行起自动增高 */
+  variant?: 'default' | 'chat-page';
+  /** 附件变化回调，用于在外部（如 ChatView）渲染附件预览 */
+  onAttachmentsChange?: (attachments: FileAttachment[], removeAttachment: (id: string) => void) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false, isEmpty = false }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, disabled = false, sending = false, isEmpty = false, variant = 'default', onAttachmentsChange }: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -108,15 +112,17 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     () => agents.find((agent) => agent.id === targetAgentId) ?? null,
     [agents, targetAgentId],
   );
-  const showAgentPicker = mentionableAgents.length > 0;
+  const showAgentPicker = variant === 'default' && mentionableAgents.length > 0;
+  const isChatPage = variant === 'chat-page';
 
-  // Auto-resize textarea
+  // Auto-resize textarea (single line default, grow upward)
   useEffect(() => {
     if (textareaRef.current) {
+      const maxH = variant === 'chat-page' ? 192 : 200;
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, maxH)}px`;
     }
-  }, [input]);
+  }, [input, variant]);
 
   // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
   useEffect(() => {
@@ -150,6 +156,27 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       document.removeEventListener('mousedown', handlePointerDown);
     };
   }, [pickerOpen]);
+
+  // 文档级粘贴拦截（capture 阶段），仅 preventDefault 阻止默认行为，事件仍会冒泡到 onPaste 处理
+  useEffect(() => {
+    if (variant !== 'chat-page') return;
+    const onDocPaste = (e: ClipboardEvent) => {
+      const dt = e.clipboardData;
+      // clipboardData 为 null 时（Electron 粘贴图片常见），必须阻止默认行为防止页面跳转
+      if (!dt) {
+        e.preventDefault();
+        return;
+      }
+      const hasFiles = dt.files?.length || Array.from(dt.items || []).some((it) => it.kind === 'file');
+      const hasImageType = dt.types.some((t) =>
+        t === 'Files' || t.startsWith('image/') || t === 'public.png' || t === 'public.jpeg');
+      if (hasFiles || hasImageType) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('paste', onDocPaste, true);
+    return () => document.removeEventListener('paste', onDocPaste, true);
+  }, [variant]);
 
   // ── File staging via native dialog ─────────────────────────────
 
@@ -229,17 +256,22 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, []);
 
   // ── Stage browser File objects (paste / drag-drop) ─────────────
+  // 缓存到 axonclaw-staged 目录，发送时把路径传给 OpenClaw
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
     for (const file of files) {
       const tempId = crypto.randomUUID();
+      // 图片立即用 object URL 显示预览，不等 IPC 返回
+      const instantPreview = file.type.startsWith('image/')
+        ? URL.createObjectURL(file)
+        : null;
       setAttachments(prev => [...prev, {
         id: tempId,
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
         stagedPath: '',
-        preview: null,
+        preview: instantPreview,
         status: 'staging' as const,
       }]);
 
@@ -263,14 +295,16 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
           }),
         });
         console.log(`[stageBuffer] Staged: id=${staged?.id}, path=${staged?.stagedPath}, size=${staged?.fileSize}`);
+        if (instantPreview) URL.revokeObjectURL(instantPreview);
         setAttachments(prev => prev.map(a =>
           a.id === tempId ? { ...staged, status: 'ready' as const } : a,
         ));
       } catch (err) {
         console.error(`[stageBuffer] Error staging ${file.name}:`, err);
+        if (instantPreview) URL.revokeObjectURL(instantPreview);
         setAttachments(prev => prev.map(a =>
           a.id === tempId
-            ? { ...a, status: 'error' as const, error: String(err) }
+            ? { ...a, status: 'error' as const, error: String(err), preview: null }
             : a,
         ));
       }
@@ -282,6 +316,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const removeAttachment = useCallback((id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
   }, []);
+
+  // 通知父组件附件变化，用于在外部渲染预览
+  useEffect(() => {
+    onAttachmentsChange?.(attachments, removeAttachment);
+  }, [attachments, removeAttachment, onAttachmentsChange]);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
@@ -335,22 +374,116 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     [handleSend, input, targetAgentId],
   );
 
-  // Handle paste (Ctrl/Cmd+V with files)
+  // Handle paste (Ctrl/Cmd+V with files/images)
+  // 优先使用 clipboardData.files，再遍历 items；无文件时尝试 Electron clipboard
   const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
+    async (e: React.ClipboardEvent) => {
+      const dt = e.clipboardData;
 
-      const pastedFiles: globalThis.File[] = [];
-      for (const item of Array.from(items)) {
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) pastedFiles.push(file);
+      // clipboardData 为 null（Electron 中粘贴图片常见），阻止默认行为并通过 IPC 读取剪贴板图片
+      if (!dt) {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          const result = await invokeIpc<{ base64: string; mimeType: string } | null>('clipboard:readImage');
+          if (result?.base64) {
+            const tempId = crypto.randomUUID();
+            setAttachments(prev => [...prev, {
+              id: tempId,
+              fileName: `pasted-${Date.now()}.png`,
+              mimeType: result.mimeType || 'image/png',
+              fileSize: 0,
+              stagedPath: '',
+              preview: `data:${result.mimeType || 'image/png'};base64,${result.base64}`,
+              status: 'staging' as const,
+            }]);
+            const staged = await hostApiFetch<{
+              id: string;
+              fileName: string;
+              mimeType: string;
+              fileSize: number;
+              stagedPath: string;
+              preview: string | null;
+            }>('/api/files/stage-buffer', {
+              method: 'POST',
+              body: JSON.stringify({
+                base64: result.base64,
+                fileName: `pasted-${Date.now()}.png`,
+                mimeType: result.mimeType || 'image/png',
+              }),
+            });
+            setAttachments(prev => prev.map(a =>
+              a.id === tempId ? { ...staged, status: 'ready' as const } : a,
+            ));
+          }
+        } catch {
+          // 忽略，已阻止默认行为
+        }
+        return;
+      }
+
+      let pastedFiles: globalThis.File[] = [];
+      // 1. 直接取 files（部分系统粘贴图片时只在这里有）
+      if (dt.files?.length) {
+        pastedFiles = Array.from(dt.files);
+      }
+      // 2. 遍历 items 作为补充
+      if (pastedFiles.length === 0 && dt.items) {
+        for (const item of Array.from(dt.items)) {
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) pastedFiles.push(file);
+          }
         }
       }
+
+      const hasImageType = dt.types.some((t) =>
+        t === 'Files' || t.startsWith('image/') || t === 'public.png' || t === 'public.jpeg');
+
       if (pastedFiles.length > 0) {
         e.preventDefault();
+        e.stopPropagation();
         stageBufferFiles(pastedFiles);
+      } else if (hasImageType) {
+        // 剪贴板有图片但 Web API 未解析出文件：阻止默认行为，避免跳转空页面
+        e.preventDefault();
+        e.stopPropagation();
+        // 尝试从 Electron 主进程读取图片（macOS 等场景）
+        try {
+          const result = await invokeIpc<{ base64: string; mimeType: string } | null>('clipboard:readImage');
+          if (result?.base64) {
+            const tempId = crypto.randomUUID();
+            setAttachments(prev => [...prev, {
+              id: tempId,
+              fileName: `pasted-${Date.now()}.png`,
+              mimeType: result.mimeType || 'image/png',
+              fileSize: 0,
+              stagedPath: '',
+              preview: `data:${result.mimeType || 'image/png'};base64,${result.base64}`,
+              status: 'staging' as const,
+            }]);
+            const staged = await hostApiFetch<{
+              id: string;
+              fileName: string;
+              mimeType: string;
+              fileSize: number;
+              stagedPath: string;
+              preview: string | null;
+            }>('/api/files/stage-buffer', {
+              method: 'POST',
+              body: JSON.stringify({
+                base64: result.base64,
+                fileName: `pasted-${Date.now()}.png`,
+                mimeType: result.mimeType || 'image/png',
+              }),
+            });
+            setAttachments(prev => prev.map(a =>
+              a.id === tempId ? { ...staged, status: 'ready' as const } : a,
+            ));
+          }
+        } catch {
+          // 忽略，已阻止默认行为
+        }
       }
     },
     [stageBufferFiles],
@@ -386,29 +519,43 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   return (
     <div
       className={cn(
-        "p-4 pb-6 w-full mx-auto transition-all duration-300",
-        isEmpty ? "max-w-3xl" : "max-w-4xl"
+        "w-full transition-all duration-300",
+        isChatPage ? "p-0" : "p-4 pb-6 mx-auto",
+        !isChatPage && (isEmpty ? "max-w-3xl" : "max-w-4xl")
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <div className="w-full">
-        {/* Attachment Previews */}
-        {attachments.length > 0 && (
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {attachments.map((att) => (
-              <AttachmentPreview
-                key={att.id}
-                attachment={att}
-                onRemove={() => removeAttachment(att.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Input Row */}
-        <div className={`relative bg-white dark:bg-card rounded-[28px] shadow-sm border p-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
+        {/* Input Row - chat-page: 附件在输入框内左上角 */}
+        <div
+          className={cn(
+            "relative rounded-2xl border p-3 transition-all",
+            isChatPage
+              ? "bg-[#1e293b] border-[#334155] focus-within:border-[#6366f1]"
+              : "bg-white dark:bg-card shadow-sm",
+            isChatPage && dragOver && "border-[#6366f1] ring-1 ring-[#6366f1]",
+            !isChatPage && (dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10')
+          )}
+          onPaste={handlePaste}
+        >
+          {/* Attachments - 当未提供 onAttachmentsChange 时在输入框内显示预览 */}
+          {!onAttachmentsChange && attachments.length > 0 && (
+            <div className={cn(
+              "flex gap-2 flex-wrap items-start",
+              isChatPage ? "mb-3 justify-start" : "mb-3"
+            )}>
+              {attachments.map((att) => (
+                <AttachmentPreview
+                  key={att.id}
+                  attachment={att}
+                  onRemove={() => removeAttachment(att.id)}
+                  variant={variant}
+                />
+              ))}
+            </div>
+          )}
           {selectedTarget && (
             <div className="px-2.5 pt-2 pb-1">
               <button
@@ -428,7 +575,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             <Button
               variant="ghost"
               size="icon"
-              className="shrink-0 h-10 w-10 rounded-full text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
+              className={cn(
+                "shrink-0 h-10 w-10 rounded-full transition-colors",
+                isChatPage
+                  ? "text-[#94a3b8] hover:bg-[#6366f1]/10 hover:text-[#6366f1]"
+                  : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground"
+              )}
               onClick={pickFiles}
               disabled={disabled || sending}
               title={t('composer.attachFiles')}
@@ -475,8 +627,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               </div>
             )}
 
-            {/* Textarea */}
-            <div className="flex-1 relative">
+            {/* Textarea - chat-page: 单行起，向上自动增高 */}
+            <div className="flex-1 relative min-w-0">
               <Textarea
                 ref={textareaRef}
                 value={input}
@@ -488,10 +640,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 onCompositionEnd={() => {
                   isComposingRef.current = false;
                 }}
-                onPaste={handlePaste}
-                placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+                placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : (isChatPage ? '在此输入消息...' : '')}
                 disabled={disabled}
-                className="min-h-[40px] max-h-[200px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
+                className={cn(
+                  "resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 leading-relaxed",
+                  isChatPage
+                    ? "min-h-[24px] max-h-[192px] text-[14px] text-[#f8fafc] placeholder:text-[#64748b]"
+                    : "min-h-[40px] max-h-[200px] text-[15px] placeholder:text-muted-foreground/60"
+                )}
                 rows={1}
               />
             </div>
@@ -501,11 +657,16 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               onClick={sending ? handleStop : handleSend}
               disabled={sending ? !canStop : !canSend}
               size="icon"
-              className={`shrink-0 h-10 w-10 rounded-full transition-colors ${
-                (sending || canSend)
-                  ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
-                  : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
-              }`}
+              className={cn(
+                "shrink-0 h-10 w-10 rounded-full transition-colors",
+                isChatPage
+                  ? (sending || canSend)
+                    ? "bg-[#6366f1] text-white hover:bg-[#4f46e5]"
+                    : "bg-[#334155] text-[#64748b] cursor-not-allowed opacity-0.6"
+                  : (sending || canSend)
+                    ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                    : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+              )}
               variant="ghost"
               title={sending ? t('composer.stop') : t('composer.send')}
             >
@@ -517,6 +678,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             </Button>
           </div>
         </div>
+        {!isChatPage && (
         <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground/60 px-4">
           <div className="flex items-center gap-1.5">
             <div className={cn("w-1.5 h-1.5 rounded-full", gatewayStatus.state === 'running' ? "bg-green-500/80" : "bg-red-500/80")} />
@@ -544,6 +706,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             </Button>
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -551,20 +714,28 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
 // ── Attachment Preview ───────────────────────────────────────────
 
-function AttachmentPreview({
+export function AttachmentPreview({
   attachment,
   onRemove,
+  variant = 'default',
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  variant?: 'default' | 'chat-page';
 }) {
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
+  const isChatPage = variant === 'chat-page';
+  // chat-page: 小预览框 48x48，紧凑显示在输入框左上角
+  const thumbSize = isChatPage ? 'w-12 h-12' : 'w-16 h-16';
 
   return (
-    <div className="relative group rounded-lg overflow-hidden border border-border">
+    <div className={cn(
+      "relative group rounded-lg overflow-hidden border shrink-0",
+      isChatPage ? "border-[#334155] bg-[#0f172a]" : "border-border"
+    )}>
       {isImage ? (
-        // Image thumbnail
-        <div className="w-16 h-16">
+        // Image thumbnail - 小预览
+        <div className={thumbSize}>
           <img
             src={attachment.preview!}
             alt={attachment.fileName}
@@ -573,11 +744,14 @@ function AttachmentPreview({
         </div>
       ) : (
         // Generic file card
-        <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 max-w-[200px]">
-          <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-2 max-w-[200px]",
+          isChatPage ? "bg-[#0f172a]" : "bg-muted/50"
+        )}>
+          <FileIcon mimeType={attachment.mimeType} className={cn("h-5 w-5 shrink-0", isChatPage ? "text-[#94a3b8]" : "text-muted-foreground")} />
           <div className="min-w-0 overflow-hidden">
-            <p className="text-xs font-medium truncate">{attachment.fileName}</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className={cn("text-xs font-medium truncate", isChatPage && "text-[#e2e8f0]")}>{attachment.fileName}</p>
+            <p className={cn("text-[10px]", isChatPage ? "text-[#64748b]" : "text-muted-foreground")}>
               {attachment.fileSize > 0 ? formatFileSize(attachment.fileSize) : '...'}
             </p>
           </div>

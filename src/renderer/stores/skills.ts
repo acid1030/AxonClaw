@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
 import { AppError, normalizeAppError } from '@/lib/error-model';
 import { useGatewayStore } from './gateway';
 import type { Skill, MarketplaceSkill } from '../types/skill';
@@ -34,6 +35,8 @@ type ClawHubListResult = {
   version?: string;
   source?: string;
   baseDir?: string;
+  name?: string;
+  description?: string;
 };
 
 function mapErrorCodeToSkillErrorKey(
@@ -75,6 +78,8 @@ interface SkillsState {
   disableSkill: (skillId: string) => Promise<void>;
   setSkills: (skills: Skill[]) => void;
   updateSkill: (skillId: string, updates: Partial<Skill>) => void;
+  /** 从指定工作目录加载技能并合并到列表 */
+  loadSkillsFromDir: (dirPath: string) => Promise<void>;
 }
 
 export const useSkillsStore = create<SkillsState>((set, get) => ({
@@ -87,87 +92,81 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   error: null,
 
   fetchSkills: async () => {
-    // Only show loading state if we have no skills yet (initial load)
     if (get().skills.length === 0) {
       set({ loading: true, error: null });
     }
+    let gatewayData: GatewaySkillsStatusResult | null = null;
     try {
-      // 1. Fetch from Gateway (running skills)
-      const gatewayData = await useGatewayStore.getState().rpc<GatewaySkillsStatusResult>('skills.status');
+      gatewayData = await useGatewayStore.getState().rpc<GatewaySkillsStatusResult>('skills.status');
+    } catch {
+      /* Gateway 未运行时仍从 ClawHub/workspace 加载 */
+    }
 
-      // 2. Fetch from ClawHub (installed on disk)
-      const clawhubResult = await hostApiFetch<{ success: boolean; results?: ClawHubListResult[]; error?: string }>('/api/clawhub/list');
-
-      // 3. Fetch configurations directly from Electron (since Gateway doesn't return them)
+    try {
+      // 1. ClawHub + workspace 作为主数据源（优先直接 IPC，避免 hostapi 路由到 Gateway）
+      let clawhubResult: { success: boolean; results?: ClawHubListResult[] };
+      try {
+        clawhubResult = await invokeIpc<{ success: boolean; results?: ClawHubListResult[] }>('skills:listInstalled');
+      } catch {
+        clawhubResult = await hostApiFetch<{ success: boolean; results?: ClawHubListResult[] }>('/api/clawhub/list');
+      }
       const configResult = await hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
 
-      let combinedSkills: Skill[] = [];
-      const currentSkills = get().skills;
-
-      // Map gateway skills info
-      if (gatewayData.skills) {
-        combinedSkills = gatewayData.skills.map((s: GatewaySkillStatus) => {
-          // Merge with direct config if available
-          const directConfig = configResult[s.skillKey] || {};
-
-          return {
-            id: s.skillKey,
-            slug: s.slug || s.skillKey,
-            name: s.name || s.skillKey,
-            description: s.description || '',
-            enabled: !s.disabled,
-            icon: s.emoji || '📦',
-            version: s.version || '1.0.0',
-            author: s.author,
-            config: {
-              ...(s.config || {}),
-              ...directConfig,
-            },
-            isCore: s.bundled && s.always,
-            isBundled: s.bundled,
-            source: s.source,
-            baseDir: s.baseDir,
-            filePath: s.filePath,
-          };
-        });
-      } else if (currentSkills.length > 0) {
-        // ... if gateway down ...
-        combinedSkills = [...currentSkills];
+      const gatewayMap = new Map<string, GatewaySkillStatus>();
+      if (gatewayData?.skills?.length) {
+        gatewayData.skills.forEach((s) => gatewayMap.set(s.skillKey, s));
       }
 
-      // Merge with ClawHub results
-      if (clawhubResult.success && clawhubResult.results) {
-        clawhubResult.results.forEach((cs: ClawHubListResult) => {
-          const existing = combinedSkills.find(s => s.id === cs.slug);
-          if (existing) {
-            if (!existing.baseDir && cs.baseDir) {
-              existing.baseDir = cs.baseDir;
-            }
-            if (!existing.source && cs.source) {
-              existing.source = cs.source;
-            }
-            return;
-          }
-          const directConfig = configResult[cs.slug] || {};
+      // 2. 以 ClawHub/workspace 结果为基础构建完整列表
+      const combinedSkills: Skill[] = [];
+      const results = clawhubResult.success && clawhubResult.results ? clawhubResult.results : [];
+
+      for (const cs of results) {
+        const gw = gatewayMap.get(cs.slug);
+        const directConfig = configResult[cs.slug] || {};
+        combinedSkills.push({
+          id: cs.slug,
+          slug: cs.slug,
+          name: cs.name || cs.slug,
+          description: cs.description || (cs.source === 'openclaw-workspace' ? 'Workspace skill' : ''),
+          enabled: gw ? !gw.disabled : false,
+          icon: gw?.emoji || (cs.source === 'openclaw-workspace' ? '📁' : '📦'),
+          version: cs.version || 'unknown',
+          author: gw?.author,
+          config: { ...(gw?.config || {}), ...directConfig },
+          isCore: !!gw?.bundled && !!gw?.always,
+          isBundled: !!gw?.bundled,
+          source: gw?.source || cs.source || 'openclaw-managed',
+          baseDir: cs.baseDir || gw?.baseDir,
+          filePath: gw?.filePath,
+        });
+      }
+
+      // 3. 补充 Gateway 有但 ClawHub 未返回的技能（如 bundled）
+      if (gatewayData?.skills?.length) {
+        for (const gw of gatewayData.skills) {
+          if (combinedSkills.some((s) => s.id === gw.skillKey)) continue;
+          const directConfig = configResult[gw.skillKey] || {};
           combinedSkills.push({
-            id: cs.slug,
-            slug: cs.slug,
-            name: cs.slug,
-            description: 'Recently installed, initializing...',
-            enabled: false,
-            icon: '⌛',
-            version: cs.version || 'unknown',
-            author: undefined,
-            config: directConfig,
-            isCore: false,
-            isBundled: false,
-            source: cs.source || 'openclaw-managed',
-            baseDir: cs.baseDir,
+            id: gw.skillKey,
+            slug: gw.slug || gw.skillKey,
+            name: gw.name || gw.skillKey,
+            description: gw.description || '',
+            enabled: !gw.disabled,
+            icon: gw.emoji || '📦',
+            version: gw.version || '1.0.0',
+            author: gw.author,
+            config: { ...(gw.config || {}), ...directConfig },
+            isCore: !!gw.bundled && !!gw.always,
+            isBundled: !!gw.bundled,
+            source: gw.source,
+            baseDir: gw.baseDir,
+            filePath: gw.filePath,
           });
-        });
+        }
       }
 
-      set({ skills: combinedSkills, loading: false });
+      set({ skills: combinedSkills, loading: false, error: null });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
       const appError = normalizeAppError(error, { module: 'skills', operation: 'fetch' });
@@ -280,6 +279,39 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   setSkills: (skills) => set({ skills }),
+
+  loadSkillsFromDir: async (dirPath: string) => {
+    try {
+      const result = await hostApiFetch<{ success: boolean; skills?: Array<{ slug: string; name: string; baseDir: string; description?: string }>; error?: string }>(
+        '/api/skills/load-from-dir',
+        { method: 'POST', body: JSON.stringify({ dirPath }) },
+      );
+      if (!result.success || !result.skills?.length) return;
+      const configResult = await hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
+      const newSkills: Skill[] = result.skills.map((s) => ({
+        id: s.slug,
+        slug: s.slug,
+        name: s.name,
+        description: s.description || '',
+        enabled: false,
+        icon: '📁',
+        version: 'workspace',
+        config: configResult[s.slug] || {},
+        isCore: false,
+        isBundled: false,
+        source: 'openclaw-workspace',
+        baseDir: s.baseDir,
+      }));
+      set((state) => {
+        const existingIds = new Set(state.skills.map((x) => x.id));
+        const toAdd = newSkills.filter((x) => !existingIds.has(x.id));
+        return { skills: [...state.skills, ...toAdd] };
+      });
+    } catch (err) {
+      console.error('loadSkillsFromDir error:', err);
+      throw err;
+    }
+  },
 
   updateSkill: (skillId, updates) => {
     set((state) => ({

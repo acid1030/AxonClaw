@@ -67,26 +67,31 @@ export function extractText(message: RawMessage | unknown): string {
 /**
  * Extract thinking/reasoning content from a message.
  * Returns null if no thinking content found.
+ * Supports: content blocks (type: 'thinking'), and top-level thinking/reasoning/thought fields.
  */
 export function extractThinking(message: RawMessage | unknown): string | null {
   if (!message || typeof message !== 'object') return null;
   const msg = message as Record<string, unknown>;
+
+  // Path 1: content array with thinking blocks
   const content = msg.content;
-
-  if (!Array.isArray(content)) return null;
-
-  const parts: string[] = [];
-  for (const block of content as ContentBlock[]) {
-    if (block.type === 'thinking' && block.thinking) {
-      const cleaned = block.thinking.trim();
-      if (cleaned) {
-        parts.push(cleaned);
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'thinking' && block.thinking) {
+        const cleaned = block.thinking.trim();
+        if (cleaned) parts.push(cleaned);
       }
     }
+    const combined = parts.join('\n\n').trim();
+    if (combined) return combined;
   }
 
-  const combined = parts.join('\n\n').trim();
-  return combined.length > 0 ? combined : null;
+  // Path 2: top-level thinking/reasoning/thought (some APIs use these)
+  const topLevel = (msg.thinking ?? msg.reasoning ?? msg.thought) as string | undefined;
+  if (typeof topLevel === 'string' && topLevel.trim()) return topLevel.trim();
+
+  return null;
 }
 
 /**

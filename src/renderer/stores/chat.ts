@@ -100,13 +100,19 @@ interface ChatState {
   showThinking: boolean;
   thinkingLevel: string | null;
 
+  /** 刚添加的 AI 消息 id，用于打字机效果，30 秒后清除 */
+  lastAddedMessageId: string | null;
+
   // Actions
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
+  setSessionLabel: (sessionKey: string, label: string) => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
+  /** 加载历史，支持指定日期前或更大 limit */
+  loadHistoryWithOptions: (options?: { beforeTs?: number; limit?: number }) => Promise<void>;
   sendMessage: (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
@@ -749,6 +755,7 @@ function buildSessionSwitchPatch(
     streamingText: '',
     streamingMessage: null,
     streamingTools: [],
+    lastAddedMessageId: null,
     activeRunId: null,
     error: null,
     pendingFinal: false,
@@ -1036,6 +1043,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   showThinking: true,
   thinkingLevel: null,
+  lastAddedMessageId: null,
 
   // ── Load sessions via sessions.list ──
 
@@ -1429,6 +1437,104 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  loadHistoryWithOptions: async (options?: { beforeTs?: number; limit?: number }) => {
+    const { currentSessionKey } = get();
+    set({ loading: true, error: null });
+
+    const limit = options?.limit ?? 500;
+    const beforeTs = options?.beforeTs;
+
+    const params: Record<string, unknown> = { sessionKey: currentSessionKey, limit };
+    if (beforeTs != null) params.beforeTs = beforeTs;
+
+    const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
+      let toApply = rawMessages;
+      if (beforeTs != null) {
+        toApply = rawMessages.filter((m) => !m.timestamp || toMs(m.timestamp) <= beforeTs);
+      }
+      const messagesWithToolImages = enrichWithToolResultFiles(toApply);
+      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
+      const enrichedMessages = enrichWithCachedImages(filteredMessages);
+
+      let finalMessages = enrichedMessages;
+      const userMsgAt = get().lastUserMessageAt;
+      if (get().sending && userMsgAt) {
+        const userMsMs = toMs(userMsgAt);
+        const hasRecentUser = enrichedMessages.some(
+          (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+        );
+        if (!hasRecentUser) {
+          const currentMsgs = get().messages;
+          const optimistic = [...currentMsgs].reverse().find(
+            (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+          );
+          if (optimistic) finalMessages = [...enrichedMessages, optimistic];
+        }
+      }
+
+      set({ messages: finalMessages, thinkingLevel, loading: false });
+
+      const isMainSession = currentSessionKey.endsWith(':main');
+      if (!isMainSession) {
+        const firstUserMsg = finalMessages.find((m) => m.role === 'user');
+        if (firstUserMsg) {
+          const labelText = getMessageText(firstUserMsg.content).trim();
+          if (labelText) {
+            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+            set((s) => ({
+              sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+            }));
+          }
+        }
+      }
+
+      const lastMsg = finalMessages[finalMessages.length - 1];
+      if (lastMsg?.timestamp) {
+        const lastAt = toMs(lastMsg.timestamp);
+        set((s) => ({
+          sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
+        }));
+      }
+
+      loadMissingPreviews(finalMessages).then((updated) => {
+        if (updated) {
+          set({
+            messages: finalMessages.map((msg) =>
+              msg._attachedFiles ? { ...msg, _attachedFiles: msg._attachedFiles.map((f) => ({ ...f })) } : msg,
+            ),
+          });
+        }
+      });
+    };
+
+    try {
+      const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('chat.history', params);
+      if (data) {
+        let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
+        const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
+        if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
+          rawMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+        }
+        applyLoadedMessages(rawMessages, thinkingLevel);
+      } else {
+        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+        if (fallbackMessages.length > 0) {
+          applyLoadedMessages(fallbackMessages, null);
+        } else {
+          set({ messages: [], loading: false });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load chat history with options:', err);
+      const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+      if (fallbackMessages.length > 0) {
+        applyLoadedMessages(fallbackMessages, null);
+      } else {
+        set({ messages: [], loading: false });
+      }
+    }
+  },
+
   // ── Send message ──
 
   sendMessage: async (
@@ -1557,23 +1663,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const CHAT_SEND_TIMEOUT_MS = 120_000;
 
       if (hasMedia) {
-        result = await hostApiFetch<{ success: boolean; result?: { runId?: string }; error?: string }>(
-          '/api/chat/send-with-media',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              sessionKey: currentSessionKey,
-              message: trimmed || 'Process the attached file(s).',
-              deliver: false,
-              idempotencyKey,
-              media: attachments.map((a) => ({
-                filePath: a.stagedPath,
-                mimeType: a.mimeType,
-                fileName: a.fileName,
-              })),
-            }),
-          },
+        // 将媒体附件信息以 [media attached: ...] 标记嵌入消息文本，通过 chat.send RPC 发送
+        const mediaTagLines = attachments!.map((a) =>
+          `[media attached: ${a.stagedPath} (${a.mimeType}) | ${a.fileName}]`,
         );
+        const messageWithMedia = (trimmed || 'Process the attached file(s).') + '\n' + mediaTagLines.join('\n');
+        console.log('[sendMessage] Sending with media tags via RPC:', messageWithMedia);
+        const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
+          'chat.send',
+          {
+            sessionKey: currentSessionKey,
+            message: messageWithMedia,
+            deliver: false,
+            idempotencyKey,
+          },
+          CHAT_SEND_TIMEOUT_MS,
+        );
+        result = { success: true, result: rpcResult };
       } else {
         const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
           'chat.send',
@@ -1820,13 +1926,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
               pendingFinal: hasOutput ? false : true,
               streamingTools,
               ...clearPendingImages,
+              lastAddedMessageId: hasOutput ? msgId : s.lastAddedMessageId,
             };
           });
-          // After the final response, quietly reload history to surface all intermediate
-          // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
           if (hasOutput && !toolOnly) {
             clearHistoryPoll();
-            void get().loadHistory(true);
+            // 已有完整消息，不再调用 loadHistory 覆盖，避免输出中途被截断
+            setTimeout(() => {
+              useChatStore.setState({ lastAddedMessageId: null });
+            }, 30_000);
           }
         } else {
           // No message in final event - reload history to get complete data
@@ -1929,11 +2037,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleThinking: () => set((s) => ({ showThinking: !s.showThinking })),
 
+  setSessionLabel: (sessionKey: string, label: string) => {
+    const trimmed = label.trim();
+    set((s) => ({
+      sessionLabels: { ...s.sessionLabels, [sessionKey]: trimmed || s.sessionLabels[sessionKey] || '' },
+    }));
+  },
+
   // ── Refresh: reload history + sessions ──
 
   refresh: async () => {
     const { loadHistory, loadSessions } = get();
-    await Promise.all([loadHistory(), loadSessions()]);
+    // 先加载会话列表，确保 currentSessionKey 正确，再加载历史
+    await loadSessions();
+    await loadHistory();
   },
 
   clearError: () => set({ error: null }),

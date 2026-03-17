@@ -11,6 +11,16 @@ import type { GatewayStatus } from '../types/gateway';
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
 
+// 完成事件宽限期：多轮对话中 Gateway 会在每个 agent step 发送 completed，
+// 延迟处理避免中间 step 的 completed 提前结束 sending 状态
+let _completionGraceTimer: ReturnType<typeof setTimeout> | null = null;
+function clearCompletionGrace() {
+  if (_completionGraceTimer) {
+    clearTimeout(_completionGraceTimer);
+    _completionGraceTimer = null;
+  }
+}
+
 interface GatewayHealth {
   ok: boolean;
   error?: string;
@@ -44,6 +54,8 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
 
   if (hasChatData) {
+    // 收到新的流式数据，取消待处理的完成宽限（说明对话仍在继续）
+    clearCompletionGrace();
     const normalizedEvent: Record<string, unknown> = {
       ...data,
       runId: p.runId ?? data.runId,
@@ -63,6 +75,8 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   const runId = p.runId ?? data.runId;
   const sessionKey = p.sessionKey ?? data.sessionKey;
   if (phase === 'started' && runId != null && sessionKey != null) {
+    // 新 run 启动，取消任何待处理的完成宽限
+    clearCompletionGrace();
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
@@ -103,12 +117,24 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
           void state.loadHistory(true);
         }
         if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
-          useChatStore.setState({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-          });
+          // 多轮对话中 Gateway 会在每个 agent step 发送 completed，
+          // 使用宽限期延迟结束，让新 run 有机会启动
+          clearCompletionGrace();
+          const COMPLETION_GRACE_MS = 5_000;
+          _completionGraceTimer = setTimeout(() => {
+            _completionGraceTimer = null;
+            const s = useChatStore.getState();
+            if (s.sending) {
+              useChatStore.setState({
+                sending: false,
+                activeRunId: null,
+                pendingFinal: false,
+                lastUserMessageAt: null,
+              });
+              // 宽限期结束后再刷新一次历史，确保获取完整对话
+              void s.loadHistory(true);
+            }
+          }, COMPLETION_GRACE_MS);
         }
       })
       .catch(() => {});
@@ -171,10 +197,14 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       try {
         console.log('[Gateway] Starting init...');
         // AxonClaw: 直接设置为运行中，连接到已有的 OpenClaw Gateway
-        const status: GatewayStatus = {
-          state: 'running',
-          port: 18789,
-        };
+        // 从主进程拉取最新状态，确保与 main 一致
+        let status: GatewayStatus = { state: 'running', port: 18789 };
+        try {
+          const mainStatus = await invokeIpc<GatewayStatus>('gateway:status');
+          if (mainStatus?.state) status = { ...status, ...mainStatus };
+        } catch {
+          // 主进程未就绪时使用默认 running（AxonClaw 连接已有 Gateway）
+        }
         set({ status, health: { ok: true }, isInitialized: true });
         console.log('[Gateway] Connected to OpenClaw Gateway (port 18789)');
 
