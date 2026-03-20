@@ -37,6 +37,9 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
 
+  // Notifications
+  alertDesktopNotification: boolean;
+
   // Setup
   setupComplete: boolean;
 
@@ -60,6 +63,7 @@ interface SettingsState {
   setAutoDownloadUpdate: (value: boolean) => void;
   setSidebarCollapsed: (value: boolean) => void;
   setDevModeUnlocked: (value: boolean) => void;
+  setAlertDesktopNotification: (value: boolean) => void;
   markSetupComplete: () => void;
   resetSettings: () => void;
 }
@@ -88,6 +92,7 @@ const defaultSettings = {
   autoDownloadUpdate: false,
   sidebarCollapsed: false,
   devModeUnlocked: false,
+  alertDesktopNotification: true,
   setupComplete: false,
 };
 
@@ -158,6 +163,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setDevModeUnlocked: (devModeUnlocked) => set({ devModeUnlocked }),
+      setAlertDesktopNotification: (alertDesktopNotification) => set({ alertDesktopNotification }),
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),
     }),

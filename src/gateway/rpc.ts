@@ -3,8 +3,26 @@
  * 供 hostapi 等模块使用，与 gateway:rpc IPC 共享逻辑
  */
 
-const GATEWAY_WS_URL = 'ws://127.0.0.1:18789/ws';
+import { getResolvedGatewayPort, resolveGatewayPort, setResolvedGatewayPort } from './port';
+
 const GATEWAY_TOKEN = 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7';
+
+function getGatewayWsUrl(): string {
+  return `ws://127.0.0.1:${getResolvedGatewayPort()}/ws`;
+}
+
+/** 是否为连接类错误（可尝试重新探测端口后重试） */
+function isConnectionError(err: unknown): boolean {
+  const msg = String(err ?? '').toLowerCase();
+  return (
+    msg.includes('timeout') ||
+    msg.includes('websocket error') ||
+    msg.includes('connection closed') ||
+    msg.includes('connection refused') ||
+    msg.includes('econnrefused') ||
+    msg.includes('econnreset')
+  );
+}
 
 export interface GatewayRpcResult {
   success: boolean;
@@ -22,7 +40,7 @@ export async function callGatewayRpc(
   timeoutMs = 30000
 ): Promise<GatewayRpcResult> {
   const WebSocket = require('ws');
-  const ws = new WebSocket(GATEWAY_WS_URL);
+  const ws = new WebSocket(getGatewayWsUrl());
 
   return new Promise((resolve) => {
     let resolved = false;
@@ -133,4 +151,24 @@ export async function callGatewayRpc(
       }
     });
   });
+}
+
+/**
+ * 带端口重试的 RPC：失败时重新探测端口并重试一次（用于智能代理等首次请求可能端口未缓存场景）
+ */
+export async function callGatewayRpcWithRetry(
+  method: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = 30000
+): Promise<GatewayRpcResult> {
+  let result = await callGatewayRpc(method, params, timeoutMs);
+  if (result.ok) return result;
+  if (!isConnectionError(result.error)) return result;
+
+  const r = await resolveGatewayPort();
+  if (r.success && r.port) {
+    setResolvedGatewayPort(r.port);
+    result = await callGatewayRpc(method, params, timeoutMs);
+  }
+  return result;
 }

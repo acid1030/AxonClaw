@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, Download, ListChecks, Search } from 'lucide-react';
+import { Download, ListChecks, Search } from 'lucide-react';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
 
 type SortField = 'updated' | 'tokens' | 'name';
@@ -110,7 +111,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
   const [refreshing, setRefreshing] = useState(false);
   const hasLoadedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [kindFilter, setKindFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState<string>('all');
   const [busy, setBusy] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -254,7 +255,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
 
   const filtered = useMemo(() => {
     let list = sessions;
-    if (kindFilter) list = list.filter((s) => s.kind === kindFilter);
+    if (kindFilter && kindFilter !== 'all') list = list.filter((s) => s.kind === kindFilter);
     if (searchKeyword) {
       const q = searchKeyword;
       list = list.filter(
@@ -459,60 +460,72 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
     [onNavigateTo]
   );
 
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
-      <div className="shrink-0 py-3 border-b border-white/10">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-bold text-white/90">{labels.title}</h2>
-            <p className="text-xs text-white/50 truncate" title={labels.activityHelp}>
-              {sessions.length} {labels.sessions}
-              {storePath ? ` · ${storePath}` : ''}
-            </p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {sessions.length > 0 && (
-              <button
-                onClick={exportCSV}
-                className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
-                title={labels.exportCsv}
-              >
-                <Download className="w-4 h-4" />
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setBatchMode(!batchMode);
-                setBatchSelected(new Set());
-              }}
-              className={cn(
-                'p-1.5 rounded-lg transition-all',
-                batchMode ? 'text-indigo-400 bg-indigo-500/10' : 'text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10'
-              )}
-              title={labels.batchMode}
-            >
-              <ListChecks className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() =>
-                setCardDensity((d) => (d === 'compact' ? 'normal' : d === 'normal' ? 'large' : 'compact'))
-              }
-              className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
-              title={`密度: ${cardDensity}`}
-            >
-              <span className="text-sm font-bold">{cardDensity === 'compact' ? 'S' : cardDensity === 'large' ? 'L' : 'M'}</span>
-            </button>
-            <button
-              onClick={() => loadSessions()}
-              disabled={loading || refreshing}
-              className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all disabled:opacity-40"
-              title={labels.refresh}
-            >
-              <RefreshCw className={cn('w-4 h-4', (loading || refreshing) && 'animate-spin')} />
-            </button>
-          </div>
-        </div>
+  const isOnline = useGatewayStore((s) => s.status.state === 'running');
 
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#0f172a] text-white">
+      <div className="w-full flex flex-col h-full py-6 overflow-hidden px-4">
+        <PageHeader
+          title={labels.title}
+          subtitle={`${sessions.length} ${labels.sessions}${storePath ? ` · ${storePath}` : ''}`}
+          stats={[
+            { label: '会话', value: sessions.length },
+            { label: '总 Token', value: kpiStats.totalTok >= 1000 ? `${(kpiStats.totalTok / 1000).toFixed(1)}K` : kpiStats.totalTok },
+            { label: '24h 活跃', value: kpiStats.active24h },
+            { label: 'Gateway', value: isOnline ? '在线' : '离线', valueClassName: isOnline ? 'text-emerald-400' : 'text-amber-400' },
+          ]}
+          onRefresh={() => void loadSessions()}
+          refreshing={loading || refreshing}
+          statsBorderColor={
+            !isOnline
+              ? 'border-amber-500/40'
+              : sessions.length > 0
+                ? 'border-emerald-500/40'
+                : 'border-indigo-500/40'
+          }
+          actions={
+            <div className="flex items-center gap-1">
+              {sessions.length > 0 && (
+                <button
+                  onClick={exportCSV}
+                  className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
+                  title={labels.exportCsv}
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setBatchMode(!batchMode);
+                  setBatchSelected(new Set());
+                }}
+                className={cn(
+                  'p-1.5 rounded-lg transition-all',
+                  batchMode ? 'text-indigo-400 bg-indigo-500/10' : 'text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10'
+                )}
+                title={labels.batchMode}
+              >
+                <ListChecks className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() =>
+                  setCardDensity((d) => (d === 'compact' ? 'normal' : d === 'normal' ? 'large' : 'compact'))
+                }
+                className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
+                title={`密度: ${cardDensity}`}
+              >
+                <span className="text-sm font-bold">{cardDensity === 'compact' ? 'S' : cardDensity === 'large' ? 'L' : 'M'}</span>
+              </button>
+            </div>
+          }
+        />
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-0">
+        <div
+          className={cn(
+            'shrink-0 py-3 border-b',
+            sessions.length > 0 ? 'border-emerald-500/15' : 'border-indigo-500/20'
+          )}
+        >
         {sessions.length > 0 && (
           <KPIDashboard
             stats={kpiStats}
@@ -530,15 +543,20 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={labels.search}
-              className="w-full h-8 pl-8 pr-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+              className="w-full h-8 pl-8 pr-2 rounded-lg bg-[#1e293b] border border-indigo-500/20 text-xs text-white/90 placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/40"
             />
           </div>
           <Select value={kindFilter} onValueChange={setKindFilter}>
-            <SelectTrigger className="h-8 w-[140px] rounded-lg bg-white/5 border-white/10 text-xs text-white/70">
+            <SelectTrigger
+              className={cn(
+                'h-8 w-[140px] rounded-lg bg-[#1e293b] text-xs text-white/80',
+                kindFilter === 'all' ? 'border-indigo-500/25' : kindFilter === 'direct' ? 'border-blue-500/25' : kindFilter === 'group' ? 'border-purple-500/25' : kindFilter === 'global' ? 'border-amber-500/25' : 'border-white/15'
+              )}
+            >
               <SelectValue placeholder={`${labels.all} (${sessions.length})`} />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">{`${labels.all} (${sessions.length})`}</SelectItem>
+            <SelectContent className="bg-[#1e293b] border-indigo-500/20 text-white/90">
+              <SelectItem value="all">{`${labels.all} (${sessions.length})`}</SelectItem>
               {['direct', 'group', 'global', 'unknown']
                 .filter((k) => kindCounts[k])
                 .map((k) => (
@@ -549,10 +567,15 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
             </SelectContent>
           </Select>
           <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
-            <SelectTrigger className="h-8 w-[120px] rounded-lg bg-white/5 border-white/10 text-xs text-white/70">
+            <SelectTrigger
+              className={cn(
+                'h-8 w-[120px] rounded-lg bg-[#1e293b] text-xs text-white/80',
+                sortField === 'updated' ? 'border-indigo-500/25' : sortField === 'tokens' ? 'border-amber-500/25' : 'border-blue-500/25'
+              )}
+            >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-[#1e293b] border-indigo-500/20 text-white/90">
               <SelectItem value="updated">{labels.sortUpdated}</SelectItem>
               <SelectItem value="tokens">{labels.sortTokens}</SelectItem>
               <SelectItem value="name">{labels.sortName}</SelectItem>
@@ -592,13 +615,13 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
         {loading && !result ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-2xl p-4 animate-pulse bg-white/5">
+              <div key={i} className="rounded-2xl p-4 animate-pulse bg-[#1e293b] border border-indigo-500/20">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-12 h-4 rounded-full bg-white/10" />
-                  <div className="flex-1 h-3 rounded bg-white/10" />
+                  <div className="w-12 h-4 rounded-full bg-indigo-500/20" />
+                  <div className="flex-1 h-3 rounded bg-indigo-500/10" />
                 </div>
-                <div className="h-12 rounded-lg bg-white/5" />
-                <div className="h-3 w-2/3 rounded bg-white/5 mt-3" />
+                <div className="h-12 rounded-lg bg-indigo-500/10" />
+                <div className="h-3 w-2/3 rounded bg-indigo-500/10 mt-3" />
               </div>
             ))}
           </div>
@@ -634,19 +657,23 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
           <>
             {groupedSessions.map((group) => (
               <div key={group.label} className="mb-1">
-                <div className="sticky top-0 z-10 py-1.5 text-[10px] font-bold text-white/40 uppercase tracking-wider bg-[#0f172a]/95 backdrop-blur-sm border-b border-white/5">
+                <div
+          className={cn(
+            'sticky top-0 z-10 py-1.5 text-[10px] font-bold text-white/40 uppercase tracking-wider bg-[#0f172a]/95 backdrop-blur-sm border-b',
+            group.label === '今天' ? 'border-emerald-500/20' : group.label === '昨天' ? 'border-blue-500/15' : 'border-white/10'
+          )}
+        >
                   {group.label} ({group.items.length})
                 </div>
                 <div
                   className={cn(
                     'grid gap-3 p-4',
-                    cardDensity === 'compact' &&
-                      'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5',
+                    cardDensity === 'compact' && 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5',
                     cardDensity === 'large' && 'grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2',
                     cardDensity === 'normal' && 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
                   )}
                 >
-                  {group.items.slice(0, 60).map((row, ci) => (
+                  {group.items.slice(0, 60).map((row) => (
                     <div key={row.key as string} className="animate-in fade-in slide-in-from-bottom-2">
                       {batchMode && (
                         <div className="flex items-center gap-1.5 mb-1 ps-1">
@@ -678,7 +705,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
       </div>
 
       {lastRefresh > 0 && (
-        <div className="shrink-0 py-1 border-t border-white/5 text-[9px] text-white/30 text-center">
+        <div className="shrink-0 py-1 border-t border-indigo-500/10 text-[9px] text-white/30 text-center">
           {labels.lastRefresh}: {new Date(lastRefresh).toLocaleTimeString('zh-CN')}
         </div>
       )}
@@ -722,6 +749,8 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
           setPendingKey(null);
         }}
       />
+      </div>
+      </div>
     </div>
   );
 };

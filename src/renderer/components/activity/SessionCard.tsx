@@ -13,12 +13,12 @@ const KIND_COLORS: Record<string, string> = {
 };
 
 function activeHeatClass(updatedAt: number | undefined): string {
-  if (!updatedAt) return 'bg-slate-300 dark:bg-white/15';
+  if (!updatedAt) return 'bg-white/15';
   const age = Date.now() - updatedAt;
   if (age < 300_000) return 'bg-green-400 animate-pulse';
   if (age < 3_600_000) return 'bg-green-400';
   if (age < 86_400_000) return 'bg-amber-400';
-  return 'bg-slate-300 dark:bg-white/15';
+  return 'bg-white/15';
 }
 
 function formatCost(cost: number | undefined): string | null {
@@ -81,6 +81,14 @@ export const SessionCard: React.FC<SessionCardProps> = ({
   const avgLatency =
     (s.responseUsage as { avgLatency?: number })?.avgLatency ?? (s.avgLatency as number);
 
+  const topBarColor = isStreaming
+    ? 'from-indigo-400/50'
+    : isHot
+      ? 'from-green-400/40'
+      : isWarm
+        ? 'from-amber-400/30'
+        : 'from-white/10';
+
   return (
     <div
       className={`
@@ -92,11 +100,11 @@ export const SessionCard: React.FC<SessionCardProps> = ({
               ? 'border-green-400/30 bg-green-500/[0.02] shadow-md hover:shadow-lg hover:-translate-y-0.5'
               : isWarm
                 ? 'border-amber-400/20 bg-amber-500/[0.01] hover:shadow-lg hover:-translate-y-0.5'
-                : 'border-slate-200/60 dark:border-white/[0.06] bg-white/[0.72] dark:bg-white/[0.04] hover:shadow-lg hover:-translate-y-0.5'
+                : 'border-white/[0.08] bg-[#1e293b] hover:shadow-lg hover:-translate-y-0.5'
         }
       `}
     >
-      <div className="h-1 w-full bg-gradient-to-r from-slate-400/30 to-transparent" />
+      <div className={`h-1 w-full bg-gradient-to-r ${topBarColor} to-transparent`} />
 
       <div className="p-4 pt-3">
         <div className="absolute top-4 end-3 flex items-center gap-1.5">
@@ -118,23 +126,23 @@ export const SessionCard: React.FC<SessionCardProps> = ({
         <div className="flex items-center gap-2 mb-1.5">
           <span
             className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-              KIND_COLORS[s.kind as string] || 'bg-slate-500/10 text-slate-500'
+              KIND_COLORS[s.kind as string] || 'bg-white/10 text-white/50'
             }`}
           >
             {a[s.kind as string] || (s.kind as string) || a.unknown || 'unknown'}
           </span>
-          <span className="text-[10px] font-mono text-slate-500 dark:text-white/40 truncate flex-1">
+          <span className="text-[10px] font-mono text-white/40 truncate flex-1">
             {s.key as string}
           </span>
         </div>
         {displayName && (
-          <p className="text-[12px] font-semibold text-slate-700 dark:text-white/70 truncate mb-2 pe-16">
+          <p className="text-[12px] font-semibold text-white/70 truncate mb-2 pe-16">
             {displayName}
           </p>
         )}
 
         {s.model && (
-          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200/40 dark:border-white/10 text-[9px] font-medium mb-2.5">
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] font-medium mb-2.5">
             <Zap className="w-3 h-3 text-amber-500" />
             <span className="truncate max-w-[100px]">{s.model as string}</span>
           </div>
@@ -154,24 +162,24 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 innerRadius={0.55}
               />
             ) : (
-              <div className="w-12 h-12 shrink-0 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
-                <span className="text-[10px] text-slate-300 dark:text-white/15">—</span>
+              <div className="w-12 h-12 shrink-0 rounded-full bg-white/5 flex items-center justify-center">
+                <span className="text-[10px] text-white/15">—</span>
               </div>
             )}
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-1.5 mb-1">
-              <span className="text-[18px] font-extrabold tabular-nums text-slate-800 dark:text-white/80 leading-none">
+              <span className="text-[18px] font-extrabold tabular-nums text-white/80 leading-none">
                 {fmtTok(total)}
               </span>
-              <span className="text-[8px] font-bold text-slate-400 dark:text-white/25 uppercase">
+              <span className="text-[8px] font-bold text-white/25 uppercase">
                 {a.tokens || 'TOKENS'}
               </span>
             </div>
 
             <div className="mb-1.5">
-              <div className="h-2.5 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden flex">
+              <div className="h-2.5 rounded-full bg-white/5 overflow-hidden flex">
                 {total > 0 && (
                   <>
                     <div
@@ -224,17 +232,19 @@ export const SessionCard: React.FC<SessionCardProps> = ({
           const hasTools = tu && tu.totalCalls > 0;
           const hasLatency = lat && lat.avgMs > 0;
           if (!hasMessages && !hasTools && !hasLatency) return null;
+          const panelBorder =
+            hasTools ? 'border-purple-500/25' : hasLatency && lat!.avgMs > 2000 ? 'border-amber-500/25' : hasMessages ? 'border-blue-500/25' : 'border-white/10';
           return (
-            <div className="mb-3 p-2.5 rounded-xl bg-slate-50/80 dark:bg-white/[0.02] border border-slate-100/60 dark:border-white/[0.04]">
+            <div className={`mb-3 p-2.5 rounded-xl bg-[#1e293b]/80 border ${panelBorder}`}>
               {hasMessages && (
                 <div className="mb-2">
                   <div className="flex justify-between mb-1">
-                    <span className="text-[8px] font-bold text-slate-400 dark:text-white/30 uppercase">
+                    <span className="text-[8px] font-bold text-white/30 uppercase">
                       {a.messages || 'Messages'}
                     </span>
                     <span className="text-[9px] font-extrabold tabular-nums">{mc!.total}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden flex">
+                  <div className="h-2 rounded-full bg-white/5 overflow-hidden flex">
                     {mc!.total > 0 && (
                       <>
                         <div
@@ -251,7 +261,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 </div>
               )}
               {hasLatency && (
-                <div className="text-[7px] text-slate-400 dark:text-white/25">
+                <div className="text-[7px] text-white/25">
                   {a.latencyStats || 'Latency'}: {(lat!.avgMs / 1000).toFixed(1)}s (p95 {(lat!.p95Ms / 1000).toFixed(1)}s)
                 </div>
               )}
@@ -259,7 +269,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
           );
         })()}
 
-        <div className="flex items-center gap-2 text-[9px] text-slate-400 dark:text-white/25 mb-2">
+        <div className="flex items-center gap-2 text-[9px] text-white/25 mb-2">
           <span className="flex-1" />
           <span title={s.updatedAt ? new Date(s.updatedAt as number).toLocaleString() : ''}>
             {relativeTime}
@@ -267,7 +277,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
         </div>
 
         {s.lastMessagePreview && (
-          <p className="text-[9px] text-slate-400 dark:text-white/20 line-clamp-2 leading-relaxed mb-2">
+          <p className="text-[9px] text-white/20 line-clamp-2 leading-relaxed mb-2">
             {s.lastMessagePreview as string}
           </p>
         )}
@@ -291,7 +301,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 e.stopPropagation();
                 onCompact(s.key as string);
               }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 hover:text-amber-500 transition"
+              className="p-1.5 rounded-lg bg-white/5 text-white/40 hover:text-amber-500 transition"
               title={a.compact || 'Compact'}
             >
               <Minimize2 className="w-3.5 h-3.5" />
@@ -303,7 +313,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 e.stopPropagation();
                 onReset(s.key as string);
               }}
-              className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 hover:text-indigo-500 transition"
+              className="p-1.5 rounded-lg bg-white/5 text-white/40 hover:text-indigo-500 transition"
               title={a.reset || 'Reset'}
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -315,7 +325,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 e.stopPropagation();
                 onDelete(s.key as string);
               }}
-              className="p-1.5 rounded-lg bg-red-50 dark:bg-red-500/5 text-red-400 hover:text-red-500 transition"
+              className="p-1.5 rounded-lg bg-red-500/5 text-red-400 hover:text-red-500 transition"
               title={a.delete || 'Delete'}
             >
               <Trash2 className="w-3.5 h-3.5" />

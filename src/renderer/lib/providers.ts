@@ -119,7 +119,8 @@ export interface ProviderAccount {
   updatedAt: string;
 }
 
-import { providerIcons } from '@/assets/providers';
+/** Provider SVG icon URLs - 可选，无则回退到 emoji。assets/providers 可后续补充 */
+const providerIcons: Partial<Record<ProviderType | string, string>> = {};
 
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [

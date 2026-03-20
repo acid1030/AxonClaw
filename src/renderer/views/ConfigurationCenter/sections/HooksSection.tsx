@@ -18,7 +18,8 @@ import type { SectionProps } from '../sectionTypes';
 export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => {
   const g = (p: string[]) => getField(['hooks', ...p]);
   const s = (p: string[], v: unknown) => setField(['hooks', ...p], v);
-  const mappings: Record<string, unknown>[] = (g(['mappings']) as Record<string, unknown>[]) || [];
+  const mappingsRaw = g(['mappings']);
+  const mappings: Record<string, unknown>[] = Array.isArray(mappingsRaw) ? mappingsRaw : [];
 
   return (
     <div className="space-y-4">

@@ -26,6 +26,16 @@
   --text-primary: #ffffff;
   --text-secondary: #8e8e93;
   --text-tertiary: #636366;
+
+  /* ClawDeckX 深色文字与边框 (与 deckx/index.html .dark 一致) */
+  --color-text: rgba(255, 255, 255, 0.9);
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-muted: rgba(255, 255, 255, 0.35);
+  --color-text-disabled: rgba(255, 255, 255, 0.15);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-surface-raised: rgba(255, 255, 255, 0.03);
+  --color-surface-sunken: rgba(255, 255, 255, 0.02);
   
   /* 强调色 - ClawDeckX 蓝紫系统 */
   --accent: #0a84ff;

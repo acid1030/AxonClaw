@@ -32,6 +32,13 @@ import {
   PenTool,
   BookOpen,
   LayoutTemplate,
+  GitMerge,
+  Radio,
+  Eye,
+  Zap,
+  Mail,
+  CalendarDays,
+  Star,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
@@ -39,7 +46,7 @@ import { useChannelsStore } from '@/stores/channels';
 import { useCronStore } from '@/stores/cron';
 import { useSkillsStore } from '@/stores/skills';
 import { useChatStore } from '@/stores/chat';
-import { useGatewayStore } from '@/stores/gateway';
+import { useGatewayOnline } from '@/hooks/useGatewayOnline';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
@@ -51,17 +58,18 @@ import type { AgentSummary } from '@/types/agent';
 import type { ChannelType } from '@/types/channel';
 import { CHANNEL_NAMES, CHANNEL_ICONS } from '@/types/channel';
 import { AgentSettingsModal } from '@/pages/Agents';
+import { hostApiFetch } from '@/lib/host-api';
 import { agentFilesList, agentFileGet, agentFileSet, configGet, agentSkills, agentsDelete, wake } from '@/services/agent-api';
 
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: BarChart3 },
-  { id: 'files', label: 'Files', icon: FileText },
-  { id: 'tools', label: 'Tools', icon: Wrench },
-  { id: 'skills', label: 'Skills', icon: Puzzle },
-  { id: 'channels', label: 'Channels', icon: MessageSquare },
-  { id: 'cron', label: 'Cron Jobs', icon: Calendar },
-  { id: 'chat', label: '运行', icon: MessageSquare },
-  { id: 'scenarios', label: '场景', icon: LayoutTemplate },
+  { id: 'overview', label: '概览', icon: BarChart3 },
+  { id: 'files', label: '文件', icon: FileText },
+  { id: 'tools', label: '工具', icon: Wrench },
+  { id: 'skills', label: '技能', icon: Puzzle },
+  { id: 'channels', label: '渠道', icon: MessageSquare },
+  { id: 'cron', label: '定时任务', icon: Calendar },
+  { id: 'chat', label: '对话', icon: MessageSquare },
+  { id: 'scenarios', label: '场景库', icon: LayoutTemplate },
   { id: 'multi-agent', label: '多代理', icon: Sparkles },
 ] as const;
 
@@ -148,8 +156,7 @@ export const AgentsView: React.FC = () => {
   const { jobs, fetchJobs } = useCronStore();
   const { fetchSkills } = useSkillsStore();
   const switchSession = useChatStore((s) => s.switchSession);
-  const gatewayStatus = useGatewayStore((s) => s.status);
-  const isOnline = gatewayStatus.state === 'running';
+  const isOnline = useGatewayOnline();
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -163,6 +170,8 @@ export const AgentsView: React.FC = () => {
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [waking, setWaking] = useState(false);
   const [wakeResult, setWakeResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [searchAgent, setSearchAgent] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
 
   useEffect(() => {
     void Promise.all([fetchAgents(), fetchChannels()]);
@@ -176,6 +185,13 @@ export const AgentsView: React.FC = () => {
   }, [isOnline, fetchJobs, fetchSkills]);
 
   const safeAgents = Array.isArray(agents) ? agents : [];
+  const filteredAgents = searchAgent
+    ? safeAgents.filter(
+        (a) =>
+          (a.name ?? '').toLowerCase().includes(searchAgent.toLowerCase()) ||
+          (a.id ?? '').toLowerCase().includes(searchAgent.toLowerCase())
+      )
+    : safeAgents;
   const selectedAgent = safeAgents.find((a) => a.id === selectedAgentId) ?? safeAgents[0] ?? null;
 
   useEffect(() => {
@@ -251,11 +267,11 @@ export const AgentsView: React.FC = () => {
 
   return (
     <div className="flex h-full w-full min-w-0 bg-[#0f172a] text-white overflow-hidden">
-      {/* Left Sidebar - Skills 风格 */}
+      {/* Left Sidebar - 代理管理 */}
       <aside className="w-64 shrink-0 flex flex-col border-r border-indigo-500/20 bg-[#1e293b]">
         <div className="p-4 border-b border-indigo-500/20">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-foreground">Agents</h2>
+            <h2 className="text-sm font-semibold text-foreground">代理管理</h2>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -275,46 +291,220 @@ export const AgentsView: React.FC = () => {
               </Button>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">{safeAgents.length} agents</p>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {safeAgents.map((agent) => (
+          <div className="relative mt-2">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="搜索 Agent / 角色..."
+              value={searchAgent}
+              onChange={(e) => setSearchAgent(e.target.value)}
+              className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-[#0f172a] border border-indigo-500/20 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
+            />
+          </div>
+          <div className="flex gap-1 mt-2">
             <button
-              key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
+              type="button"
+              onClick={() => setViewMode('cards')}
               className={cn(
-                'w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors border-2',
-                selectedAgentId === agent.id
-                  ? 'bg-indigo-500/20 border-indigo-500/40 text-foreground'
-                  : 'border-transparent hover:bg-white/5 text-muted-foreground hover:text-foreground'
+                'flex-1 px-2 py-1 rounded text-[10px] font-medium',
+                viewMode === 'cards' ? 'bg-indigo-500/30 text-indigo-400' : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <div className="h-9 w-9 shrink-0 rounded-full bg-indigo-500/30 flex items-center justify-center">
-                <span className="text-sm font-medium">
-                  {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{agent.name}</p>
-                <p className="text-xs opacity-70 truncate">{agent.id}</p>
-              </div>
-              {agent.isDefault && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
-                  default
-                </span>
-              )}
+              卡片
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'flex-1 px-2 py-1 rounded text-[10px] font-medium',
+                viewMode === 'list' ? 'bg-indigo-500/30 text-indigo-400' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              列表
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{filteredAgents.length} 个代理</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {viewMode === 'list' &&
+            filteredAgents.map((agent) => (
+              <button
+                key={agent.id}
+                onClick={() => setSelectedAgentId(agent.id)}
+                className={cn(
+                  'w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors border-2',
+                  selectedAgentId === agent.id
+                    ? 'bg-indigo-500/20 border-indigo-500/40 text-foreground'
+                    : 'border-transparent hover:bg-white/5 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <div className="h-9 w-9 shrink-0 rounded-full bg-indigo-500/30 flex items-center justify-center">
+                  <span className="text-sm font-medium">
+                    {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{agent.name}</p>
+                  <p className="text-xs opacity-70 truncate">{agent.id}</p>
+                </div>
+                {agent.isDefault && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
+                    默认
+                  </span>
+                )}
+              </button>
+            ))}
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
-        {selectedAgent ? (
-          <>
+        {/* 顶部栏：搜索、新建、同步 */}
+        <div className="shrink-0 flex items-center justify-between gap-3 py-3 px-4 border-b border-indigo-500/20">
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="搜索 Agent / 角色..."
+                value={searchAgent}
+                onChange={(e) => setSearchAgent(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setShowAddDialog(true)}
+              className="gap-1.5 bg-indigo-500 hover:bg-indigo-600 border-indigo-500/40"
+            >
+              <Plus className="h-4 w-4" />
+              新建 Agent
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRefresh}
+              className="gap-1.5 border-indigo-500/40"
+            >
+              <RefreshCw className="h-4 w-4" />
+              同步配置
+            </Button>
+          </div>
+        </div>
+
+        {viewMode === 'cards' && !selectedAgentId && filteredAgents.length > 0 ? (
+          /* 角色卡片 grid 视图 */
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-foreground">子代理管理</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">角色卡片、状态与能力标签</p>
+              <div className="flex gap-2 mt-2">
+                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">多角色</span>
+                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">任务分配</span>
+                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">协作消息</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              {filteredAgents.map((agent) => (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => setSelectedAgentId(agent.id)}
+                  className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4 text-left hover:border-indigo-500/50 transition-colors group"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-indigo-500/30 flex items-center justify-center group-hover:bg-indigo-500/40 transition-colors">
+                        <span className="text-lg font-medium">
+                          {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-foreground">{agent.name}</div>
+                        <div className="text-xs text-muted-foreground">{agent.modelDisplay || agent.id}</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400">
+                      在线
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {agent.channelTypes.slice(0, 3).map((t) => (
+                      <span
+                        key={t}
+                        className="px-2 py-0.5 rounded text-[10px] bg-slate-600/50 text-muted-foreground"
+                      >
+                        {CHANNEL_NAMES[t as ChannelType] || t}
+                      </span>
+                    ))}
+                    {agent.channelTypes.length === 0 && (
+                      <span className="text-[10px] text-muted-foreground">暂无渠道</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {/* 协作能力 */}
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-foreground mb-3">协作能力</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="font-medium text-foreground">任务编排</div>
+                      <div className="text-xs text-muted-foreground">分解 / 分配 / 协调</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">P0</span>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">复杂任务拆解</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">SubTask</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">负载均衡策略</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Least-loaded</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">协作结果合并</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Merge</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="font-medium text-foreground">消息总线</div>
+                      <div className="text-xs text-muted-foreground">Agent 间通信</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">P0</span>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Topic 订阅</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">MessageBus</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">广播 / 请求响应</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Realtime</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">冲突解决</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Resolve</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : selectedAgent ? (
+          <div className="flex-1 flex min-h-0">
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             {/* Agent Header */}
             <div className="shrink-0 flex items-center justify-between py-4 border-b border-indigo-500/20">
-              <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-indigo-500/30 flex items-center justify-center border-2 border-indigo-500/40">
                   <span className="text-base font-medium">
                     {(selectedAgent.name || selectedAgent.id).charAt(0).toUpperCase()}
@@ -430,7 +620,9 @@ export const AgentsView: React.FC = () => {
                   <ChatView />
                 </div>
               )}
-              {activeTab === 'scenarios' && <ScenariosTab />}
+              {activeTab === 'scenarios' && selectedAgent && (
+                <ScenariosTab agent={selectedAgent} onRefresh={handleRefresh} />
+              )}
               {activeTab === 'multi-agent' && (
                 <MultiAgentTab
                   selectedWorkflow={selectedWorkflow}
@@ -440,17 +632,81 @@ export const AgentsView: React.FC = () => {
                 />
               )}
             </div>
-          </>
+          </div>
+
+            {/* Right Panel - 运行概览 / 今日任务 / 快捷操作 */}
+            <aside className="w-80 shrink-0 flex flex-col gap-4 p-4 border-l border-indigo-500/20 bg-[#0b1224] overflow-y-auto">
+              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">运行概览</h3>
+                    <p className="text-xs text-muted-foreground">实时健康</p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-400">
+                    {isOnline ? '在线' : '离线'}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Gateway 连接</p>
+                    <p className="text-sm font-medium text-foreground">{isOnline ? '稳定' : '未连接'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">活跃渠道</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {selectedAgent.channelTypes.filter((t) => {
+                        const ch = channels.find((c) => c.type === t);
+                        return ch?.status === 'connected';
+                      }).length}
+                      {' / '}
+                      {selectedAgent.channelTypes.length || 0}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Agent 任务队列</p>
+                    <p className="text-sm font-medium text-foreground">—</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">今日任务</h3>
+                  <p className="text-xs text-muted-foreground">多 Agent 协作</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border border-indigo-500/10 bg-[#162238] px-3 py-2">
+                    <div>
+                      <p className="text-xs font-medium text-foreground">—</p>
+                      <p className="text-[10px] text-muted-foreground">暂无任务</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">快捷操作</h3>
+                  <p className="text-xs text-muted-foreground">常用指令</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">运行诊断</span>
+                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">备份数据</span>
+                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">新建模板</span>
+                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">启动 Channel</span>
+                </div>
+              </div>
+            </aside>
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
             <Bot className="h-16 w-16 mb-4 opacity-50" />
-            <p className="text-sm mb-4">No agents yet</p>
+            <p className="text-sm mb-2">暂无代理</p>
+            <p className="text-xs mb-4">创建第一个 Agent 开始使用</p>
             <Button
               onClick={() => setShowAddDialog(true)}
               className="bg-indigo-500 hover:bg-indigo-600 text-white border-2 border-indigo-500/40"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add Agent
+              新建 Agent
             </Button>
           </div>
         )}
@@ -534,7 +790,7 @@ function OverviewTab({
     <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-3xl space-y-6">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Overview</h2>
+          <h2 className="text-lg font-semibold text-foreground">概览</h2>
           <p className="text-sm text-muted-foreground mt-1">Agent 基本信息与配置</p>
         </div>
 
@@ -559,7 +815,7 @@ function OverviewTab({
         </div>
 
         <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Channels</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">渠道</p>
           {assigned.length === 0 ? (
             <p className="text-sm text-muted-foreground">暂无渠道</p>
           ) : (
@@ -986,7 +1242,7 @@ function ChannelsTab({
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Channels</h2>
+            <h2 className="text-lg font-semibold text-foreground">渠道</h2>
             <p className="text-sm text-muted-foreground mt-1">渠道连接状态</p>
           </div>
           <Button
@@ -994,7 +1250,7 @@ function ChannelsTab({
             className="bg-indigo-500 hover:bg-indigo-600 text-white border-2 border-indigo-500/40"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Add Channel
+            添加渠道
           </Button>
         </div>
         {assigned.length === 0 ? (
@@ -1002,7 +1258,7 @@ function ChannelsTab({
             <MessageSquare className="h-12 w-12 mb-3 opacity-50" />
             <p className="text-sm mb-2">暂无渠道</p>
             <Button variant="outline" size="sm" onClick={onAddChannel} className="border-indigo-500/40">
-              Add Channel
+              添加渠道
             </Button>
           </div>
         ) : (
@@ -1066,8 +1322,8 @@ function CronTab({
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Cron Jobs</h2>
-            <p className="text-sm text-muted-foreground mt-1">定时任务</p>
+            <h2 className="text-lg font-semibold text-foreground">定时任务</h2>
+            <p className="text-sm text-muted-foreground mt-1">Cron 定时调度</p>
           </div>
           <Button
             variant="outline"
@@ -1119,100 +1375,314 @@ function CronTab({
   );
 }
 
-const SCENARIO_TEMPLATES = [
+/** 场景库分类（与 ClawDeckX 一致） */
+const SCENE_CATEGORIES = [
+  { id: 'all', label: '全部' },
+  { id: 'productivity', label: '生产力' },
+  { id: 'social', label: '社交媒体' },
+  { id: 'content', label: '内容创作' },
+  { id: 'devops', label: 'DevOps' },
+  { id: 'research', label: '研究学习' },
+  { id: 'finance', label: '金融交易' },
+  { id: 'home', label: '家庭生活' },
+] as const;
+
+/** 场景模板（ClawDeckX 风格） */
+const SCENE_LIBRARY_TEMPLATES = [
+  {
+    id: 'personal-assistant',
+    title: '个人助理',
+    desc: '您的 AI 驱动个人助理，帮助管理日程、任务和提醒',
+    category: 'productivity',
+    tags: ['助理', '生产力', '任务', '提醒'],
+    badges: ['简单', '推荐'] as const,
+    skillCount: 1,
+    cronCount: 1,
+    icon: MessageSquare,
+    iconBg: 'bg-blue-500/30',
+    iconColor: 'text-blue-400',
+  },
+  {
+    id: 'email-butler',
+    title: '邮件管家',
+    desc: '智能邮件分类、摘要和回复助手',
+    category: 'productivity',
+    tags: ['邮件', '生产力', '自动化'],
+    badges: ['中等'] as const,
+    skillCount: 1,
+    cronCount: 1,
+    icon: Mail,
+    iconBg: 'bg-violet-500/30',
+    iconColor: 'text-violet-400',
+  },
+  {
+    id: 'schedule-management',
+    title: '日程管理',
+    desc: '智能日程管理，支持冲突检测和排程优化',
+    category: 'productivity',
+    tags: ['日历', '排程', '生产力'],
+    badges: ['简单', '推荐'] as const,
+    skillCount: 1,
+    cronCount: 1,
+    icon: CalendarDays,
+    iconBg: 'bg-emerald-500/30',
+    iconColor: 'text-emerald-400',
+  },
   {
     id: 'tech-assistant',
     title: '技术助手',
     desc: '编程、调试、代码审查、技术文档编写',
+    category: 'devops',
+    tags: ['开发', '技术', '代码'],
+    badges: ['中等'] as const,
+    skillCount: 1,
+    cronCount: 0,
     icon: Laptop,
+    iconBg: 'bg-blue-500/30',
     iconColor: 'text-blue-400',
-    tag: '开发',
-    tagColor: 'bg-blue-500/20 text-blue-400',
   },
   {
     id: 'translator',
     title: '翻译助手',
     desc: '多语言翻译、本地化、术语一致性',
+    category: 'productivity',
+    tags: ['语言', '翻译', '本地化'],
+    badges: ['简单'] as const,
+    skillCount: 1,
+    cronCount: 0,
     icon: Languages,
+    iconBg: 'bg-emerald-500/30',
     iconColor: 'text-emerald-400',
-    tag: '语言',
-    tagColor: 'bg-emerald-500/20 text-emerald-400',
   },
   {
     id: 'writer',
     title: '写作助手',
     desc: '文章撰写、润色、结构化写作',
+    category: 'content',
+    tags: ['写作', '内容', '创作'],
+    badges: ['中等'] as const,
+    skillCount: 1,
+    cronCount: 0,
     icon: PenTool,
+    iconBg: 'bg-amber-500/30',
     iconColor: 'text-amber-400',
-    tag: '内容',
-    tagColor: 'bg-amber-500/20 text-amber-400',
   },
   {
     id: 'content-factory',
     title: '内容工厂',
     desc: '研究 → 撰写 → 编辑 → 发布的完整内容生产流水线',
+    category: 'content',
+    tags: ['内容', '工作流', '创作'],
+    badges: ['中等'] as const,
+    skillCount: 2,
+    cronCount: 1,
     icon: BookOpen,
+    iconBg: 'bg-violet-500/30',
     iconColor: 'text-violet-400',
-    tag: '工作流',
-    tagColor: 'bg-violet-500/20 text-violet-400',
   },
 ];
 
-function ScenariosTab() {
-  const handleApply = (id: string) => {
-    toast.info('场景应用需配合 OpenClaw 模板系统。请确保 Gateway 已配置并支持 templates API。', {
-      description: `场景 ID: ${id}`,
-    });
+function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: () => void }) {
+  const [searchScene, setSearchScene] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [previewScene, setPreviewScene] = useState<typeof SCENE_LIBRARY_TEMPLATES[0] | null>(null);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+
+  const filtered = SCENE_LIBRARY_TEMPLATES.filter((s) => {
+    const matchCategory = categoryFilter === 'all' || s.category === categoryFilter;
+    const matchSearch =
+      !searchScene ||
+      s.title.toLowerCase().includes(searchScene.toLowerCase()) ||
+      s.desc.toLowerCase().includes(searchScene.toLowerCase()) ||
+      s.tags.some((t) => t.toLowerCase().includes(searchScene.toLowerCase()));
+    return matchCategory && matchSearch;
+  });
+
+  const handlePreview = (scene: typeof SCENE_LIBRARY_TEMPLATES[0]) => {
+    setPreviewScene(scene);
+  };
+
+  const handleApply = async (sceneId: string) => {
+    setApplyingId(sceneId);
+    try {
+      const res = await hostApiFetch<{ success?: boolean; error?: string }>(
+        `/api/agents/${encodeURIComponent(agent.id)}/apply-scene`,
+        { method: 'POST', body: JSON.stringify({ sceneId }) }
+      );
+      if (res?.success !== false) {
+        toast.success('场景已应用到当前 Agent');
+        onRefresh?.();
+      } else {
+        toast.error(res?.error || '应用失败');
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  const badgeColor = (b: string) => {
+    if (b === '简单') return 'bg-emerald-500/20 text-emerald-400';
+    if (b === '推荐') return 'bg-blue-500/20 text-blue-400';
+    if (b === '中等') return 'bg-amber-500/20 text-amber-400';
+    return 'bg-slate-500/20 text-slate-400';
   };
 
   return (
     <div className="flex-1 overflow-y-auto py-6">
-      <div className="max-w-3xl space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">场景库</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            ClawDeckX 风格：从场景库选择模板，一键应用到 Agent 工作区（IDENTITY.md、USER.md 等）
-          </p>
+      <div className="max-w-5xl space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">场景库</h2>
+            <p className="text-sm text-muted-foreground mt-1">选择适合你的使用场景，一键配置</p>
+          </div>
+          <div className="relative w-48 shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="搜索场景..."
+              value={searchScene}
+              onChange={(e) => setSearchScene(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
+            />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {SCENARIO_TEMPLATES.map((tpl) => (
-            <div
-              key={tpl.id}
-              className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-5 hover:border-indigo-500/50 transition-colors"
+        <div className="flex flex-wrap gap-2">
+          {SCENE_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCategoryFilter(c.id)}
+              className={cn(
+                'px-4 py-2 rounded-full text-sm font-medium transition-colors',
+                categoryFilter === c.id
+                  ? 'bg-indigo-500 text-white'
+                  : 'bg-[#1e293b] text-muted-foreground hover:text-foreground border border-indigo-500/20'
+              )}
             >
-              <div className="flex items-start gap-4">
-                <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center shrink-0 bg-[#0f172a]', tpl.iconColor)}>
-                  <tpl.icon className="h-5 w-5" />
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((scene) => (
+            <div
+              key={scene.id}
+              className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4 hover:border-indigo-500/50 transition-colors flex flex-col"
+            >
+              <div className="flex items-start gap-3 mb-3">
+                <div className={cn('h-12 w-12 rounded-xl flex items-center justify-center shrink-0', scene.iconBg, scene.iconColor)}>
+                  <scene.icon className="h-6 w-6" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">{tpl.title}</h3>
-                    <span className={cn('text-[10px] px-2 py-0.5 rounded-full', tpl.tagColor)}>
-                      {tpl.tag}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="text-sm font-semibold text-foreground">{scene.title}</h3>
+                    {scene.badges.map((b) => (
+                      <span key={b} className={cn('text-[10px] px-2 py-0.5 rounded-full', badgeColor(b))}>
+                        {b}
+                      </span>
+                    ))}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.desc}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-3 h-8 border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-                    onClick={() => handleApply(tpl.id)}
-                  >
-                    应用到当前 Agent
-                  </Button>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{scene.desc}</p>
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {scene.tags.map((t) => (
+                  <span key={t} className="px-2 py-0.5 rounded text-[10px] bg-slate-600/50 text-muted-foreground">
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 mb-4">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-400">
+                  <Star className="h-3 w-3" />
+                  {scene.skillCount} 技能
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400">
+                  <Calendar className="h-3 w-3" />
+                  {scene.cronCount} 定时任务
+                </span>
+              </div>
+              <div className="flex gap-2 mt-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-8 border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
+                  onClick={() => handlePreview(scene)}
+                >
+                  <Eye className="h-3.5 w-3.5 mr-1" />
+                  预览配置
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 h-8 bg-indigo-500 hover:bg-indigo-600"
+                  onClick={() => handleApply(scene.id)}
+                  disabled={applyingId !== null}
+                >
+                  {applyingId === scene.id ? (
+                    <span className="animate-pulse">设置中…</span>
+                  ) : (
+                    <>
+                      <Zap className="h-3.5 w-3.5 mr-1" />
+                      一键设置
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="rounded-xl border-2 border-indigo-500/20 bg-[#0f172a]/50 p-4">
-          <p className="text-xs text-muted-foreground">
-            💡 场景模板需配合 OpenClaw 模板系统使用。配置 Gateway 后，可从场景库选择并应用到当前 Agent 的 IDENTITY.md、USER.md 等工作区文件。
-          </p>
-        </div>
+        {filtered.length === 0 && (
+          <div className="rounded-xl border-2 border-indigo-500/20 bg-[#1e293b] p-8 text-center text-muted-foreground text-sm">
+            暂无匹配的场景
+          </div>
+        )}
       </div>
+
+      {previewScene && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setPreviewScene(null)}
+        >
+          <div
+            className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-6 max-w-md w-full mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-foreground mb-2">{previewScene.title}</h3>
+            <p className="text-sm text-muted-foreground mb-4">{previewScene.desc}</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {previewScene.tags.map((t) => (
+                <span key={t} className="px-2 py-0.5 rounded text-xs bg-slate-600/50 text-muted-foreground">
+                  {t}
+                </span>
+              ))}
+            </div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>技能: {previewScene.skillCount} 个</p>
+              <p>定时任务: {previewScene.cronCount} 个</p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button variant="outline" onClick={() => setPreviewScene(null)}>
+                关闭
+              </Button>
+              <Button
+                className="bg-indigo-500 hover:bg-indigo-600"
+                onClick={() => {
+                  handleApply(previewScene.id);
+                  setPreviewScene(null);
+                }}
+                disabled={applyingId !== null}
+              >
+                一键设置
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1271,7 +1741,7 @@ function MultiAgentTab({
                 </button>
               ))}
             </div>
-          </div>
+            </div>
 
           <div className="space-y-6">
             <div>
@@ -1317,11 +1787,11 @@ function MultiAgentTab({
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
                         高级
                       </span>
-                    </div>
+              </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       创建多个独立子代理，供主代理调用。
                     </p>
-                  </div>
+              </div>
                 </button>
               </div>
             </div>

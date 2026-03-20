@@ -68,7 +68,7 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
               />
               <SelectField
                 label="模式"
-                value={String(p.mode ?? 'api-key')}
+                value={AUTH_MODE_OPTIONS.some((o) => o.value === String(p.mode ?? 'api-key')) ? String(p.mode ?? 'api-key') : 'api-key'}
                 onChange={(v) => {
                   const next = [...profiles];
                   next[i] = { ...next[i], mode: v };

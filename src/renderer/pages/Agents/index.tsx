@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { useAgentsStore } from '@/stores/agents';
 import { useChannelsStore } from '@/stores/channels';
-import { useGatewayStore } from '@/stores/gateway';
+import { useGatewayOnline } from '@/hooks/useGatewayOnline';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
@@ -27,7 +27,6 @@ import qqIcon from '@/assets/channels/qq.svg';
 
 export function Agents() {
   const { t } = useTranslation('agents');
-  const gatewayStatus = useGatewayStore((state) => state.status);
   const {
     agents,
     loading,
@@ -61,19 +60,22 @@ export function Agents() {
     );
   }
 
+  const isOnline = useGatewayOnline();
+
   return (
     <div className="flex flex-col w-full h-full min-h-0 dark:bg-background overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
-          <div>
-            <h1
-              className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight"
-              style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}
-            >
-              {t('title')}
-            </h1>
-            <p className="text-[17px] text-foreground/70 font-medium">{t('subtitle')}</p>
-          </div>
+        <div className="sticky top-0 z-10 shrink-0 bg-background dark:bg-background pb-4 -mx-10 px-10">
+          <div className="flex flex-col md:flex-row md:items-start justify-between mb-4 gap-4">
+            <div>
+              <h1
+                className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight"
+                style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}
+              >
+                {t('title')}
+              </h1>
+              <p className="text-[17px] text-foreground/70 font-medium">{t('subtitle')}</p>
+            </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
               variant="outline"
@@ -92,9 +94,16 @@ export function Agents() {
             </Button>
           </div>
         </div>
+          <div
+            className={cn(
+              'h-[3px] w-full transition-all duration-700 shrink-0',
+              isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+            )}
+          />
+        </div>
 
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
-          {gatewayStatus.state !== 'running' && (
+          {!isOnline && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
               <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">

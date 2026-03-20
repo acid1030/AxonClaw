@@ -12,6 +12,7 @@ import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
+import { cn } from '@/lib/utils';
 import {
   filterUsageHistoryByWindow,
   groupUsageHistory,
@@ -147,20 +148,27 @@ export function Models() {
   const pagedUsageHistory = filteredUsageHistory.slice((safeUsagePage - 1) * usagePageSize, safeUsagePage * usagePageSize);
   const usageLoading = isGatewayRunning && visibleUsageHistory.length === 0;
 
+  const isOnline = isGatewayRunning;
+
   return (
     <div className="flex flex-col w-full h-full min-h-0 dark:bg-background overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
-        
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
-          <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-              {t('dashboard:models.title')}
-            </h1>
-            <p className="text-[17px] text-foreground/70 font-medium">
-              {t('dashboard:models.subtitle')}
-            </p>
+        <div className="sticky top-0 z-10 shrink-0 bg-background dark:bg-background pb-4 -mx-10 px-10">
+          <div className="flex flex-col md:flex-row md:items-start justify-between mb-4 gap-4">
+            <div>
+              <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+                {t('dashboard:models.title')}
+              </h1>
+              <p className="text-[17px] text-foreground/70 font-medium">
+                {t('dashboard:models.subtitle')}
+              </p>
+            </div>
           </div>
+          <div className={cn(
+            'h-[3px] w-full transition-all duration-700 shrink-0',
+            isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+          )} />
         </div>
 
         {/* Content Area */}

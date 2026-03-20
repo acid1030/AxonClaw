@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { DiagnosticsView } from './DiagnosticsView';
 import { SettingsView } from './SettingsView';
+import { useGatewayStore } from '@/stores/gateway';
 import { cn } from '@/lib/utils';
 
 type SystemTab = 'diagnostic' | 'setting';
@@ -20,8 +21,9 @@ interface SystemViewProps {
   defaultTab?: SystemTab;
 }
 
-const SystemView: React.FC<SystemViewProps> = ({ onNavigateTo, defaultTab = 'diagnostic' }) => {
+const SystemView: React.FC<SystemViewProps> = ({ onNavigateTo, defaultTab = 'setting' }) => {
   const [activeTab, setActiveTab] = useState<SystemTab>(defaultTab);
+  const isOnline = useGatewayStore((s) => s.status.state === 'running');
 
   useEffect(() => {
     setActiveTab(defaultTab);
@@ -29,7 +31,14 @@ const SystemView: React.FC<SystemViewProps> = ({ onNavigateTo, defaultTab = 'dia
 
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
-      <div className="flex items-center gap-1 pt-4 pb-2 border-b border-white/10 shrink-0">
+      <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-4 pb-4">
+        <h1 className="text-base font-bold text-foreground mb-2">系统</h1>
+        <div className={cn(
+          'h-[3px] w-full transition-all duration-700 shrink-0 mb-3',
+          isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+        )} />
+      </div>
+      <div className="flex items-center gap-1 pb-2 border-b border-white/10 shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -45,9 +54,9 @@ const SystemView: React.FC<SystemViewProps> = ({ onNavigateTo, defaultTab = 'dia
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-hidden min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {activeTab === 'diagnostic' && <DiagnosticsView embedded onNavigateTo={onNavigateTo} />}
-        {activeTab === 'setting' && <SettingsView embedded />}
+        {activeTab === 'setting' && <SettingsView embedded onNavigateTo={onNavigateTo} />}
       </div>
     </div>
   );

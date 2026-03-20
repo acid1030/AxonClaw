@@ -1,6 +1,6 @@
 /**
- * AxonClaw - 健康中心 (Health Center)
- * ClawDeckX Doctor 风格完整复刻：诊断、健康评分、一键修复、测试中心
+ * AxonClaw - 健康中心（ClawDeckX Doctor 布局对齐）
+ * standalone：侧栏「健康中心」全页；embedded：系统 → 健康中心 Tab
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -15,7 +15,23 @@ import {
   Activity,
   AlertTriangle,
   FlaskConical,
+  Heart,
+  Copy,
+  LayoutGrid,
+  Brain,
+  ArrowUp,
+  ArrowDown,
+  BarChart3,
+  Grid3X3,
+  ListOrdered,
+  Gauge,
+  Hash,
+  Filter,
+  Network,
+  Lightbulb,
+  Cpu,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useGatewayStore } from '@/stores/gateway';
 import { useChannelsStore } from '@/stores/channels';
 import { useSkillsStore } from '@/stores/skills';
@@ -24,8 +40,25 @@ import { useAgentsStore } from '@/stores/agents';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
 import { HealthDot } from '@/components/common/HealthDot';
+import { PageHeader } from '@/components/common/PageHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
+
+type TimeRange = '1h' | '6h' | '24h';
+const TIME_RANGE_KEY = 'axonclaw.doctor.timeRange';
+const SOURCE_FILTER_KEY = 'axonclaw.doctor.sourceFilter';
+const RISK_FILTER_KEY = 'axonclaw.doctor.riskFilter';
+
+interface OverviewPoint {
+  timestamp: string;
+  label: string;
+  healthScore: number;
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+  errors: number;
+}
 
 interface CheckItem {
   id: string;
@@ -45,6 +78,7 @@ interface DoctorSummary {
   updatedAt: string;
   gateway: { running: boolean; detail: string };
   healthCheck: { enabled: boolean; failCount: number; maxFails: number; lastOk: string };
+  trend24h?: OverviewPoint[];
   exceptionStats: {
     medium5m: number;
     high5m: number;
@@ -76,14 +110,67 @@ interface DiagResult {
   score: number;
 }
 
+interface DoctorCliResult {
+  mode: 'diagnose' | 'fix';
+  success: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  command: string;
+  cwd: string;
+  durationMs: number;
+  error?: string;
+}
+
 type TabId = 'diagnose' | 'testing';
+
+function filterTrendByRange(trend: OverviewPoint[], range: TimeRange): OverviewPoint[] {
+  if (!trend?.length) return [];
+  const now = Date.now();
+  const ms = range === '1h' ? 3_600_000 : range === '6h' ? 21_600_000 : 86_400_000;
+  return trend.filter((p) => new Date(p.timestamp).getTime() >= now - ms);
+}
+
+function fmtRelativeTime(ts: string | undefined): string {
+  if (!ts) return '—';
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
+  return new Date(ts).toLocaleString('zh-CN');
+}
+
+function detectSummarySourceKey(source?: string, category?: string): string {
+  const s = `${source || ''} ${category || ''}`.toLowerCase();
+  if (s.includes('security')) return 'security';
+  if (s.includes('alert')) return 'alert';
+  if (s.includes('gateway')) return 'gateway';
+  if (s.includes('cron')) return 'cron';
+  if (s.includes('chat') || s.includes('session')) return 'chat';
+  if (s.includes('tool')) return 'tool';
+  if (s.includes('doctor')) return 'doctor';
+  return 'system';
+}
+
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  security: { label: '安全审计', color: '#6366f1' },
+  alert: { label: '告警', color: '#ef4444' },
+  gateway: { label: '网关', color: '#10b981' },
+  cron: { label: '定时', color: '#06b6d4' },
+  chat: { label: '会话', color: '#3b82f6' },
+  tool: { label: '工具', color: '#8b5cf6' },
+  doctor: { label: '诊断', color: '#f59e0b' },
+  system: { label: '系统', color: '#64748b' },
+};
 
 interface DiagnosticsViewProps {
   embedded?: boolean;
+  /** 侧栏「健康中心」独立全页 */
+  standalone?: boolean;
   onNavigateTo?: (viewId: string) => void;
 }
 
-const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateTo }) => {
+const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone, onNavigateTo }) => {
   const gatewayStatus = useGatewayStore((s) => s.status);
   const channels = useChannelsStore((s) => s.channels);
   const skills = useSkillsStore((s) => s.skills);
@@ -93,8 +180,23 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
   const fetchSkills = useSkillsStore((s) => s.fetchSkills);
   const fetchCronJobs = useCronStore((s) => s.fetchJobs);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
+  const rpc = useGatewayStore((s) => s.rpc);
 
   const [activeTab, setActiveTab] = useState<TabId>('diagnose');
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    if (typeof window === 'undefined') return '24h';
+    const v = window.localStorage.getItem(TIME_RANGE_KEY);
+    return v === '1h' || v === '6h' || v === '24h' ? v : '24h';
+  });
+  const [summarySourceFilter, setSummarySourceFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'all';
+    return window.localStorage.getItem(SOURCE_FILTER_KEY) || 'all';
+  });
+  const [summaryRiskFilter, setSummaryRiskFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'all';
+    return window.localStorage.getItem(RISK_FILTER_KEY) || 'all';
+  });
+
   const [summary, setSummary] = useState<DoctorSummary | null>(null);
   const [result, setResult] = useState<DiagResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,6 +204,38 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
   const [fixing, setFixing] = useState(false);
   const [showFixConfirm, setShowFixConfirm] = useState(false);
   const [connectionVerified, setConnectionVerified] = useState<boolean | null>(null);
+  const [doctorCli, setDoctorCli] = useState<DoctorCliResult | null>(null);
+  const [doctorCliRunning, setDoctorCliRunning] = useState<'diagnose' | 'fix' | null>(null);
+  const [memoryStatus, setMemoryStatus] = useState<{
+    agentId: string;
+    provider?: string;
+    embedding: { ok: boolean; error?: string };
+  } | null>(null);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [hostInfo, setHostInfo] = useState<{ sysMem?: { usedPct: number } } | null>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(TIME_RANGE_KEY, timeRange);
+  }, [timeRange]);
+  useEffect(() => {
+    window.localStorage.setItem(SOURCE_FILTER_KEY, summarySourceFilter);
+  }, [summarySourceFilter]);
+  useEffect(() => {
+    window.localStorage.setItem(RISK_FILTER_KEY, summaryRiskFilter);
+  }, [summaryRiskFilter]);
+
+  const loadHostInfo = useCallback(async () => {
+    try {
+      const data = await hostApiFetch<{ sysMem?: { usedPct: number } }>('/api/host-info');
+      setHostInfo(data);
+    } catch {
+      setHostInfo(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHostInfo();
+  }, [loadHostInfo]);
 
   const checkConnection = useCallback(async () => {
     try {
@@ -114,7 +248,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
     }
   }, []);
 
-  const loadSummary = useCallback(async (force = false) => {
+  const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
       const data = await hostApiFetch<DoctorSummary>('/api/doctor/summary');
@@ -131,13 +265,33 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
     try {
       const data = await hostApiFetch<DiagResult>('/api/doctor');
       setResult(data);
-      await loadSummary(true);
+      await loadSummary();
     } catch (err) {
       console.error('[HealthCenter] runDoctor error:', err);
     } finally {
       setLoading(false);
     }
   }, [loadSummary]);
+
+  const loadMemoryStatus = useCallback(async () => {
+    if (gatewayStatus.state !== 'running') {
+      setMemoryStatus(null);
+      return;
+    }
+    setMemoryLoading(true);
+    try {
+      const data = await rpc<{
+        agentId: string;
+        provider?: string;
+        embedding: { ok: boolean; error?: string };
+      }>('doctor.memory.status');
+      setMemoryStatus(data);
+    } catch {
+      setMemoryStatus(null);
+    } finally {
+      setMemoryLoading(false);
+    }
+  }, [gatewayStatus.state, rpc]);
 
   const fetchAll = useCallback(async () => {
     await checkConnection();
@@ -147,17 +301,16 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
       fetchCronJobs().catch(() => {}),
       fetchAgents().catch(() => {}),
     ]);
-    await loadSummary(true);
-  }, [checkConnection, fetchChannels, fetchSkills, fetchCronJobs, fetchAgents, loadSummary]);
+    await loadSummary();
+    await loadMemoryStatus();
+    await loadHostInfo();
+  }, [checkConnection, fetchChannels, fetchSkills, fetchCronJobs, fetchAgents, loadSummary, loadMemoryStatus, loadHostInfo]);
 
   const handleFix = useCallback(async () => {
     setShowFixConfirm(false);
     setFixing(true);
     try {
-      await hostApiFetch<{ fixed: string[]; results: unknown[] }>('/api/doctor/fix', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      });
+      await hostApiFetch('/api/doctor/fix', { method: 'POST', body: JSON.stringify({}) });
       await fetchAll();
       await runDoctor();
     } catch (err) {
@@ -167,18 +320,68 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
     }
   }, [fetchAll, runDoctor]);
 
+  const runOpenClawDoctor = useCallback(async (mode: 'diagnose' | 'fix') => {
+    setDoctorCliRunning(mode);
+    try {
+      const res = await hostApiFetch<DoctorCliResult>('/api/app/openclaw-doctor', {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      });
+      setDoctorCli(res);
+      if (res.success) {
+        toast.success(mode === 'fix' ? 'OpenClaw 修复已完成' : 'OpenClaw 诊断已完成');
+      } else {
+        toast.error(res.error || 'OpenClaw Doctor 执行失败');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
+      setDoctorCli({
+        mode,
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        command: 'openclaw doctor',
+        cwd: '',
+        durationMs: 0,
+        error: msg,
+      });
+    } finally {
+      setDoctorCliRunning(null);
+    }
+  }, []);
+
+  const copyDoctorOutput = useCallback(async () => {
+    if (!doctorCli) return;
+    const text = [
+      `command: ${doctorCli.command}`,
+      `cwd: ${doctorCli.cwd}`,
+      `exitCode: ${doctorCli.exitCode ?? 'null'}`,
+      `durationMs: ${doctorCli.durationMs}`,
+      '',
+      '[stdout]',
+      doctorCli.stdout.trim() || '(empty)',
+      '',
+      '[stderr]',
+      doctorCli.stderr.trim() || '(empty)',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('已复制输出');
+    } catch {
+      toast.error('复制失败');
+    }
+  }, [doctorCli]);
+
   useEffect(() => {
     void checkConnection();
   }, [checkConnection]);
-
   useEffect(() => {
     void loadSummary();
   }, [loadSummary]);
-
   useEffect(() => {
-    if (connectionVerified) {
-      void fetchAll();
-    }
+    if (connectionVerified) void fetchAll();
   }, [connectionVerified, fetchAll]);
 
   const isOnline = connectionVerified === true || (connectionVerified === null && gatewayStatus.state === 'running');
@@ -189,7 +392,6 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
   const eligibleSkills = safeSkills.filter((s) => s.enabled || s.isCore).length;
   const totalSkills = safeSkills.length || 1;
 
-  // 合并 API 返回的检查项 + 本地渠道/技能/定时任务
   const allCheckItems: CheckItem[] = useMemo(() => {
     const base = result?.items ?? [];
     const extras: CheckItem[] = [
@@ -234,288 +436,945 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, onNavigateT
   const currentScore = summary?.score ?? result?.score ?? (isOnline ? 85 : 50);
   const numericScore = Math.min(100, Math.max(0, currentScore));
 
-  const statusBarColor = currentStatus === 'ok' ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : currentStatus === 'warn' ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400' : 'bg-gradient-to-r from-red-400 via-red-500 to-red-400';
-  const statusLabel = currentStatus === 'ok' ? '健康' : currentStatus === 'warn' ? '警告' : '异常';
-  const gaugeColor = numericScore >= 80 ? '#10b981' : numericScore >= 60 ? '#f59e0b' : numericScore >= 30 ? '#f97316' : '#ef4444';
+  // 评分分段：同时驱动顶部细线、边框、文字色
+  const scoreLevel =
+    numericScore >= 90 ? 'excellent' : numericScore >= 75 ? 'good' : numericScore >= 60 ? 'watch' : 'risk';
+  const scoreLabel =
+    numericScore >= 90 ? '极佳' : numericScore >= 75 ? '良好' : numericScore >= 60 ? '需关注' : '风险';
+  const scoreBorderClass =
+    scoreLevel === 'excellent'
+      ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.07] via-[#0f172a] to-[#0f172a]'
+      : scoreLevel === 'good'
+        ? 'border-sky-500/40 bg-gradient-to-br from-sky-500/[0.07] via-[#0f172a] to-[#0f172a]'
+        : scoreLevel === 'watch'
+          ? 'border-amber-500/40 bg-gradient-to-br from-amber-500/[0.08] via-[#0f172a] to-[#0f172a]'
+          : 'border-red-500/40 bg-gradient-to-br from-red-500/[0.08] via-[#0f172a] to-[#0f172a]';
+  const scoreBarClass =
+    scoreLevel === 'excellent'
+      ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400'
+      : scoreLevel === 'good'
+        ? 'bg-gradient-to-r from-sky-400 via-sky-500 to-sky-400'
+        : scoreLevel === 'watch'
+          ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400'
+          : 'bg-gradient-to-r from-red-400 via-red-500 to-red-400';
+  const gaugeColor =
+    numericScore >= 80 ? '#10b981' : numericScore >= 60 ? '#f59e0b' : numericScore >= 30 ? '#f97316' : '#ef4444';
+  const scoreTextClass =
+    scoreLevel === 'excellent' ? 'text-emerald-400' : scoreLevel === 'good' ? 'text-sky-400' : scoreLevel === 'watch' ? 'text-amber-400' : 'text-red-400';
 
   const gaugeRadius = 52;
   const gaugeCircumference = Math.PI * gaugeRadius;
   const gaugeOffset = gaugeCircumference - (numericScore / 100) * gaugeCircumference;
 
-  return (
-    <div
-      className={cn(
-        'flex flex-col bg-[#0f172a] overflow-hidden',
-        'h-full min-h-0'
-      )}
-    >
-      {/* 顶部状态条 */}
-      <div className={cn('h-[3px] w-full shrink-0 transition-all duration-700', statusBarColor)} />
+  const trend = useMemo(
+    () => filterTrendByRange(summary?.trend24h ?? [], timeRange),
+    [summary?.trend24h, timeRange],
+  );
 
-      {/* 头部 */}
-      <div className="p-4 border-b border-white/10 bg-[#1e293b]/80 shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-bold text-foreground">健康中心</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">一键诊断 Gateway、渠道、技能等健康状态</p>
-          </div>
-          {activeTab === 'diagnose' && (
-            <div className="flex items-center gap-2">
-              <span
+  const trendPolyline = useMemo(() => {
+    if (trend.length < 2) return '';
+    return trend
+      .map((p, i) => {
+        const x = (i / Math.max(trend.length - 1, 1)) * 100;
+        const y = 100 - p.healthScore;
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }, [trend]);
+
+  const trendFillPoints = useMemo(() => {
+    if (!trendPolyline) return '';
+    return `${trendPolyline} 100,100 0,100`;
+  }, [trendPolyline]);
+
+  const chatSessionErrors = useMemo(() => {
+    const issues = summary?.recentIssues ?? [];
+    const chatIssues = issues.filter((i) => detectSummarySourceKey(i.source, i.category) === 'chat');
+    return {
+      totalErrors: Math.max(summary?.sessionErrors?.totalErrors ?? 0, chatIssues.length),
+      errorSessions: summary?.sessionErrors?.errorSessions ?? new Set(chatIssues.map((x) => x.id)).size,
+    };
+  }, [summary?.recentIssues, summary?.sessionErrors]);
+
+  const deductions = useMemo(() => {
+    if (!summary) return [];
+    const stats = summary.exceptionStats || {
+      medium5m: 0,
+      high5m: 0,
+      critical5m: 0,
+      total1h: 0,
+      total24h: 0,
+    };
+    const gw = summary.gateway;
+    const hc = summary.healthCheck;
+    const items: Array<{ key: string; label: string; points: number; maxPoints: number; color: string }> = [];
+    if (!gw?.running) items.push({ key: 'gateway', label: 'Gateway 离线', points: 35, maxPoints: 35, color: '#ef4444' });
+    const critPts = Math.min(50, (stats.critical5m || 0) * 25);
+    if (critPts > 0)
+      items.push({ key: 'critical', label: '严重异常 (5m)', points: critPts, maxPoints: 50, color: '#ef4444' });
+    const highPts = Math.min(30, (stats.high5m || 0) * 10);
+    if (highPts > 0) items.push({ key: 'high', label: '高级异常 (5m)', points: highPts, maxPoints: 30, color: '#f97316' });
+    const medPts = Math.min(10, (stats.medium5m || 0) * 2);
+    if (medPts > 0) items.push({ key: 'medium', label: '中级异常 (5m)', points: medPts, maxPoints: 10, color: '#f59e0b' });
+    if (hc?.enabled && (hc.failCount || 0) > 0) {
+      const hcPts = Math.min(25, (hc.failCount || 0) * 10);
+      items.push({ key: 'healthcheck', label: '看门狗失败', points: hcPts, maxPoints: 25, color: '#8b5cf6' });
+    }
+    if (chatSessionErrors.totalErrors > 0) {
+      const sessPts = Math.min(10, (chatSessionErrors.errorSessions || 1) * 3);
+      items.push({ key: 'session', label: '会话错误', points: sessPts, maxPoints: 10, color: '#ec4899' });
+    }
+    const sec = summary.securityAudit;
+    if (sec && sec.critical > 0) {
+      const secPts = Math.min(40, sec.critical * 15);
+      items.push({ key: 'security', label: '安全审计', points: secPts, maxPoints: 40, color: '#6366f1' });
+    }
+    return items.sort((a, b) => b.points - a.points);
+  }, [summary, chatSessionErrors]);
+
+  const sourceDistribution = useMemo(() => {
+    const issues = summary?.recentIssues || [];
+    const counts = new Map<string, number>();
+    issues.forEach((issue) => {
+      const k = detectSummarySourceKey(issue.source, issue.category);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .filter(([, c]) => c > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, count]) => ({
+        key,
+        count,
+        label: SOURCE_META[key]?.label || key,
+        color: SOURCE_META[key]?.color || '#64748b',
+      }));
+  }, [summary?.recentIssues]);
+
+  const sourceTotal = sourceDistribution.reduce((s, d) => s + d.count, 0);
+
+  /** 建议动作（ClawDeckX）：根据扣分和问题动态生成 */
+  const suggestedActions = useMemo(() => {
+    const actions: Array<{ label: string; risk: string; onClick?: () => void }> = [];
+    if ((summary?.recentIssues?.length ?? 0) > 0) {
+      actions.push({ label: '查看告警', risk: 'medium', onClick: () => onNavigateTo?.('alerts') });
+    }
+    if (!summary?.gateway?.running || deductions.some((d) => d.key === 'gateway')) {
+      actions.push({ label: '打开网关事件', risk: 'low', onClick: () => onNavigateTo?.('gateway-monitor') });
+    }
+    if (deductions.some((d) => d.key === 'healthcheck')) {
+      actions.push({ label: '检查健康看门狗', risk: 'high', onClick: () => onNavigateTo?.('gateway-monitor') });
+    }
+    if (actions.length === 0) {
+      actions.push({ label: '查看告警', risk: 'low', onClick: () => onNavigateTo?.('alerts') });
+    }
+    return actions;
+  }, [summary?.recentIssues?.length, summary?.gateway?.running, deductions, onNavigateTo]);
+
+  const filteredIssues = useMemo(() => {
+    let list = summary?.recentIssues ?? [];
+    if (summarySourceFilter !== 'all') {
+      list = list.filter((i) => detectSummarySourceKey(i.source, i.category) === summarySourceFilter);
+    }
+    if (summaryRiskFilter !== 'all') {
+      list = list.filter((i) => i.risk === summaryRiskFilter);
+    }
+    return list;
+  }, [summary?.recentIssues, summarySourceFilter, summaryRiskFilter]);
+
+  const heatmapHours = useMemo(() => {
+    const pts = summary?.trend24h ?? [];
+    const buckets = new Array(24).fill(0);
+    pts.forEach((p) => {
+      const h = new Date(p.timestamp).getHours();
+      buckets[h] += p.medium + p.high + p.critical;
+    });
+    const max = Math.max(1, ...buckets);
+    return { buckets, max };
+  }, [summary?.trend24h]);
+
+  /** ClawDeckX 风格：source × hour 二维热力图数据，行=来源，列=0-23时 */
+  const heatmapSourceHours = useMemo(() => {
+    const issues = summary?.recentIssues ?? [];
+    const grid = new Map<string, number[]>();
+    const initRow = () => Array.from({ length: 24 }, () => 0);
+    issues.forEach((issue) => {
+      const k = detectSummarySourceKey(issue.source, issue.category);
+      if (!grid.has(k)) grid.set(k, initRow());
+      const row = grid.get(k)!;
+      const h = new Date(issue.timestamp).getHours();
+      row[h] += 1;
+    });
+    const rows = Array.from(grid.entries())
+      .map(([key, buckets]) => ({ key, label: SOURCE_META[key]?.label || key, color: SOURCE_META[key]?.color || '#64748b', buckets }))
+      .sort((a, b) => b.buckets.reduce((s, v) => s + v, 0) - a.buckets.reduce((s, v) => s + v, 0));
+    const maxVal = Math.max(1, ...rows.flatMap((r) => r.buckets));
+    if (rows.length === 0) {
+      return { rows: [{ key: 'gateway', label: '网关', color: '#10b981', buckets: initRow() }, { key: 'security', label: '安全审计', color: '#6366f1', buckets: initRow() }], maxVal: 1 };
+    }
+    return { rows, maxVal };
+  }, [summary?.recentIssues]);
+
+  const headerActions = (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      <span
+        className={cn(
+          'px-2.5 py-1 rounded-lg text-xs font-bold',
+          scoreLevel === 'excellent' && 'bg-emerald-500/10 text-emerald-400',
+          scoreLevel === 'good' && 'bg-sky-500/10 text-sky-400',
+          scoreLevel === 'watch' && 'bg-amber-500/10 text-amber-400',
+          scoreLevel === 'risk' && 'bg-red-500/10 text-red-400',
+        )}
+      >
+        {scoreLabel} · {numericScore}
+      </span>
+      {summaryLoading && <span className="text-xs text-muted-foreground animate-pulse">同步中…</span>}
+      {activeTab === 'diagnose' && (
+        <>
+          <button
+            type="button"
+            onClick={() => void runDoctor()}
+            disabled={loading}
+            className="h-8 px-3 rounded-lg text-xs font-bold border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:border-amber-500/50 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+            {loading ? '体检中…' : '立即诊断'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFixConfirm(true)}
+            disabled={fixing || fixableCount === 0}
+            className="h-8 px-3 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40"
+          >
+            {fixing ? '修复中…' : '一键修复'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const tabRow = (
+    <div className="flex items-center gap-2 overflow-x-auto pt-3 pb-2 shrink-0">
+      {(
+        [
+          { id: 'diagnose' as TabId, icon: Activity, label: '系统诊断' },
+          { id: 'testing' as TabId, icon: FlaskConical, label: '测试中心' },
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => setActiveTab(tab.id)}
+          className={cn(
+            'h-10 px-5 rounded-xl text-sm font-bold flex items-center gap-2 whitespace-nowrap transition-all',
+            activeTab === tab.id
+              ? 'bg-sky-900/80 text-sky-400 border border-sky-500/30'
+              : 'bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 hover:text-foreground/80',
+          )}
+        >
+          <tab.icon className="w-4 h-4 shrink-0" />
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const diagnoseBody = (
+    <div className="space-y-4 w-full pt-4 pb-16">
+      {summary && (
+        <div>
+          <div
+            className={cn(
+              'rounded-2xl border-2 p-5 shadow-lg overflow-hidden',
+              scoreBorderClass,
+            )}
+          >
+            <div className="flex flex-col lg:flex-row items-start gap-6">
+            <div className="shrink-0 flex flex-col items-center mx-auto lg:mx-0">
+              {/* 评分置于健康快照上方 */}
+              <p className={cn('text-2xl font-black tabular-nums mb-0.5', scoreTextClass)}>{numericScore}</p>
+              <p className={cn('text-[10px] font-bold mb-2', scoreTextClass)}>{scoreLabel}</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">健康快照</p>
+              <svg viewBox="0 0 120 72" className="w-36 h-auto">
+                <path
+                  d="M 10 65 A 52 52 0 0 1 110 65"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="9"
+                  className="text-slate-700"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 10 65 A 52 52 0 0 1 110 65"
+                  fill="none"
+                  stroke={gaugeColor}
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeDasharray={gaugeCircumference}
+                  strokeDashoffset={gaugeOffset}
+                  className="transition-all duration-700"
+                />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0 space-y-3">
+              <p className="text-sm font-semibold text-foreground leading-relaxed">{summary.summary}</p>
+              <p className="text-[10px] text-muted-foreground">最近更新: {summary.updatedAt ? new Date(summary.updatedAt).toLocaleString('zh-CN') : '—'}</p>
+              <div className="flex items-center gap-1 mt-2 flex-wrap">
+                {(['1h', '6h', '24h'] as TimeRange[]).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setTimeRange(r)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all',
+                      timeRange === r ? 'bg-sky-600 text-white' : 'bg-white/5 text-muted-foreground hover:bg-white/10',
+                    )}
+                  >
+                    {r === '1h' ? '1小时' : r === '6h' ? '6小时' : '24小时'}
+                  </button>
+                ))}
+                <span className="text-[10px] text-muted-foreground/70 ml-1.5">异常统计窗口固定为 5分钟/1小时/24小时</span>
+              </div>
+            </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 mt-6">
+            <button
+              type="button"
+              onClick={() => onNavigateTo?.('gateway-monitor')}
+              className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start hover:border-emerald-500/35 transition-colors"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">网关</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className={cn('text-sm font-bold', summary.gateway?.running ? 'text-emerald-400' : 'text-red-400')}>
+                  {summary.gateway?.running ? '正常' : '离线'}
+                </p>
+                {summary.gateway?.running ? <ArrowUp className="w-3.5 h-3.5 text-emerald-400" /> : <ArrowDown className="w-3.5 h-3.5 text-red-400" />}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 truncate">{summary.gateway?.detail || '—'}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateTo?.('gateway-monitor')}
+              className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start hover:border-violet-500/35 transition-colors"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Heart className="w-3 h-3 text-violet-400" />
+                健康检查
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className={cn('text-sm font-bold', summary.healthCheck?.enabled ? 'text-violet-300' : 'text-white/70')}>
+                  {summary.healthCheck?.enabled ? `${summary.healthCheck.failCount || 0}/${summary.healthCheck.maxFails || 3}` : '关闭'}
+                </p>
+                {summary.healthCheck?.enabled && (summary.healthCheck.failCount || 0) > 0 && (
+                  <ArrowUp className="w-3.5 h-3.5 text-red-400" />
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                {summary.healthCheck?.lastOk ? new Date(summary.healthCheck.lastOk).toLocaleTimeString('zh-CN') : '—'}
+              </p>
+            </button>
+            <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">近5分钟异常</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className="text-sm font-bold text-foreground">
+                  {summary.exceptionStats?.critical5m ?? 0} / {summary.exceptionStats?.high5m ?? 0} /{' '}
+                  {summary.exceptionStats?.medium5m ?? 0}
+                </p>
+                {((summary.exceptionStats?.critical5m ?? 0) + (summary.exceptionStats?.high5m ?? 0)) > 0 && (
+                  <ArrowUp className="w-3.5 h-3.5 text-red-400" />
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">严重 / 高 / 中</p>
+            </div>
+            <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">近期总量</p>
+              <p className="text-sm font-bold text-foreground mt-1">
+                {summary.exceptionStats?.total1h ?? 0} <span className="text-white/30">/</span>{' '}
+                {summary.exceptionStats?.total24h ?? 0}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">1小时 / 24小时</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTo?.('alerts')}
+              className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start hover:border-amber-500/35"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">会话错误</p>
+              <p
                 className={cn(
-                  'px-2.5 py-1 rounded-lg text-xs font-bold',
-                  currentStatus === 'ok' && 'bg-emerald-500/10 text-emerald-500',
-                  currentStatus === 'warn' && 'bg-amber-500/10 text-amber-500',
-                  currentStatus === 'error' && 'bg-red-500/10 text-red-500'
+                  'text-sm font-bold mt-1',
+                  (summary.sessionErrors?.totalErrors ?? 0) > 0 ? 'text-pink-400' : 'text-foreground',
                 )}
               >
-                {statusLabel}
-              </span>
-              {summaryLoading && <span className="text-xs text-muted-foreground animate-pulse">...</span>}
-              <button
-                onClick={() => void runDoctor()}
-                disabled={loading}
-                className="h-8 px-3 rounded-lg text-xs font-bold border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:border-amber-500/50 disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-                {loading ? '诊断中...' : '立即诊断'}
-              </button>
-              <button
-                onClick={() => setShowFixConfirm(true)}
-                disabled={fixing || fixableCount === 0}
-                className="h-8 px-3 rounded-lg text-xs font-bold bg-primary text-white disabled:opacity-40"
-              >
-                {fixing ? '修复中...' : '一键修复'}
-              </button>
+                {summary.sessionErrors?.totalErrors ?? 0}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {summary.sessionErrors?.totalErrors ?? 0} 个错误 / {summary.sessionErrors?.errorSessions ?? 0} 个会话
+              </p>
+            </button>
+            <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Brain className="w-3 h-3 text-slate-400" />
+                记忆系统
+              </p>
+              {memoryLoading ? (
+                <div className="flex items-center gap-1 mt-1">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                </div>
+              ) : memoryStatus?.embedding?.ok ? (
+                <>
+                  <p className="text-sm font-bold text-emerald-400 mt-1">OK</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 truncate">{memoryStatus.provider || '—'}</p>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-amber-400 mt-1">记忆系统不可用</p>
+              )}
             </div>
-          )}
+          </div>
+          </div>
         </div>
-        {/* Tab 切换 */}
-        <div className="flex items-center gap-1 mt-3 overflow-x-auto pb-1">
-          {[
-            { id: 'diagnose' as TabId, icon: Activity, label: '诊断' },
-            { id: 'testing' as TabId, icon: FlaskConical, label: '测试中心' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+      )}
+
+      {/* 异常来源（ClawDeckX 环形图风格） */}
+      <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <LayoutGrid className="w-3.5 h-3.5" />
+          异常来源
+        </h4>
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="relative w-28 h-28 shrink-0">
+            <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+              {sourceDistribution.length > 0 ? (
+                sourceDistribution.reduce<{ offset: number; els: JSX.Element[] }>(
+                  (acc, s, i) => {
+                    const pct = s.count / sourceTotal;
+                    const dash = pct * 100;
+                    acc.els.push(
+                      <circle
+                        key={s.key}
+                        cx="18"
+                        cy="18"
+                        r="15.9"
+                        fill="none"
+                        stroke={s.color}
+                        strokeWidth="3"
+                        strokeDasharray={`${dash} ${100 - dash}`}
+                        strokeDashoffset={-acc.offset}
+                        className="transition-all duration-300"
+                      />,
+                    );
+                    acc.offset += dash;
+                    return acc;
+                  },
+                  { offset: 0, els: [] },
+                ).els
+              ) : (
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/10" />
+              )}
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-sm font-bold text-foreground">{sourceTotal}</span>
+              <span className="text-[10px] text-muted-foreground ml-0.5">总计</span>
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            {sourceDistribution.slice(0, 6).map((s) => (
+              <div key={s.key} className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground" style={{ color: s.color }}>{s.label}</span>
+                <span className="text-[11px] font-mono font-semibold">{s.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 异常频率热力图（ClawDeckX 风格：source × hour 二维网格） */}
+      <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <Grid3X3 className="w-3.5 h-3.5" />
+            异常频率热力图
+          </h4>
+          <p className="text-[10px] text-muted-foreground/70">颜色越深代表该时段异常越密集</p>
+        </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[480px]">
+            <div className="flex gap-0.5 mb-1 text-[9px] text-muted-foreground/70 font-mono items-center">
+              <span className="w-14 shrink-0" />
+              <div className="flex-1 flex">
+                {[0, 4, 8, 12, 16, 20].map((h) => (
+                  <span key={h} className="flex-1 text-center">{h.toString().padStart(2, '0')}</span>
+                ))}
+              </div>
+            </div>
+            {heatmapSourceHours.rows.map((row) => (
+              <div key={row.key} className="flex items-center gap-1 mb-1">
+                <span className="w-14 shrink-0 text-[10px] text-muted-foreground truncate" style={{ color: row.color }}>{row.label}</span>
+                <div className="flex-1 flex gap-0.5">
+                  {row.buckets.map((v, i) => {
+                    const intensity = v / heatmapSourceHours.maxVal;
+                    return (
+                      <div
+                        key={i}
+                        className="flex-1 min-w-0 h-4 rounded-sm transition-colors"
+                        style={{
+                          backgroundColor: intensity > 0 ? `${row.color}` : 'rgba(255,255,255,0.03)',
+                          opacity: intensity > 0 ? 0.2 + intensity * 0.8 : 0.1,
+                        }}
+                        title={`${row.label} ${i}:00 — ${v} 异常`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {trend.length >= 2 && (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
+            <Activity className="w-3.5 h-3.5" />
+            健康趋势
+          </h4>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-28">
+            <defs>
+              <linearGradient id="hcTrendFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={gaugeColor} stopOpacity="0.4" />
+                <stop offset="100%" stopColor={gaugeColor} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <polygon fill="url(#hcTrendFill)" points={trendFillPoints} />
+            <polyline
+              fill="none"
+              stroke={gaugeColor}
+              strokeWidth="0.6"
+              vectorEffect="non-scaling-stroke"
+              points={trendPolyline}
+            />
+          </svg>
+          <p className="text-[10px] text-muted-foreground text-center mt-1">评分随时间（越高越好）</p>
+        </div>
+      )}
+
+      {deductions.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <BarChart3 className="w-3 h-3" />
+              扣分归因 <span className="font-bold text-red-400">-{deductions.reduce((s, d) => s + d.points, 0)}</span>
+            </p>
+            <p className="text-[10px] text-muted-foreground/70">修复扣分最高的项可最快提升分数</p>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {deductions.map((d) => {
+              const pct = Math.min(1, d.points / d.maxPoints);
+              const r = 18;
+              const circ = Math.PI * r;
+              return (
+                <div key={d.key} className="flex items-center gap-2 min-w-[100px]">
+                  <svg viewBox="0 0 44 26" className="w-10 h-6 shrink-0">
+                    <path d="M 4 24 A 18 18 0 0 1 40 24" fill="none" stroke="currentColor" strokeWidth="4" className="text-white/10" strokeLinecap="round" />
+                    <path
+                      d="M 4 24 A 18 18 0 0 1 40 24"
+                      fill="none"
+                      stroke={d.color}
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={circ}
+                      strokeDashoffset={circ - pct * circ}
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <div>
+                    <p className="text-[10px] text-foreground/70 truncate">{d.label}</p>
+                    <p className="text-sm font-bold leading-tight" style={{ color: d.color }}>-{d.points}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border-2 border-slate-600/40 bg-[#1e293b]/80 p-4 backdrop-blur-sm">
+        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
+          <Wrench className="w-3.5 h-3.5" />
+          诊断检查项
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {allCheckItems.map((item) => (
+            <div
+              key={item.id}
               className={cn(
-                'h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all',
-                activeTab === tab.id ? 'bg-primary/15 text-primary' : 'bg-white/5 text-muted-foreground hover:bg-white/10'
+                'rounded-xl border-2 p-3 transition-shadow',
+                item.status === 'ok' && 'border-emerald-500/30 bg-emerald-500/[0.04]',
+                item.status === 'warn' && 'border-amber-500/30 bg-amber-500/[0.04]',
+                item.status === 'error' && 'border-red-500/30 bg-red-500/[0.04]',
               )}
             >
-              <tab.icon className="w-3.5 h-3.5" />
-              {tab.label}
-            </button>
+              <div className="flex items-center gap-2 mb-2">
+                <HealthDot ok={item.status === 'ok'} />
+                <span className="text-sm font-medium text-foreground">{item.name}</span>
+                {item.status === 'ok' && <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto" />}
+                {item.status === 'error' && <XCircle className="w-4 h-4 text-red-500 ml-auto" />}
+                {item.status === 'warn' && <AlertCircle className="w-4 h-4 text-amber-500 ml-auto" />}
+              </div>
+              <p className="text-xs text-muted-foreground">{item.detail}</p>
+              {item.suggestion && (
+                <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  {item.suggestion}
+                </p>
+              )}
+            </div>
           ))}
         </div>
       </div>
 
-      {/* 内容区 */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'testing' && (
-          <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-8 text-center">
-            <FlaskConical className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-foreground mb-2">测试中心</h3>
-            <p className="text-xs text-muted-foreground">测试中心功能开发中，敬请期待...</p>
-          </div>
-        )}
-
-        {activeTab === 'diagnose' && (
-          <div className="space-y-4 w-full">
-            {/* 健康评分 + 摘要卡片 */}
-            {summary && (
-              <div
+      {/* 底部区域（ClawDeckX）：左侧问题时间线 + 右侧 2x2 指标 + 建议动作 */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+        <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+            <ListOrdered className="w-3.5 h-3.5" />
+            问题时间线
+          </h4>
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {[
+              { id: 'all', icon: Filter, label: '全部' },
+              { id: 'gateway', icon: Network, label: '网关' },
+              { id: 'security', icon: Shield, label: '安全审计' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setSummarySourceFilter(f.id === 'all' ? 'all' : f.id)}
                 className={cn(
-                  'rounded-xl border-2 p-4',
-                  currentStatus === 'ok' && 'border-emerald-500/40 bg-emerald-500/5',
-                  currentStatus === 'warn' && 'border-amber-500/40 bg-amber-500/5',
-                  currentStatus === 'error' && 'border-red-500/40 bg-red-500/5'
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors',
+                  summarySourceFilter === (f.id === 'all' ? 'all' : f.id)
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-white/5 text-muted-foreground hover:bg-white/10',
                 )}
               >
-                <div className="flex flex-col sm:flex-row items-start gap-4">
-                  {/* 健康评分仪表盘 */}
-                  <div className="shrink-0 flex flex-col items-center">
-                    <svg viewBox="0 0 120 70" className="w-28 sm:w-32">
-                      <path d="M 10 65 A 52 52 0 0 1 110 65" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-600" strokeLinecap="round" />
-                      <path
-                        d="M 10 65 A 52 52 0 0 1 110 65"
-                        fill="none"
-                        stroke={gaugeColor}
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                        strokeDasharray={gaugeCircumference}
-                        strokeDashoffset={gaugeOffset}
-                        className="transition-all duration-700"
-                      />
-                      <text x="60" y="52" textAnchor="middle" className="fill-foreground" style={{ fontSize: '22px', fontWeight: 900 }}>
-                        {numericScore}
-                      </text>
-                      <text x="60" y="66" textAnchor="middle" style={{ fontSize: '8px', fill: gaugeColor, fontWeight: 700 }}>
-                        {statusLabel}
-                      </text>
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{summary.updatedAt ? new Date(summary.updatedAt).toLocaleString('zh-CN') : '--'}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={cn('text-xs px-2 py-0.5 rounded-full font-bold', currentStatus === 'ok' && 'bg-emerald-500/10 text-emerald-500', currentStatus === 'warn' && 'bg-amber-500/10 text-amber-500', currentStatus === 'error' && 'bg-red-500/10 text-red-500')}>
-                        {statusLabel}
-                      </span>
+                <f.icon className="w-3 h-3" />
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[10px]">
+            <span className="text-muted-foreground">全部 <span className="font-mono font-semibold text-foreground">{filteredIssues.length}</span></span>
+            <span className="text-red-400">严重 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'critical').length}</span></span>
+            <span className="text-orange-400">高 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'high').length}</span></span>
+            <span className="text-amber-400">中 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'medium').length}</span></span>
+          </div>
+          <div className="relative pl-4 border-l border-dashed border-white/20 space-y-3 max-h-64 overflow-y-auto">
+            {filteredIssues.slice(0, 12).map((issue) => (
+              <div
+                key={issue.id}
+                className={cn(
+                  'rounded-lg border p-3 -ml-px pl-3',
+                  issue.risk === 'critical' && 'bg-red-500/10 border-red-500/25',
+                  issue.risk === 'high' && 'bg-orange-500/10 border-orange-500/25',
+                  issue.risk === 'medium' && 'bg-amber-500/10 border-amber-500/25',
+                  issue.risk === 'low' && 'bg-blue-500/10 border-blue-500/25',
+                  !['critical', 'high', 'medium', 'low'].includes(issue.risk) && 'bg-white/5 border-white/10',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                    <Shield className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-foreground line-clamp-2">{issue.title}</p>
+                      {issue.detail && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{issue.detail}</p>}
                     </div>
-                    <p className="text-sm font-bold text-foreground mt-2">{summary.summary}</p>
                   </div>
+                  <span className={cn(
+                    'shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold',
+                    issue.risk === 'critical' && 'bg-red-500/30 text-red-300',
+                    issue.risk === 'high' && 'bg-orange-500/30 text-orange-300',
+                    issue.risk === 'medium' && 'bg-amber-500/30 text-amber-300',
+                    issue.risk === 'low' && 'bg-blue-500/30 text-blue-300',
+                  )}>
+                    {issue.risk === 'critical' ? '严重' : issue.risk === 'high' ? '高' : issue.risk === 'medium' ? '中' : '低'}
+                  </span>
                 </div>
-
-                {/* 快照卡片 */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 mt-4">
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTo?.('dashboard')}
-                    className="rounded-xl bg-white/5 border border-white/10 p-3 text-start hover:border-primary/30 transition-colors"
-                  >
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Gateway</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <p className={cn('text-xs font-bold', summary.gateway?.running ? 'text-emerald-500' : 'text-red-500')}>
-                        {summary.gateway?.running ? '运行中' : '离线'}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1 truncate">{summary.gateway?.detail || '--'}</p>
-                  </button>
-                  <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-start">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">5分钟异常</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <p className="text-xs font-bold text-foreground">
-                        {summary.exceptionStats?.critical5m ?? 0}/{summary.exceptionStats?.high5m ?? 0}/{summary.exceptionStats?.medium5m ?? 0}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">严重/高/中</p>
-                  </div>
-                  <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-start">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">近期量</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <p className="text-xs font-bold text-foreground">
-                        {summary.exceptionStats?.total1h ?? 0} / {summary.exceptionStats?.total24h ?? 0}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">1小时 / 24小时</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTo?.('alerts')}
-                    className="rounded-xl bg-white/5 border border-white/10 p-3 text-start hover:border-primary/30 transition-colors"
-                  >
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">会话错误</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <p className={cn('text-xs font-bold', (summary.sessionErrors?.totalErrors ?? 0) > 0 ? 'text-pink-500' : 'text-foreground')}>
-                        {summary.sessionErrors?.totalErrors ?? 0}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1 truncate">
-                      {summary.sessionErrors?.totalErrors ?? 0} 错误 / {summary.sessionErrors?.errorSessions ?? 0} 会话
-                    </p>
-                  </button>
-                  {summary.securityAudit && summary.securityAudit.total > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => onNavigateTo?.('alerts')}
-                      className="rounded-xl bg-white/5 border border-white/10 p-3 text-start hover:border-primary/30 transition-colors"
-                    >
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <Shield className="w-3 h-3" />
-                        安全审计
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <p className={cn('text-xs font-bold', summary.securityAudit.critical > 0 ? 'text-red-500' : 'text-amber-500')}>
-                          {summary.securityAudit.critical} 严重 / {summary.securityAudit.warn} 警告
-                        </p>
-                      </div>
-                    </button>
-                  )}
-                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">{fmtRelativeTime(issue.timestamp)}</p>
               </div>
+            ))}
+            
+            {filteredIssues.length === 0 && (
+              <p className="text-xs text-muted-foreground py-4">暂无近期问题</p>
             )}
-
-            {/* 诊断检查项 */}
-            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4">
-              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
-                <Wrench className="w-3.5 h-3.5" />
-                诊断检查项
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {allCheckItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      'rounded-xl border-2 p-3',
-                      item.status === 'ok' && 'border-emerald-500/40 bg-emerald-500/5',
-                      item.status === 'warn' && 'border-amber-500/40 bg-amber-500/5',
-                      item.status === 'error' && 'border-red-500/40 bg-red-500/5'
-                    )}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <HealthDot ok={item.status === 'ok'} />
-                      <span className="text-sm font-medium text-foreground">{item.name}</span>
-                      {item.status === 'ok' && <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto" />}
-                      {item.status === 'error' && <XCircle className="w-4 h-4 text-red-500 ml-auto" />}
-                      {item.status === 'warn' && <AlertCircle className="w-4 h-4 text-amber-500 ml-auto" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{item.detail}</p>
-                    {item.suggestion && (
-                      <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 shrink-0" />
-                        {item.suggestion}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Gauge className="w-3 h-3" />
+                网关可用性
+              </h4>
+              <p className={cn(
+                'text-3xl font-black tabular-nums',
+                summary?.gateway?.running ? 'text-emerald-400' : 'text-red-400',
+              )}>
+                {summary?.gateway?.running ? '100' : '0'}%
+              </p>
+              <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', summary?.gateway?.running ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400')}>
+                {summary?.gateway?.running ? '正常' : '异常'}
+              </span>
+              <p className="text-[9px] text-muted-foreground mt-1">网关诊断检查通过率</p>
             </div>
+            <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Hash className="w-3 h-3" />
+                24小时事件数
+              </h4>
+              <p className="text-2xl font-black tabular-nums text-foreground">{summary?.exceptionStats?.total24h ?? 0}</p>
+              <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', ((summary?.exceptionStats?.high5m ?? 0) + (summary?.exceptionStats?.critical5m ?? 0)) > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
+                {((summary?.exceptionStats?.high5m ?? 0) + (summary?.exceptionStats?.critical5m ?? 0)) > 0 ? '异常' : '正常'}
+              </span>
+              <p className="text-[9px] text-muted-foreground mt-1">活动事件总数，状态基于高级+严重事件数判定</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3" />
+                1小时异常
+              </h4>
+              <p className="text-2xl font-black tabular-nums text-foreground">{summary?.exceptionStats?.total1h ?? 0}</p>
+              <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', (summary?.exceptionStats?.total1h ?? 0) > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
+                {(summary?.exceptionStats?.total1h ?? 0) > 0 ? '异常' : '正常'}
+              </span>
+              <p className="text-[9px] text-muted-foreground mt-1">1小时内高级+严重异常事件数</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Cpu className="w-3 h-3" />
+                内存压力
+              </h4>
+              <p className={cn('text-2xl font-black tabular-nums', (hostInfo?.sysMem?.usedPct ?? 0) > 90 ? 'text-red-400' : 'text-emerald-400')}>
+                {hostInfo?.sysMem?.usedPct != null ? Math.round(hostInfo.sysMem.usedPct) : '—'}
+                {hostInfo?.sysMem?.usedPct != null ? '%' : ''}
+              </p>
+              <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', (hostInfo?.sysMem?.usedPct ?? 0) > 90 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
+                {(hostInfo?.sysMem?.usedPct ?? 0) > 90 ? '异常' : '正常'}
+              </span>
+              <p className="text-[9px] text-muted-foreground mt-1">系统内存使用率</p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+            <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Lightbulb className="w-3.5 h-3.5" />
+              建议动作
+            </h4>
+            <div className="space-y-2">
+              {suggestedActions.slice(0, 4).map((action, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={action.onClick}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
+                >
+                  <span className="text-sm font-medium text-foreground">{action.label}</span>
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded text-[10px] font-bold',
+                    action.risk === 'critical' && 'bg-red-500/30 text-red-300',
+                    action.risk === 'high' && 'bg-orange-500/30 text-orange-300',
+                    action.risk === 'medium' && 'bg-amber-500/30 text-amber-300',
+                    (action.risk === 'low' || !action.risk) && 'bg-slate-500/30 text-slate-300',
+                  )}>
+                    {action.risk === 'critical' ? '严重' : action.risk === 'high' ? '高' : action.risk === 'medium' ? '中' : '低'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
-            {/* 最近问题 */}
-            {summary?.recentIssues && summary.recentIssues.length > 0 && (
-              <div className="rounded-xl border-2 border-orange-500/40 bg-[#1e293b] p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
-                    最近问题
-                  </h3>
-                  <button type="button" onClick={() => onNavigateTo?.('alerts')} className="text-xs text-primary font-bold hover:underline flex items-center gap-1">
-                    查看全部
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {summary.recentIssues.slice(0, 6).map((issue) => (
-                    <div
-                      key={issue.id}
-                      className={cn(
-                        'flex items-start gap-2 px-2 py-1.5 rounded-lg text-xs',
-                        issue.risk === 'critical' && 'bg-red-500/10 text-red-400',
-                        issue.risk === 'high' && 'bg-orange-500/10 text-orange-400',
-                        issue.risk === 'medium' && 'bg-amber-500/10 text-amber-400',
-                        issue.risk === 'low' && 'bg-blue-500/10 text-blue-400'
-                      )}
-                    >
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{issue.title}</p>
-                        <p className="text-muted-foreground truncate">{issue.detail || issue.timestamp}</p>
-                      </div>
-                    </div>
-                  ))}
+      {(summary?.recentIssues?.length ?? 0) > 0 && (
+        <div className="rounded-2xl border-2 border-orange-500/35 bg-[#1e293b]/90 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-orange-400" />
+              最近问题
+            </h3>
+            <button
+              type="button"
+              onClick={() => onNavigateTo?.('alerts')}
+              className="text-xs text-sky-400 font-bold hover:underline flex items-center gap-1"
+            >
+              告警中心
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <select
+              value={summarySourceFilter}
+              onChange={(e) => setSummarySourceFilter(e.target.value)}
+              className="text-[11px] rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-foreground"
+            >
+              <option value="all">全部来源</option>
+              {Array.from(new Set((summary?.recentIssues ?? []).map((i) => detectSummarySourceKey(i.source, i.category)))).map(
+                (k) => (
+                  <option key={k} value={k}>
+                    {SOURCE_META[k]?.label || k}
+                  </option>
+                ),
+              )}
+            </select>
+            <select
+              value={summaryRiskFilter}
+              onChange={(e) => setSummaryRiskFilter(e.target.value)}
+              className="text-[11px] rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-foreground"
+            >
+              <option value="all">全部等级</option>
+              <option value="critical">严重</option>
+              <option value="high">高</option>
+              <option value="medium">中</option>
+              <option value="low">低</option>
+            </select>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {filteredIssues.slice(0, 12).map((issue) => (
+              <div
+                key={issue.id}
+                className={cn(
+                  'flex items-start gap-2 px-3 py-2 rounded-xl text-xs border border-transparent',
+                  issue.risk === 'critical' && 'bg-red-500/10 text-red-300 border-red-500/20',
+                  issue.risk === 'high' && 'bg-orange-500/10 text-orange-300 border-orange-500/15',
+                  issue.risk === 'medium' && 'bg-amber-500/10 text-amber-200 border-amber-500/15',
+                  issue.risk === 'low' && 'bg-blue-500/10 text-blue-300 border-blue-500/15',
+                )}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium truncate">{issue.title}</p>
+                  <p className="text-[10px] text-white/50 truncate">
+                    {SOURCE_META[detectSummarySourceKey(issue.source, issue.category)]?.label || issue.source} ·{' '}
+                    {issue.timestamp ? new Date(issue.timestamp).toLocaleString('zh-CN') : ''}
+                  </p>
                 </div>
               </div>
+            ))}
+            {filteredIssues.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">当前筛选无匹配项</p>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const testingBody = (
+    <div className="space-y-4 pt-4 pb-8">
+      <div className="rounded-2xl border-2 border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-[#1e293b] p-6">
+        <h3 className="text-sm font-bold text-foreground mb-1 flex items-center gap-2">
+          <FlaskConical className="w-5 h-5 text-violet-400" />
+          OpenClaw Doctor（CLI）
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+          与设置 → 开发者中相同：在本机执行 <code className="text-violet-300">openclaw doctor</code>，输出 JSON
+          诊断结果。适合与网关内建诊断交叉验证。
+        </p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            type="button"
+            disabled={!!doctorCliRunning}
+            onClick={() => void runOpenClawDoctor('diagnose')}
+            className="h-9 px-4 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-500 disabled:opacity-50"
+          >
+            {doctorCliRunning === 'diagnose' ? '运行中…' : '运行诊断'}
+          </button>
+          <button
+            type="button"
+            disabled={!!doctorCliRunning}
+            onClick={() => void runOpenClawDoctor('fix')}
+            className="h-9 px-4 rounded-lg text-xs font-bold border border-violet-500/50 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50"
+          >
+            {doctorCliRunning === 'fix' ? '运行中…' : '执行修复'}
+          </button>
+          {doctorCli && (
+            <button
+              type="button"
+              onClick={() => void copyDoctorOutput()}
+              className="h-9 px-3 rounded-lg text-xs font-bold border border-white/15 flex items-center gap-1.5 hover:bg-white/5"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              复制输出
+            </button>
+          )}
+        </div>
+        {doctorCli && (
+          <div className="rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+            <div className="flex flex-wrap gap-3 px-3 py-2 text-[10px] text-muted-foreground border-b border-white/10">
+              <span>exit: {doctorCli.exitCode ?? '—'}</span>
+              <span>{doctorCli.durationMs} ms</span>
+              <span className={doctorCli.success ? 'text-emerald-400' : 'text-red-400'}>
+                {doctorCli.success ? 'success' : 'failed'}
+              </span>
+            </div>
+            <pre className="p-3 text-[10px] font-mono text-white/80 max-h-64 overflow-auto whitespace-pre-wrap break-all">
+              {(doctorCli.stdout || doctorCli.stderr || doctorCli.error || '(无输出)').slice(0, 12000)}
+            </pre>
           </div>
         )}
       </div>
+    </div>
+  );
 
-      {/* 一键修复确认 */}
+  if (standalone) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 bg-[#0f172a] overflow-hidden">
+        <PageHeader
+          title="健康维护"
+          subtitle="系统诊断、命令测试"
+          dividerClassName={scoreBarClass}
+          dividerUnderSubtitle
+          onRefresh={() => void fetchAll()}
+          refreshing={summaryLoading}
+          refreshLabel="刷新摘要"
+          actions={headerActions}
+        />
+        <div className="px-4 shrink-0 pt-4">{tabRow}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4">
+          {activeTab === 'diagnose' && diagnoseBody}
+          {activeTab === 'testing' && testingBody}
+        </div>
+        <ConfirmDialog
+          open={showFixConfirm}
+          title="一键修复"
+          message="将尝试自动修复可修复项。部分问题需手动处理。"
+          confirmLabel="确认"
+          cancelLabel="取消"
+          variant="default"
+          onConfirm={handleFix}
+          onCancel={() => setShowFixConfirm(false)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('flex flex-col bg-[#0f172a]', embedded ? 'flex-1 min-h-0 overflow-hidden' : 'h-full min-h-0 overflow-hidden')}>
+      {!embedded && (
+        <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-3 pb-0 px-4">
+          <h2 className="text-base font-bold text-foreground">健康维护</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">系统诊断、命令测试</p>
+          <div className={cn('h-[3px] w-full rounded-full transition-all duration-700 mt-2 mb-2', scoreBarClass)} />
+        </div>
+      )}
+      <div className={cn('shrink-0 px-4 pt-4')}>{tabRow}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4">
+        <div className="flex justify-end py-2">{headerActions}</div>
+        {activeTab === 'diagnose' && diagnoseBody}
+        {activeTab === 'testing' && testingBody}
+      </div>
       <ConfirmDialog
         open={showFixConfirm}
         title="一键修复"
-        message="将尝试自动修复可修复项，是否继续？AxonClaw 当前版本修复能力有限，部分问题需手动处理。"
+        message="将尝试自动修复可修复项，是否继续？"
         confirmLabel="确认"
         cancelLabel="取消"
         variant="default"

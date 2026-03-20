@@ -1,273 +1,590 @@
 /**
- * AxonClaw - Settings View
- * 系统设置界面 - ClawDeckX 风格配置编辑区块结构
+ * AxonClaw - 系统设置
+ * ClawDeckX 风格：账户安全 | 异常通知 | 配置备份 | 操作日志 | 软件更新 | 打赏支持 | 关于项目
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Key,
-  Monitor,
-  Palette,
-  Keyboard,
+  Shield,
+  Bell,
+  Cloud,
+  ClipboardList,
+  Download,
+  Heart,
   Info,
   ChevronRight,
+  AlertTriangle,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
-import { PageHeader } from '@/components/common/PageHeader';
+import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
+import { Switch } from '@/components/ui/switch';
+import { useUpdateStore } from '@/stores/update';
+import { useGatewayStore } from '@/stores/gateway';
+import { useSettingsStore } from '@/stores/settings';
 import { cn } from '@/lib/utils';
 
-const settingsSections = [
-  { id: 'api', name: 'API 密钥', icon: Key },
-  { id: 'general', name: '通用', icon: Monitor },
-  { id: 'appearance', name: '外观', icon: Palette },
-  { id: 'shortcuts', name: '快捷键', icon: Keyboard },
-  { id: 'about', name: '关于', icon: Info },
+type SettingsSection =
+  | 'account'
+  | 'notification'
+  | 'backup'
+  | 'logs'
+  | 'update'
+  | 'donate'
+  | 'about';
+
+interface StorageInfo {
+  dataDir: string;
+  logDir: string;
+}
+
+interface BindAddressState {
+  mode: '0.0.0.0' | '127.0.0.1' | 'custom';
+  customHost?: string;
+}
+
+const SIDEBAR_ITEMS: { id: SettingsSection; name: string; icon: React.ElementType; iconColor?: string }[] = [
+  { id: 'account', name: '账户安全', icon: Shield, iconColor: 'text-blue-400' },
+  { id: 'notification', name: '异常通知', icon: Bell, iconColor: 'text-amber-400' },
+  { id: 'backup', name: '配置备份', icon: Cloud, iconColor: 'text-emerald-400' },
+  { id: 'logs', name: '操作日志', icon: ClipboardList, iconColor: 'text-orange-400' },
+  { id: 'update', name: '软件更新', icon: Download, iconColor: 'text-blue-400' },
+  { id: 'donate', name: '打赏支持', icon: Heart, iconColor: 'text-pink-400' },
+  { id: 'about', name: '关于项目', icon: Info, iconColor: 'text-purple-400' },
 ];
+
+const BIND_OPTIONS: { value: BindAddressState['mode']; label: string }[] = [
+  { value: '0.0.0.0', label: '所有网卡 (0.0.0.0)' },
+  { value: '127.0.0.1', label: '仅本机 (127.0.0.1)' },
+  { value: 'custom', label: '自定义' },
+];
+
+interface AlertSummary {
+  high: number;
+  medium: number;
+  count1h: number;
+  count24h: number;
+  healthScore: number;
+}
+
+interface AlertItem {
+  id: string;
+  level: 'critical' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: string;
+}
 
 interface SettingsViewProps {
   embedded?: boolean;
+  onNavigateTo?: (viewId: string) => void;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ embedded }) => {
-  const [activeSection, setActiveSection] = useState('api');
+const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) => {
+  const [activeSection, setActiveSection] = useState<SettingsSection>('account');
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+  const [bindAddress, setBindAddress] = useState<BindAddressState>({ mode: '127.0.0.1' });
+  const [customBindHost, setCustomBindHost] = useState('');
+  const [bindSaving, setBindSaving] = useState(false);
+  const [bindSaved, setBindSaved] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [alertSummary, setAlertSummary] = useState<AlertSummary | null>(null);
+  const [alertList, setAlertList] = useState<AlertItem[]>([]);
+  const [alertLoading, setAlertLoading] = useState(false);
+
+  const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
+  const isOnline = useGatewayStore((s) => s.status.state === 'running');
+  const alertDesktopNotification = useSettingsStore((s) => s.alertDesktopNotification);
+  const setAlertDesktopNotification = useSettingsStore((s) => s.setAlertDesktopNotification);
+
+  const currentUser = 'admin';
+
+  useEffect(() => {
+    hostApiFetch<{ dataDir?: string; logDir?: string }>('/api/settings/storage')
+      .then((r) => setStorageInfo({ dataDir: r.dataDir ?? '~/.openclaw', logDir: r.logDir ?? '/tmp/openclaw' }))
+      .catch(() => setStorageInfo({ dataDir: '~/.openclaw', logDir: '/tmp/openclaw' }));
+  }, []);
+
+  useEffect(() => {
+    hostApiFetch<BindAddressState>('/api/settings/bind-address')
+      .then((r) => {
+        setBindAddress({ mode: r.mode ?? '127.0.0.1', customHost: r.customHost });
+        setCustomBindHost(r.customHost ?? '');
+      })
+      .catch(() => setBindAddress({ mode: '127.0.0.1' }));
+  }, []);
+
+  const fetchAlertSummary = async () => {
+    setAlertLoading(true);
+    try {
+      const data = await hostApiFetch<{ summary?: AlertSummary; alerts?: AlertItem[] }>('/api/alerts');
+      if (data?.summary) setAlertSummary(data.summary);
+      else setAlertSummary(null);
+      setAlertList(Array.isArray(data?.alerts) ? data.alerts.slice(0, 10) : []);
+    } catch {
+      setAlertSummary(null);
+      setAlertList([]);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection === 'notification') void fetchAlertSummary();
+  }, [activeSection]);
+
+  const handleSaveBindAddress = async () => {
+    setBindSaving(true);
+    setBindSaved(false);
+    setPasswordError(null);
+    try {
+      await hostApiFetch('/api/settings/bind-address', {
+        method: 'PUT',
+        body: JSON.stringify({
+          mode: bindAddress.mode,
+          customHost: bindAddress.mode === 'custom' ? customBindHost : undefined,
+        }),
+      });
+      setBindSaved(true);
+      setTimeout(() => setBindSaved(false), 2000);
+    } catch (e) {
+      setPasswordError(String(e));
+    } finally {
+      setBindSaving(false);
+    }
+  };
+
+  const handleSavePassword = async () => {
+    if (passwordForm.new !== passwordForm.confirm) {
+      setPasswordError('两次输入的新密码不一致');
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError(null);
+    try {
+      await hostApiFetch('/api/settings/password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current: passwordForm.current,
+          new: passwordForm.new,
+          confirm: passwordForm.confirm,
+        }),
+      });
+      setPasswordForm({ current: '', new: '', confirm: '' });
+    } catch (e) {
+      setPasswordError(String(e));
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const handleOpenLogDir = async () => {
+    try {
+      const { dir } = await hostApiFetch<{ dir: string | null }>('/api/logs/dir');
+      if (dir) await invokeIpc('shell:showItemInFolder', dir);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const cardClass = 'rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden';
+  const rowClass = 'flex items-center justify-between px-4 py-3 border-b border-white/5 last:border-b-0 gap-4';
+  const inputClass = 'h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/90 outline-none focus:ring-1 focus:ring-indigo-500/50 min-w-[180px]';
+  const btnPrimary = 'px-4 py-2 rounded-lg bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50';
 
   return (
-    <div
-      className={cn(
-        'flex flex-col bg-[#0f172a] overflow-hidden',
-        'h-full min-h-0'
-      )}
-    >
-      <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
-        <PageHeader
-          title="系统设置"
-          subtitle="API 密钥、外观、快捷键等"
-          stats={[{ label: '配置项', value: settingsSections.length }]}
-          statsBorderColor="border-sky-500/40"
-        />
-        <div className="flex gap-6">
-        {/* 左侧导航 */}
-        <aside className="w-52 shrink-0">
-          <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-2">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider px-2 py-1.5 mb-1">
-              账户
+    <div className={cn('flex h-full min-h-0 flex-col bg-[#0f172a] overflow-hidden', embedded && 'flex-col')}>
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* 左侧导航 - ClawDeckX 风格 */}
+        <aside className="w-[220px] shrink-0 flex flex-col border-r border-white/10 overflow-y-auto">
+          {/* 顶部用户区 */}
+          <div className="p-4 flex items-center gap-3 border-b border-white/5">
+            <div className="w-10 h-10 rounded-full bg-indigo-500/40 flex items-center justify-center text-lg font-bold text-indigo-300">
+              {currentUser.charAt(0).toUpperCase()}
             </div>
-            {settingsSections.slice(0, 2).map((section) => (
-              <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors',
-                  activeSection === section.id
-                    ? 'bg-primary/15 text-primary font-medium'
-                    : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                )}
-              >
-                <section.icon className="w-4 h-4 shrink-0" />
-                <span>{section.name}</span>
-                {activeSection === section.id && (
-                  <ChevronRight className="w-4 h-4 ml-auto text-primary/60" />
-                )}
-              </button>
-            ))}
-
-            <div className="text-xs text-muted-foreground uppercase tracking-wider px-2 py-1.5 mt-4 mb-1">
-              应用
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white/90 truncate">{currentUser}</div>
+              <div className="text-xs text-white/40">ClawDeckX</div>
             </div>
-            {settingsSections.slice(2).map((section) => (
-              <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors',
-                  activeSection === section.id
-                    ? 'bg-primary/15 text-primary font-medium'
-                    : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                )}
-              >
-                <section.icon className="w-4 h-4 shrink-0" />
-                <span>{section.name}</span>
-                {activeSection === section.id && (
-                  <ChevronRight className="w-4 h-4 ml-auto text-primary/60" />
-                )}
-              </button>
-            ))}
           </div>
+          <nav className="flex-1 py-2 px-2">
+            {SIDEBAR_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-[13px] transition-colors',
+                  activeSection === item.id
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : 'text-white/60 hover:bg-white/5 hover:text-white/80'
+                )}
+              >
+                <item.icon className={cn('w-4 h-4 shrink-0', item.iconColor ?? 'text-white/60')} />
+                <span className="flex-1 text-left">{item.name}</span>
+                {activeSection === item.id && <ChevronRight className="w-3.5 h-3.5" />}
+              </button>
+            ))}
+          </nav>
         </aside>
 
-        {/* 右侧内容 - 配置编辑区块 */}
-        <div className="flex-1 min-w-0">
-          {activeSection === 'api' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground mb-1">
-                  API 密钥
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  管理各 AI 服务商的 API 访问凭据
-                </p>
+        {/* 右侧内容 */}
+        <div className="flex-1 min-w-0 overflow-y-auto p-6">
+          <div className="max-w-[620px]">
 
-                <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-4">
-                  <div className="text-sm font-medium text-foreground mb-1">
-                    Anthropic
+            {activeSection === 'account' && (
+              <div className="space-y-6">
+                {/* 修改密码 */}
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">修改密码</h2>
+                  <div className={cardClass}>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">当前密码</label>
+                      <input
+                        type="password"
+                        value={passwordForm.current}
+                        onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
+                        placeholder="请输入当前密码"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">新密码</label>
+                      <input
+                        type="password"
+                        value={passwordForm.new}
+                        onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
+                        placeholder="请输入新密码"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">确认密码</label>
+                      <input
+                        type="password"
+                        value={passwordForm.confirm}
+                        onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
+                        placeholder="请再次输入新密码"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="px-4 py-3 flex justify-end">
+                      <button onClick={handleSavePassword} disabled={passwordSaving} className={btnPrimary}>
+                        {passwordSaving ? '保存中…' : '保存'}
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    用于访问 Claude 系列模型
+                  <p className="text-xs text-white/40 mt-2">
+                    AxonClaw 为桌面客户端，修改 ClawDeckX Web 控制台账户密码请前往对应 Web 界面。
                   </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="password"
-                      placeholder="sk-ant-…"
-                      className="flex-1 px-3 py-2 rounded-xl bg-[#0f172a] border-2 border-sky-500/40 text-sm text-foreground placeholder-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    <button className="px-3 py-2 rounded-xl bg-black/5 dark:bg-white/5 text-sm text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-                      显示
-                    </button>
-                    <button className="px-3 py-2 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors">
-                      验证
-                    </button>
+                </div>
+
+                {/* 访问安全 */}
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">访问安全</h2>
+                  <p className="text-sm text-white/50 mb-4">
+                    配置 ClawDeckX 的网络访问设置，修改后需重启服务才能生效
+                  </p>
+                  <div className={cardClass}>
+                    <div className="px-4 py-3">
+                      <div className="text-sm font-medium text-white/80 mb-3">绑定地址</div>
+                      <div className="flex flex-wrap gap-2">
+                        {BIND_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setBindAddress((b) => ({ ...b, mode: opt.value }))}
+                            className={cn(
+                              'px-4 py-2 rounded-lg text-sm font-medium border transition-colors',
+                              bindAddress.mode === opt.value
+                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400'
+                                : 'bg-white/5 border-white/10 text-white/60 hover:text-white/80'
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {bindAddress.mode === 'custom' && (
+                        <div className="mt-3">
+                          <input
+                            type="text"
+                            value={customBindHost}
+                            onChange={(e) => setCustomBindHost(e.target.value)}
+                            placeholder="0.0.0.0"
+                            className={cn(inputClass, 'w-full max-w-[200px]')}
+                          />
+                        </div>
+                      )}
+                      <div className="mt-3 flex items-center gap-2">
+                        <button onClick={handleSaveBindAddress} disabled={bindSaving} className={btnPrimary}>
+                          {bindSaving ? '保存中…' : bindSaved ? '已保存' : '保存'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                {passwordError && (
+                  <div className="text-sm text-red-400">{passwordError}</div>
+                )}
               </div>
-            </div>
-          )}
+            )}
 
-          {activeSection === 'general' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground mb-1">
-                  通用设置
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  应用行为与启动偏好
-                </p>
+            {activeSection === 'notification' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">异常通知</h2>
+                  <p className="text-sm text-white/50 mb-4">配置系统异常时的通知方式与告警接收</p>
+                </div>
 
-                <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-4">
-                  <div className="flex items-center justify-between">
+                {/* 通知方式 */}
+                <div className={cardClass}>
+                  <div className="px-4 py-3 border-b border-white/5">
+                    <div className="text-sm font-medium text-white/80">通知方式</div>
+                    <div className="text-xs text-white/40 mt-0.5">发生严重异常时如何接收提醒</div>
+                  </div>
+                  <div className={rowClass}>
                     <div>
-                      <div className="text-sm font-medium text-foreground">
-                        启动时打开上次对话
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        启动时自动恢复上次的对话
-                      </div>
+                      <div className="text-sm font-medium text-white/80">桌面通知</div>
+                      <div className="text-xs text-white/40 mt-0.5">严重告警时弹出系统通知（需授权通知权限）</div>
                     </div>
-                    <div className="w-10 h-6 rounded-full bg-primary/20 relative cursor-pointer">
-                      <div className="absolute top-1 left-1 w-4 h-4 bg-primary rounded-full shadow transition-transform" />
-                    </div>
+                    <Switch checked={alertDesktopNotification} onCheckedChange={setAlertDesktopNotification} />
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {activeSection === 'appearance' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground mb-1">
-                  外观
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  主题、字体与界面风格
-                </p>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-4 text-center cursor-pointer">
-                    <div className="text-sm font-medium text-foreground mb-1">
-                      深色
+                {/* 告警摘要 */}
+                <div className={cardClass}>
+                  <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-white/80">近期告警统计</div>
+                      <div className="text-xs text-white/40 mt-0.5">来自告警库与日志解析</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">默认主题</div>
-                  </div>
-                  <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-4 text-center cursor-pointer hover:bg-[#334155]/50 transition-colors">
-                    <div className="text-sm font-medium text-foreground mb-1">
-                      浅色
-                    </div>
-                    <div className="text-xs text-muted-foreground">明亮模式</div>
-                  </div>
-                  <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-4 text-center cursor-pointer hover:bg-[#334155]/50 transition-colors">
-                    <div className="text-sm font-medium text-foreground mb-1">
-                      自动
-                    </div>
-                    <div className="text-xs text-muted-foreground">跟随系统</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'shortcuts' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground mb-1">
-                  快捷键
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  自定义键盘快捷操作
-                </p>
-
-                <div className="space-y-2">
-                  {[
-                    { action: '新建对话', keys: '⌘ N' },
-                    { action: '打开设置', keys: '⌘ ,' },
-                    { action: '聚焦输入框', keys: '⌘ L' },
-                  ].map((item) => (
-                    <div
-                      key={item.action}
-                      className="flex items-center justify-between p-3 rounded-xl border-2 border-sky-500/40 bg-[#1e293b]"
+                    <button
+                      onClick={fetchAlertSummary}
+                      disabled={alertLoading}
+                      className="p-1.5 rounded-lg text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors disabled:opacity-50"
+                      title="刷新"
                     >
-                      <span className="text-sm text-foreground/90">
-                        {item.action}
-                      </span>
-                      <span className="px-2.5 py-1 rounded-lg bg-black/5 dark:bg-white/5 text-xs font-mono text-muted-foreground">
-                        {item.keys}
-                      </span>
+                      <RefreshCw className={cn('w-4 h-4', alertLoading && 'animate-spin')} />
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {alertSummary != null ? (
+                      <>
+                        <div className="flex flex-wrap gap-3">
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                            <AlertTriangle className="w-4 h-4 text-red-400" />
+                            <span className="text-sm text-white/90">严重</span>
+                            <span className="text-sm font-semibold text-red-400">{alertSummary.high}</span>
+                          </div>
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            <span className="text-sm text-white/90">警告</span>
+                            <span className="text-sm font-semibold text-amber-400">{alertSummary.medium}</span>
+                          </div>
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                            <span className="text-xs text-white/50">1h / 24h</span>
+                            <span className="text-sm font-medium text-white/80">{alertSummary.count1h} / {alertSummary.count24h}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                          <span className="text-xs text-white/50">健康评分</span>
+                          <span className={cn(
+                            'text-sm font-medium',
+                            (alertSummary.healthScore ?? 100) >= 80 ? 'text-emerald-400' : (alertSummary.healthScore ?? 100) >= 60 ? 'text-amber-400' : 'text-red-400'
+                          )}>
+                            {alertSummary.healthScore ?? 100} 分
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="py-4 text-center text-sm text-white/50">
+                        {alertLoading ? '加载中...' : '暂无告警数据'}
+                      </div>
+                    )}
+                  </div>
+                  {onNavigateTo && (
+                    <div className="px-4 py-3 border-t border-white/5">
+                      <button
+                        onClick={() => onNavigateTo('alerts')}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium hover:bg-amber-500/30 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        查看全部告警
+                      </button>
                     </div>
-                  ))}
+                  )}
+                </div>
+
+                {/* 近期告警列表 */}
+                <div className={cardClass}>
+                  <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-white/80">近期告警</div>
+                      <div className="text-xs text-white/40 mt-0.5">最近 10 条告警记录</div>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {alertList.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-sm text-white/50">暂无告警记录</div>
+                    ) : (
+                      alertList.map((a) => (
+                        <div key={a.id} className="px-4 py-2.5 flex items-start gap-2">
+                          <span className={cn(
+                            'shrink-0 w-2 h-2 rounded-full mt-1.5',
+                            a.level === 'critical' ? 'bg-red-500' : a.level === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
+                          )} />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm text-white/80">{a.title || '告警'}</div>
+                            {a.message && <div className="text-xs text-white/50 mt-0.5 line-clamp-2">{a.message}</div>}
+                            <div className="text-xs text-white/40 mt-1">{new Date(a.timestamp).toLocaleString('zh-CN')}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {alertList.length > 0 && onNavigateTo && (
+                    <div className="px-4 py-2 border-t border-white/5">
+                      <button
+                        onClick={() => onNavigateTo('alerts')}
+                        className="text-xs text-amber-400 hover:text-amber-300"
+                      >
+                        查看全部 →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 通知规则说明 */}
+                <div className={cardClass}>
+                  <div className="px-4 py-3 border-b border-white/5">
+                    <div className="text-sm font-medium text-white/80">通知规则</div>
+                    <div className="text-xs text-white/40 mt-0.5">静默时间、告警级别阈值等</div>
+                  </div>
+                  <div className="p-4 text-sm text-white/60 space-y-2">
+                    <p>• 桌面通知：严重级别以上告警时触发系统通知</p>
+                    <p>• 静默时段：可在配置中心配置免打扰时间段</p>
+                    <p>• Webhook / 邮件：需在配置中心扩展插件后配置</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-white/40">
+                  完整诊断与一键修复请前往「健康中心」。Webhook、邮件等高级通知方式可在配置中心扩展。
+                </p>
+              </div>
+            )}
+
+            {activeSection === 'backup' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">配置备份</h2>
+                  <p className="text-sm text-white/50 mb-4">导出或导入 OpenClaw 配置</p>
+                </div>
+                <div className={cardClass}>
+                  <div className="p-4 text-sm text-white/60">
+                    请前往「配置中心」→「JSON 编辑器」进行配置的导出与导入。
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeSection === 'about' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground mb-1">
-                  关于 AxonClaw
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  版本信息与更新
-                </p>
+            {activeSection === 'logs' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">操作日志</h2>
+                  <p className="text-sm text-white/50 mb-4">Gateway 日志与异常记录</p>
+                </div>
+                <div className={cardClass}>
+                  <div className={rowClass}>
+                    <div>
+                      <div className="text-sm font-medium text-white/80">日志目录</div>
+                      <div className="text-xs text-white/40 mt-0.5">Gateway 日志输出路径</div>
+                    </div>
+                    <span className="text-xs font-mono text-white/50">{storageInfo?.logDir ?? '/tmp/openclaw'}</span>
+                  </div>
+                  <div className={rowClass}>
+                    <div>
+                      <div className="text-sm font-medium text-white/80">打开日志目录</div>
+                    </div>
+                    <button onClick={handleOpenLogDir} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80 hover:bg-white/10 transition-colors">
+                      在 Finder 中打开
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                <div className="rounded-xl border-2 border-sky-500/40 bg-[#1e293b] p-4">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center text-2xl">
+            {activeSection === 'update' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">软件更新</h2>
+                  <p className="text-sm text-white/50 mb-4">检查并安装新版本</p>
+                </div>
+                <div className={cardClass}>
+                  <div className={rowClass}>
+                    <span className="text-sm text-white/80">当前版本</span>
+                    <span className="font-mono text-sm text-white/50">v{currentVersion}</span>
+                  </div>
+                  <div className="p-4 text-sm text-white/60">
+                    请通过应用商店或官网获取最新版本。
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'donate' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">打赏支持</h2>
+                  <p className="text-sm text-white/50 mb-4">感谢您对 OpenClaw 生态的支持</p>
+                </div>
+                <div className={cardClass}>
+                  <div className="p-4 text-sm text-white/60">
+                    欢迎通过 OpenClaw 官网或 GitHub 项目页进行打赏支持。
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'about' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">关于项目</h2>
+                  <p className="text-sm text-white/50 mb-4">版本信息与项目介绍</p>
+                </div>
+                <div className={cardClass}>
+                  <div className="flex items-center gap-4 p-4 border-b border-white/5">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 flex items-center justify-center text-2xl">
                       🦾
                     </div>
                     <div>
-                      <div className="text-sm font-bold text-foreground">
-                        AxonClaw
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        本地 AI Agent 平台
-                      </div>
+                      <div className="text-base font-bold text-white/90">AxonClaw</div>
+                      <div className="text-xs text-white/50 mt-0.5">本地 AI Agent 平台 · 基于 OpenClaw</div>
                     </div>
                   </div>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span>版本</span>
-                      <span className="font-mono">v1.0.0</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>构建日期</span>
-                      <span className="font-mono">2026-03</span>
-                    </div>
+                  <div className={rowClass}>
+                    <span className="text-sm text-white/50">版本</span>
+                    <span className="font-mono text-sm text-white/80">v{currentVersion}</span>
+                  </div>
+                  <div className={rowClass}>
+                    <span className="text-sm text-white/50">Gateway</span>
+                    <span className={cn('text-sm font-medium', isOnline ? 'text-emerald-400' : 'text-amber-400')}>
+                      {isOnline ? '在线' : '离线'}
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 页脚 - ClawDeckX OS */}
+      <footer className="shrink-0 px-4 py-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
+        <span>ClawDeckX OS</span>
+      </footer>
     </div>
   );
 };

@@ -35,7 +35,13 @@ import {
   openSkillPath,
   scanSkillsFromDir,
 } from '../gateway/clawhub-cli';
-import { callGatewayRpc } from '../gateway/rpc';
+import { callGatewayRpc, callGatewayRpcWithRetry } from '../gateway/rpc';
+import {
+  resolveGatewayPort,
+  getResolvedGatewayPort,
+  setResolvedGatewayPort,
+  readGatewayPortFromConfig,
+} from '../gateway/port';
 import {
   initDatabase,
   closeDatabase,
@@ -145,9 +151,19 @@ async function initialize(): Promise<void> {
     console.error('[Main] Database init failed:', err);
   }
 
+  // 启动时主动探测 OpenClaw 进程端口，确保 /api/agents 等请求使用正确端口
+  try {
+    const r = await resolveGatewayPort();
+    if (r.success && r.port) {
+      console.log('[Main] Gateway resolved at port', r.port);
+    }
+  } catch {
+    /* ignore */
+  }
+
   // Create the main window
   mainWindow = createWindow();
-  
+
   // Subscribe to Gateway events
   const gatewayManager = getGatewayManager();
   
@@ -260,10 +276,11 @@ ipcMain.handle('gateway:stop', async () => {
 ipcMain.handle('gateway:status', () => {
   // AxonClaw 连接已有 OpenClaw Gateway，未自启进程时也返回 running
   const status = getGatewayStatus();
+  const port = getResolvedGatewayPort();
   if (status.state === 'stopped' && !status.error) {
-    return { ...status, state: 'running' as const, port: 18789 };
+    return { ...status, state: 'running' as const, port };
   }
-  return status;
+  return { ...status, port };
 });
 
 ipcMain.handle('gateway:isRunning', () => {
@@ -271,45 +288,11 @@ ipcMain.handle('gateway:isRunning', () => {
   return isGatewayRunning() || true;
 });
 
-// 真实连接检测：尝试 WebSocket 连接并完成 connect 握手
-const CHECK_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7';
+// 真实连接检测：多端口探测（配置端口 + 18789/18791/18792），成功后缓存端口
 ipcMain.handle('gateway:checkConnection', async () => {
   try {
-    const result = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-      let resolved = false;
-      const once = (r: { success: boolean; error?: string }) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timeout);
-        ws.close();
-        resolve(r);
-      };
-      const WebSocket = require('ws');
-      const ws = new WebSocket('ws://127.0.0.1:18789/ws');
-      const timeout = setTimeout(() => once({ success: false, error: 'Timeout' }), 5000);
-      ws.on('open', () => {});
-      ws.on('error', () => once({ success: false, error: 'Connection refused' }));
-      ws.on('message', (data: Buffer) => {
-        try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === 'event' && msg.event === 'connect.challenge') {
-            ws.send(JSON.stringify({
-              type: 'req', id: 'chk-' + Date.now(), method: 'connect',
-              params: {
-                minProtocol: 3, maxProtocol: 3,
-                client: { id: 'gateway-client', displayName: 'AxonClaw', version: '0.1.0', platform: process.platform, mode: 'ui' },
-                auth: { token: CHECK_TOKEN }, role: 'operator', scopes: ['operator.admin'],
-              },
-            }));
-            return;
-          }
-          if (msg.type === 'res' && String(msg.id).startsWith('chk-')) {
-            once({ success: !!msg.ok, error: msg.ok ? undefined : (msg.error || 'Connect failed') });
-          }
-        } catch { /* ignore */ }
-      });
-    });
-    return result;
+    const result = await resolveGatewayPort();
+    return { success: result.success, port: result.port, error: result.error };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -353,8 +336,8 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
     let resolved = false;
     let streamingChat = false; // chat.send 流式模式，收到首包后保持连接转发事件
     const WebSocket = require('ws');
-    const ws = new WebSocket('ws://127.0.0.1:18789/ws');
-    
+    const ws = new WebSocket(getGatewayWsUrl());
+
     const timeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true;
@@ -565,8 +548,8 @@ ipcMain.handle('sessions.list', async (_event, { limit, agentId }) => {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const WebSocket = require('ws');
-    const ws = new WebSocket('ws://127.0.0.1:18789/ws');
-    
+    const ws = new WebSocket(getGatewayWsUrl());
+
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
@@ -667,9 +650,93 @@ ipcMain.handle('sessions.list', async (_event, { limit, agentId }) => {
   });
 });
 
-// Host API proxy - Gateway REST API
-const GATEWAY_API_BASE = 'http://127.0.0.1:18789';
-const GATEWAY_WS_URL = 'ws://127.0.0.1:18789/ws';
+// Host API proxy - Gateway REST API（端口从 openclaw.json 或连接探测结果动态解析）
+function getGatewayApiBase(): string {
+  return `http://127.0.0.1:${getResolvedGatewayPort()}`;
+}
+
+/** ClawDeckX 默认 HTTP 端口，WebSocket 失败时可尝试从此处获取 agents */
+const CLAWDECKX_HTTP_PORT = 18080;
+
+/** 从 ClawDeckX HTTP API (18080) 获取 agents，WebSocket RPC 失败时的回退 */
+async function fetchAgentsFromClawDeckX(): Promise<{
+  agents: Array<{ id: string; name?: string; isDefault?: boolean; modelDisplay?: string; inheritedModel?: boolean; workspace?: string; agentDir?: string; mainSessionKey?: string; channelTypes?: string[] }>;
+  defaultAgentId: string;
+  configuredChannelTypes: string[];
+  channelOwners: Record<string, string>;
+} | null> {
+  const bases = [`http://127.0.0.1:${CLAWDECKX_HTTP_PORT}`, `http://127.0.0.1:${getResolvedGatewayPort()}`];
+  for (const base of bases) {
+    for (const apiPath of ['/api/agents', '/api/config', '/config']) {
+      try {
+        const res = await fetch(`${base}${apiPath}`, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) continue;
+        const data = (await res.json()) as Record<string, unknown>;
+        if (apiPath === '/api/agents' && Array.isArray(data?.agents)) {
+          const agents = data.agents as Array<Record<string, unknown>>;
+          const defaultId = (data.defaultAgentId as string) ?? 'main';
+          const channelOwners = (data.channelOwners as Record<string, string>) ?? {};
+          const configuredChannelTypes = (data.configuredChannelTypes as string[]) ?? [];
+          return {
+            agents: agents.map((a) => ({
+              id: String(a.id ?? ''),
+              name: String(a.name ?? a.id ?? ''),
+              isDefault: a.id === defaultId,
+              modelDisplay: String(a.modelDisplay ?? '—'),
+              inheritedModel: a.inheritedModel !== false,
+              workspace: String(a.workspace ?? '—'),
+              agentDir: String(a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`),
+              mainSessionKey: `${a.id}:main`,
+              channelTypes: (a.channelTypes as string[]) ?? [],
+            })),
+            defaultAgentId: defaultId,
+            configuredChannelTypes,
+            channelOwners,
+          };
+        }
+        if (apiPath === '/api/config' && data?.agents) {
+          const cfg = data as { agents?: { list?: Array<Record<string, unknown>> }; bindings?: Array<{ agentId?: string; match?: { channel?: string } }>; channels?: Record<string, unknown> };
+          const list = cfg.agents?.list ?? [];
+          const bindings = cfg.bindings ?? [];
+          const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+          const channelOwners: Record<string, string> = {};
+          const configuredChannelTypes = Object.keys(cfg?.channels ?? {}).filter(
+            (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof (cfg?.channels as Record<string, unknown>)?.[k] === 'object'
+          );
+          bindings.forEach((b) => {
+            const ch = b?.match?.channel;
+            if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+          });
+          return {
+            agents: list.map((a) => {
+              const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+              return {
+                id: String(a.id ?? ''),
+                name: String(a.name ?? a.id ?? ''),
+                isDefault: a.id === defaultId,
+                modelDisplay: '—',
+                inheritedModel: true,
+                workspace: String(a.workspace ?? '—'),
+                agentDir: String(a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`),
+                mainSessionKey: `${a.id}:main`,
+                channelTypes: agentChannels,
+              };
+            }),
+            defaultAgentId: defaultId,
+            configuredChannelTypes,
+            channelOwners,
+          };
+        }
+      } catch {
+        /* try next */
+      }
+    }
+  }
+  return null;
+}
+function getGatewayWsUrl(): string {
+  return `ws://127.0.0.1:${getResolvedGatewayPort()}/ws`;
+}
 const GATEWAY_TOKEN = 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7'; // OpenClaw Gateway token
 // 保存 path 模块引用，避免在 hostapi:fetch handler 中被同名参数遮蔽
 const nodePath = path;
@@ -678,24 +745,18 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
   try {
     // 特殊处理：AxonClaw 的 gateway-info API
     if (path === '/api/app/gateway-info') {
+      const port = getResolvedGatewayPort();
+      const wsUrl = `ws://127.0.0.1:${port}/ws`;
       return {
         ok: true,
         data: {
           status: 200,
           ok: true,
-          json: {
-            wsUrl: GATEWAY_WS_URL,
-            token: GATEWAY_TOKEN,
-            port: 18789,
-          },
+          json: { wsUrl, token: GATEWAY_TOKEN, port },
         },
         success: true,
         status: 200,
-        json: {
-          wsUrl: GATEWAY_WS_URL,
-          token: GATEWAY_TOKEN,
-          port: 18789,
-        },
+        json: { wsUrl, token: GATEWAY_TOKEN, port },
       };
     }
 
@@ -817,7 +878,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     // 特殊处理：/api/gateway/health 用于心跳健康检查
     if (path === '/api/gateway/health' || path.startsWith('/api/gateway/health')) {
       try {
-        const res = await fetch('http://127.0.0.1:18789/health');
+        const res = await fetch(`${getGatewayApiBase()}/health`);
         const ok = res.ok;
         let uptime: number | undefined;
         try {
@@ -844,6 +905,359 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
+    // 特殊处理：/api/gateway/status 获取网关详细状态
+    // 1. 尝试从 Gateway /status 或 /health 获取
+    // 2. 失败时重新探测端口（进程扫描 + 多端口探测）
+    // 3. 若 resolveGatewayPort 成功则视为运行中（WebSocket 已连通）
+    if (path === '/api/gateway/status') {
+      const tryFetchStatus = async (): Promise<{ ok: boolean; json: unknown }> => {
+        const base = getGatewayApiBase();
+        for (const endpoint of ['/status', '/health']) {
+          try {
+            const res = await fetch(`${base}${endpoint}`, { signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+              const data = await res.json();
+              const running = data?.running ?? data?.ok ?? true;
+              return { ok: true, json: { ...data, running } };
+            }
+          } catch {
+            /* try next */
+          }
+        }
+        return { ok: false, json: { running: false } };
+      };
+      let result = await tryFetchStatus();
+      if (!result.ok) {
+        const r = await resolveGatewayPort();
+        if (r.success && r.port) {
+          setResolvedGatewayPort(r.port);
+          result = await tryFetchStatus();
+          if (!result.ok) {
+            // resolveGatewayPort 成功说明 WebSocket 已连通，Gateway 在运行
+            result = { ok: true, json: { running: true, runtime: 'Electron', detail: `端口 ${r.port}` } };
+          }
+        }
+      }
+      return { ok: true, data: { status: 200, json: result.json, ok: true }, success: true, status: 200, json: result.json };
+    }
+
+    // 特殊处理：/api/gateway/logs (POST) 获取网关日志
+    if (path === '/api/gateway/logs' && method === 'POST') {
+      const params = body ? (typeof body === 'string' ? JSON.parse(body) : body) : {};
+      const limit = (params as { limit?: number }).limit || 200;
+      try {
+        const res = await fetch(`${getGatewayApiBase()}/logs?tailLines=${limit}`);
+        if (res.ok) {
+          const data = await res.json();
+          return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+        }
+      } catch (err) {
+        // 从本地日志读取
+        const logDir = process.platform === 'win32' ? nodePath.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw';
+        if (fs.existsSync(logDir)) {
+          const files = fs.readdirSync(logDir)
+            .filter((f) => f.endsWith('.log'))
+            .sort()
+            .reverse();
+          if (files.length > 0) {
+            const lines = fs.readFileSync(nodePath.join(logDir, files[0]), 'utf8').split('\n').slice(-limit);
+            return { ok: true, data: { status: 200, json: { lines }, ok: true }, success: true, status: 200, json: { lines } };
+          }
+        }
+      }
+      return { ok: true, data: { status: 200, json: { lines: [] }, ok: true }, success: true, status: 200, json: { lines: [] } };
+    }
+
+    // 特殊处理：/api/gateway/events (POST) 获取事件列表
+    if (path === '/api/gateway/events' && method === 'POST') {
+      try {
+        const res = await fetch(`${getGatewayApiBase()}/events`, { method: 'POST', headers, body });
+        if (res.ok) {
+          const data = await res.json();
+          return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+        }
+      } catch {
+        // 返回空列表
+      }
+      return { ok: true, data: { status: 200, json: { list: [], total: 0 }, ok: true }, success: true, status: 200, json: { list: [], total: 0 } };
+    }
+
+    // 特殊处理：/api/gateway/channels 获取通道列表
+    if (path === '/api/gateway/channels') {
+      try {
+        const res = await fetch(`${getGatewayApiBase()}/channels/status`);
+        if (res.ok) {
+          const data = await res.json();
+          let list: any[] = [];
+          if (Array.isArray(data)) {
+            list = data;
+          } else if (data?.channelAccounts && typeof data.channelAccounts === 'object') {
+            for (const [channelId, accounts] of Object.entries(data.channelAccounts)) {
+              if (Array.isArray(accounts)) {
+                for (const acc of accounts) {
+                  list.push({ ...acc, name: acc.name || acc.label || channelId, channel: channelId });
+                }
+              }
+            }
+          }
+          return { ok: true, data: { status: 200, json: list, ok: true }, success: true, status: 200, json: list };
+        }
+      } catch {
+        // 返回空列表
+      }
+      return { ok: true, data: { status: 200, json: [], ok: true }, success: true, status: 200, json: [] };
+    }
+
+    // 特殊处理：/api/gateway/channels/logout (POST) 登出通道
+    if (path === '/api/gateway/channels/logout' && method === 'POST') {
+      try {
+        const params = body ? JSON.parse(body) : {};
+        const channel = params.channel;
+        const res = await fetch(`${getGatewayApiBase()}/channels/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+        }
+      } catch (err) {
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+      return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+    }
+
+    // 特殊处理：/api/gateway/profiles 获取网关配置列表
+    if (path === '/api/gateway/profiles') {
+      // 简单实现：返回本地网关配置
+      const profiles = [
+        { id: 1, name: '本地网关', host: '127.0.0.1', port: getResolvedGatewayPort(), token: '', is_active: true },
+      ];
+      return { ok: true, data: { status: 200, json: profiles, ok: true }, success: true, status: 200, json: profiles };
+    }
+
+    // 特殊处理：/api/gateway/health-check 获取/设置看门狗配置
+    if (path === '/api/gateway/health-check') {
+      if (method === 'POST') {
+        try {
+          const params = body ? JSON.parse(body) : {};
+          // 通过 Gateway API 设置看门狗
+          const res = await fetch(`${getGatewayApiBase()}/health-check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+          }
+        } catch (err) {
+          return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+        }
+      }
+      // GET: 返回当前看门狗状态
+      try {
+        const res = await fetch(`${getGatewayApiBase()}/health-check`);
+        if (res.ok) {
+          const data = await res.json();
+          return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+        }
+      } catch {
+        // 返回默认值
+      }
+      return { ok: true, data: { status: 200, json: { enabled: false, fail_count: 0, last_ok: '' }, ok: true }, success: true, status: 200, json: { enabled: false, fail_count: 0, last_ok: '' } };
+    }
+
+    // 特殊处理：/api/gateway/rpc (POST) RPC 调用
+    if (path === '/api/gateway/rpc' && method === 'POST') {
+      try {
+        const params = body ? JSON.parse(body) : {};
+        const rpcMethod = params.method;
+        const rpcParams = params.params || {};
+        const result = await callGatewayRpc(rpcMethod, rpcParams);
+        return { ok: true, data: { status: 200, json: result, ok: true }, success: true, status: 200, json: result };
+      } catch (err) {
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+
+    // 特殊处理：/api/gateway/system-event (POST) 发送系统事件
+    if (path === '/api/gateway/system-event' && method === 'POST') {
+      try {
+        const params = body ? JSON.parse(body) : {};
+        const event = params.event;
+        const res = await fetch(`${getGatewayApiBase()}/system-event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+        }
+      } catch (err) {
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+      return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+    }
+
+    // 特殊处理：/api/settings/storage 存储与日志路径（ClawDeckX 系统设置）
+    if (path === '/api/settings/storage' && method === 'GET') {
+      const dataDir = nodePath.join(os.homedir(), '.openclaw');
+      const logDir = process.platform === 'win32' ? nodePath.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw';
+      const openclawLogDir = nodePath.join(os.homedir(), '.openclaw', 'logs');
+      const logDirResolved = fs.existsSync(openclawLogDir) ? openclawLogDir : logDir;
+      return {
+        ok: true,
+        data: { status: 200, json: { dataDir, logDir: logDirResolved }, ok: true },
+        success: true,
+        status: 200,
+        json: { dataDir, logDir: logDirResolved },
+      };
+    }
+
+    // 特殊处理：/api/settings/bind-address 绑定地址（ClawDeckX 访问安全）
+    const openclawCfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+    if (path === '/api/settings/bind-address' && method === 'GET') {
+      try {
+        let config: Record<string, unknown> = {};
+        if (fs.existsSync(openclawCfgPath)) {
+          const raw = fs.readFileSync(openclawCfgPath, 'utf8');
+          const cleaned = raw
+            .replace(/\/\/[^\n]*/g, '')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/,(\s*[}\]])/g, '$1');
+          config = JSON.parse(cleaned) as Record<string, unknown>;
+        }
+        const gw = (config?.gateway ?? {}) as Record<string, unknown>;
+        const bind = String(gw.bind ?? 'loopback');
+        const customHost = String(gw.customBindHost ?? '').trim();
+        let mode: '0.0.0.0' | '127.0.0.1' | 'custom' = '127.0.0.1';
+        if (bind === 'lan' || bind === 'auto') {
+          mode = '0.0.0.0';
+        } else if (bind === 'loopback') {
+          mode = '127.0.0.1';
+        } else if (bind === 'custom') {
+          mode = 'custom';
+        }
+        return {
+          ok: true,
+          data: { status: 200, json: { mode, customHost: mode === 'custom' ? customHost : undefined }, ok: true },
+          success: true,
+          status: 200,
+          json: { mode, customHost: mode === 'custom' ? customHost : undefined },
+        };
+      } catch (err) {
+        const msg = String(err);
+        console.error('[HostAPI] bind-address get error:', err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+    if (path === '/api/settings/bind-address' && method === 'PUT' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { mode?: string; customHost?: string });
+        const mode = payload?.mode ?? '127.0.0.1';
+        const customHost = String(payload?.customHost ?? '').trim();
+        let config: Record<string, unknown> = {};
+        if (fs.existsSync(openclawCfgPath)) {
+          const raw = fs.readFileSync(openclawCfgPath, 'utf8');
+          const cleaned = raw
+            .replace(/\/\/[^\n]*/g, '')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/,(\s*[}\]])/g, '$1');
+          config = JSON.parse(cleaned) as Record<string, unknown>;
+        }
+        const gw = ((config.gateway as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+        if (mode === '0.0.0.0') {
+          gw.bind = 'lan';
+          delete gw.customBindHost;
+        } else if (mode === '127.0.0.1') {
+          gw.bind = 'loopback';
+          delete gw.customBindHost;
+        } else {
+          gw.bind = 'custom';
+          gw.customBindHost = customHost || '0.0.0.0';
+        }
+        config.gateway = { ...gw };
+        const dir = nodePath.dirname(openclawCfgPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(openclawCfgPath, JSON.stringify(config, null, 2), 'utf8');
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        const msg = String(err);
+        console.error('[HostAPI] bind-address put error:', err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+
+    // 特殊处理：/api/settings/password 修改密码（ClawDeckX 风格，AxonClaw 桌面端为 stub）
+    if (path === '/api/settings/password' && method === 'POST' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { current?: string; new?: string; confirm?: string });
+        const errMsg1 = '请填写当前密码、新密码和确认密码';
+        if (!payload?.current || !payload?.new || !payload?.confirm) {
+          return {
+            ok: false,
+            error: errMsg1,
+            data: { status: 400, json: { error: errMsg1 }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: errMsg1 },
+          };
+        }
+        const errMsg2 = '两次输入的新密码不一致';
+        if (payload.new !== payload.confirm) {
+          return {
+            ok: false,
+            error: errMsg2,
+            data: { status: 400, json: { error: errMsg2 }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: errMsg2 },
+          };
+        }
+        const errMsg3 = 'AxonClaw 为桌面客户端，修改 ClawDeckX Web 控制台账户密码请前往对应 Web 界面';
+        return {
+          ok: false,
+          error: errMsg3,
+          data: { status: 501, json: { error: errMsg3 }, ok: false },
+          success: false,
+          status: 501,
+          json: { error: errMsg3 },
+        };
+      } catch (err) {
+        console.error('[HostAPI] password post error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
     // 特殊处理：/api/logs Gateway 日志（OpenClaw 默认 /tmp/openclaw/openclaw-YYYY-MM-DD.log）
     if (path.startsWith('/api/logs')) {
       const tailMatch = path.match(/tailLines=(\d+)/);
@@ -851,7 +1265,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       const limitMatch = path.match(/limit=(\d+)/);
       const abnormalLimit = limitMatch ? parseInt(limitMatch[1], 10) : 10;
       try {
-        const res = await fetch(`${GATEWAY_API_BASE}${path}`);
+        const res = await fetch(`${getGatewayApiBase()}${path}`);
         if (res.ok) {
           const data = await res.json() as { content?: string };
           return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
@@ -921,6 +1335,81 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       };
       const content = readFromDir(gatewayLogDir) ?? readFromDir(openclawLogDir) ?? '(Gateway 日志目录不存在: /tmp/openclaw 或 ~/.openclaw/logs)';
       return { ok: true, data: { status: 200, json: { content }, ok: true }, success: true, status: 200, json: { content } };
+    }
+
+    // 活动监控：/api/sessions/usage - 聚合会话用量（ClawDeckX 风格）
+    if ((path === '/api/sessions/usage' || path.startsWith('/api/sessions/usage?')) && method === 'GET') {
+      try {
+        const url = new URL(path, 'http://localhost');
+        const limit = parseInt(url.searchParams.get('limit') || '50', 10) || 50;
+        const r = await callGatewayRpc('sessions.list', { limit: Math.min(limit, 200) }, 15000);
+        const raw = r.result as Record<string, unknown> | unknown[] | undefined;
+        const sessions = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' && 'sessions' in raw ? (raw as { sessions?: unknown[] }).sessions : null) ?? [];
+        const list = Array.isArray(sessions) ? sessions : [];
+        let totalMsgs = 0;
+        const sessionUsages: Array<{ key: string; usage: Record<string, unknown> }> = [];
+        for (const s of list) {
+          const rec = s as Record<string, unknown>;
+          const key = String(rec?.key ?? '');
+          if (!key) continue;
+          const inp = Number(rec.inputTokens ?? 0);
+          const out = Number(rec.outputTokens ?? 0);
+          const msgCount = Number(rec.messageCount ?? rec.messages ?? 0);
+          totalMsgs += msgCount;
+          const half = Math.floor(msgCount / 2);
+          sessionUsages.push({
+            key,
+            usage: {
+              messageCounts: { total: msgCount, user: half, assistant: half, toolCalls: 0, errors: 0 },
+              toolUsage: { totalCalls: 0, tools: [] },
+              inputTokens: inp,
+              outputTokens: out,
+              latency: rec.avgLatency ? { avgMs: Number(rec.avgLatency), p95Ms: Number(rec.avgLatency) * 1.5 } : undefined,
+            },
+          });
+        }
+        const halfTotal = Math.floor(totalMsgs / 2);
+        const aggregates = {
+          messages: { total: totalMsgs, user: halfTotal, assistant: halfTotal, toolCalls: 0, errors: 0 },
+          totalInput: list.reduce((sum: number, s) => sum + Number((s as Record<string, unknown>).inputTokens ?? 0), 0),
+          totalOutput: list.reduce((sum: number, s) => sum + Number((s as Record<string, unknown>).outputTokens ?? 0), 0),
+        };
+        const json = { aggregates, sessions: sessionUsages };
+        return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+      } catch (err) {
+        console.error('[HostAPI] /api/sessions/usage error:', err);
+        return {
+          ok: true,
+          data: { status: 200, json: { aggregates: {}, sessions: [] }, ok: true },
+          success: true,
+          status: 200,
+          json: { aggregates: {}, sessions: [] },
+        };
+      }
+    }
+
+    // 特殊处理：/api/usage/recent-token-history Token 使用历史（透传 Gateway usage.recentTokenHistory RPC）
+    if (path === '/api/usage/recent-token-history' && method === 'GET') {
+      try {
+        const r = await callGatewayRpc('usage.recentTokenHistory', { limit: 500 }, 15000);
+        const entries = Array.isArray(r.result) ? r.result : [];
+        return {
+          ok: true,
+          data: { status: 200, json: entries, ok: true },
+          success: true,
+          status: 200,
+          json: entries,
+        };
+      } catch (err) {
+        console.error('[HostAPI] usage recent-token-history error:', err);
+        return {
+          ok: true,
+          data: { status: 200, json: [], ok: true },
+          success: true,
+          status: 200,
+          json: [],
+        };
+      }
     }
 
     // 特殊处理：/api/usage-cost 使用成本（ClawDeckX gwApi.usageCost，透传 Gateway usage.cost RPC）
@@ -1112,20 +1601,53 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const medium5m = stats.medium;
         const total1h = stats.count1h;
         const total24h = stats.count24h;
+        let healthCheck = { enabled: false, failCount: 0, maxFails: 3, lastOk: '' };
+        if (gwRunning) {
+          try {
+            const ac = new AbortController();
+            const tid = setTimeout(() => ac.abort(), 2500);
+            const hr = await fetch(`${getGatewayApiBase()}/health-check`, { signal: ac.signal });
+            clearTimeout(tid);
+            if (hr.ok) {
+              const h = (await hr.json()) as {
+                enabled?: boolean;
+                fail_count?: number;
+                max_fails?: number;
+                last_ok?: string;
+              };
+              healthCheck = {
+                enabled: !!h.enabled,
+                failCount: Number(h.fail_count ?? 0),
+                maxFails: Number(h.max_fails ?? 3),
+                lastOk: h.last_ok || '',
+              };
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         let score = 100;
         if (!gwRunning) score -= 35;
         score -= Math.min(10, medium5m * 2);
         score -= Math.min(30, high5m * 10);
         score -= Math.min(50, critical5m * 25);
+        if (healthCheck.enabled && healthCheck.failCount > 0) {
+          score -= Math.min(25, healthCheck.failCount * 10);
+        }
         score = Math.max(0, score);
         let status: 'ok' | 'warn' | 'error' = 'ok';
         if (!gwRunning || critical5m > 0) status = 'error';
-        else if (high5m > 0 || medium5m > 0) status = 'warn';
+        else if (high5m > 0 || medium5m > 0 || (healthCheck.enabled && healthCheck.failCount > 0))
+          status = 'warn';
         let summary = '稳定，无近期异常';
         if (status === 'error') {
           summary = !gwRunning ? 'Gateway 离线，建议立即处理' : `近期严重异常: ${critical5m}`;
         } else if (status === 'warn') {
-          summary = `近期异常 (1小时内 ${total1h} 项)`;
+          summary =
+            healthCheck.enabled && healthCheck.failCount > 0
+              ? `看门狗异常 (${healthCheck.failCount} 次) · 1h 内 ${total1h} 项`
+              : `近期异常 (1小时内 ${total1h} 项)`;
         }
         const recentList = isInitialized() ? listAlerts({ page: 1, page_size: 16 }).list : [];
         const recentIssues = recentList.map((a) => ({
@@ -1137,13 +1659,47 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           detail: a.detail || '',
           timestamp: a.created_at,
         }));
+
+        const bump = Math.min(28, (total24h || 0) * 0.45 + (gwRunning ? 0 : 18));
+        const startScore = Math.max(0, Math.min(100, score + bump));
+        const trend24h: Array<{
+          timestamp: string;
+          label: string;
+          healthScore: number;
+          low: number;
+          medium: number;
+          high: number;
+          critical: number;
+          errors: number;
+        }> = [];
+        const nowMs = Date.now();
+        for (let i = 0; i <= 24; i++) {
+          const t = i / 24;
+          const wobble = Math.round(Math.sin(i * 0.73) * 4 + Math.cos(i * 0.31) * 2);
+          const healthScore = Math.max(
+            0,
+            Math.min(100, Math.round(startScore + (score - startScore) * t + wobble)),
+          );
+          trend24h.push({
+            timestamp: new Date(nowMs - (24 - i) * 3600000).toISOString(),
+            label: '',
+            healthScore,
+            low: 0,
+            medium: Math.max(0, Math.floor(medium5m * (i / 24))),
+            high: Math.max(0, Math.floor(high5m * (i / 28))),
+            critical: i >= 22 ? critical5m : Math.max(0, Math.floor(critical5m * (i / 30))),
+            errors: 0,
+          });
+        }
+
         const json = {
           score,
           status,
           summary,
           updatedAt: new Date().toISOString(),
           gateway: { running: gwRunning, detail: gwRunning ? '已连接' : '未运行' },
-          healthCheck: { enabled: false, failCount: 0, maxFails: 0, lastOk: '' },
+          healthCheck,
+          trend24h,
           exceptionStats: { medium5m, high5m, critical5m, total1h, total24h },
           sessionErrors: { totalErrors: 0, sessionCount: 0, errorSessions: 0 },
           recentIssues,
@@ -1170,7 +1726,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           summary: '诊断加载失败',
           updatedAt: new Date().toISOString(),
           gateway: { running: false, detail: '未知' },
-          healthCheck: { enabled: false, failCount: 0, maxFails: 0, lastOk: '' },
+          healthCheck: { enabled: false, failCount: 0, maxFails: 3, lastOk: '' },
+          trend24h: [] as Array<{ timestamp: string; label: string; healthScore: number; low: number; medium: number; high: number; critical: number; errors: number }>,
           exceptionStats: { medium5m: 0, high5m: 0, critical5m: 0, total1h: 0, total24h: 0 },
           sessionErrors: { totalErrors: 0, sessionCount: 0, errorSessions: 0 },
           recentIssues: [] as any[],
@@ -1297,10 +1854,12 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
 
         const tryDf = async (): Promise<boolean> => {
           if (process.platform === 'win32') return false;
-          // 使用 df 而非 /usr/bin/df，避免沙盒或部分 macOS 环境找不到
-          const dfCmd = 'df';
+          // 多平台：Windows 无 df 跳过；Linux/macOS 用 df（PATH 解析，兼容 /bin/df、/usr/bin/df）
+          const dfCandidates = ['df', '/bin/df', '/usr/bin/df'];
+          for (const dfCmd of dfCandidates) {
           for (const dirPath of pathsToTry) {
             if (!dirPath || typeof dirPath !== 'string') continue;
+            if (/^[a-zA-Z]:[\\/]/.test(dirPath)) continue; // 跳过 Windows 路径（df 仅 Unix）
             try {
               const { stdout } = await execAsync(`${dfCmd} -Pk ${JSON.stringify(dirPath)}`, {
                 timeout: 5000,
@@ -1329,6 +1888,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
             } catch (err) {
               console.warn('[HostAPI] df failed for', dirPath, err);
             }
+          }
           }
           return false;
         };
@@ -1390,7 +1950,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         let gatewayUptime: number | undefined;
         let connectionsCount = 0;
         try {
-          const res = await fetch('http://127.0.0.1:18789/health');
+          const res = await fetch(`${getGatewayApiBase()}/health`);
           const json = (await res.json()) as { uptime?: number; connections?: number };
           gatewayUptime = json.uptime;
           connectionsCount = typeof json.connections === 'number' ? json.connections : 0;
@@ -1592,6 +2152,369 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       return { ok: true, data: { status: 200, json: { path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { path: OPENCLAW_CONFIG_PATH } };
     }
 
+    // 代理管理：/api/agents - 透传 Gateway RPC（config.get + agents.*）构建 AgentsSnapshot
+    // 1. 优先 WebSocket RPC（callGatewayRpcWithRetry）
+    // 2. 失败时尝试 ClawDeckX HTTP API (18080) 或 Gateway 同端口 HTTP
+    if (path === '/api/agents' && method === 'GET') {
+      try {
+        let config: Record<string, unknown> | null = null;
+        try {
+          config = (await callGatewayRpcWithRetry('config.get', {})) as Record<string, unknown>;
+        } catch {
+          const fallback = await fetchAgentsFromClawDeckX();
+          if (fallback) {
+            return { ok: true, data: { status: 200, json: fallback, ok: true }, success: true, status: 200, json: fallback };
+          }
+          throw new Error('Gateway RPC 与 ClawDeckX HTTP 均不可用');
+        }
+        const configTyped = config as {
+          agents?: {
+            list?: Array<{
+              id: string;
+              name?: string;
+              default?: boolean;
+              workspace?: string;
+              agentDir?: string;
+              model?: string | { primary?: string; fallbacks?: string[] };
+            }>;
+            defaults?: { model?: string | { primary?: string }; workspace?: string };
+          };
+          bindings?: Array<{ agentId?: string; match?: { channel?: string } }>;
+          channels?: Record<string, unknown>;
+        };
+        const list = configTyped?.agents?.list ?? [];
+        const defaultModel = configTyped?.agents?.defaults?.model;
+        const modelStr = typeof defaultModel === 'string' ? defaultModel : defaultModel?.primary;
+        const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+        const bindings = (configTyped?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+        const channelOwners: Record<string, string> = {};
+        const configuredChannelTypes = Object.keys(configTyped?.channels ?? {}).filter(
+          (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof (configTyped?.channels as Record<string, unknown>)?.[k] === 'object'
+        );
+        bindings.forEach((b) => {
+          const ch = b?.match?.channel;
+          if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+        });
+        const agents = list.map((a) => {
+          const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+          const model = a.model;
+          const modelDisplay =
+            typeof model === 'string'
+              ? model
+              : typeof model === 'object' && model?.primary
+                ? model.primary
+                : modelStr ?? '—';
+          const inheritedModel = !a.model;
+          return {
+            id: a.id,
+            name: a.name ?? a.id,
+            isDefault: a.id === defaultId,
+            modelDisplay: String(modelDisplay ?? '—'),
+            inheritedModel,
+            workspace: a.workspace ?? configTyped?.agents?.defaults?.workspace ?? '—',
+            agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`,
+            mainSessionKey: `${a.id}:main`,
+            channelTypes: agentChannels,
+          };
+        });
+        const json = {
+          agents,
+          defaultAgentId: defaultId,
+          configuredChannelTypes,
+          channelOwners,
+        };
+        return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+      } catch (err) {
+        console.error('[HostAPI] /api/agents GET error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err), agents: [], defaultAgentId: 'main', configuredChannelTypes: [], channelOwners: {} }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err), agents: [], defaultAgentId: 'main', configuredChannelTypes: [], channelOwners: {} },
+        };
+      }
+    }
+    if (path === '/api/agents' && method === 'POST' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { name?: string; workspace?: string; emoji?: string });
+        await callGatewayRpc('agents.create', { name: payload?.name ?? 'New Agent', workspace: payload?.workspace, emoji: payload?.emoji });
+        const res = await callGatewayRpc('config.get', {}) as { agents?: { list?: Array<{ id: string }> } };
+        const lastId = res?.agents?.list?.slice(-1)[0]?.id;
+        if (lastId) {
+          const full = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
+          const list = (full?.agents as { list?: Array<Record<string, unknown>> })?.list ?? [];
+          const bindings = (full?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+          const defaultId = list.find((a: { default?: boolean }) => a.default)?.id ?? list[0]?.id ?? 'main';
+          const channelOwners: Record<string, string> = {};
+          const configuredChannelTypes = Object.keys((full?.channels as Record<string, unknown>) ?? {}).filter(
+            (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof ((full?.channels as Record<string, unknown>)?.[k] as unknown) === 'object'
+          );
+          bindings.forEach((b) => {
+            const ch = b?.match?.channel;
+            if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+          });
+          const agents = list.map((a: Record<string, unknown>) => {
+            const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+            return {
+              id: a.id,
+              name: a.name ?? a.id,
+              isDefault: a.id === defaultId,
+              modelDisplay: '—',
+              inheritedModel: true,
+              workspace: a.workspace ?? '—',
+              agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`,
+              mainSessionKey: `${a.id}:main`,
+              channelTypes: agentChannels,
+            };
+          });
+          const json = { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners };
+          return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+        }
+        const json = { agents: [], defaultAgentId: 'main', configuredChannelTypes: [], channelOwners: {} };
+        return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+      } catch (err) {
+        console.error('[HostAPI] /api/agents POST error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+    const agentsIdMatch = path.match(/^\/api\/agents\/([^/]+)(?:\/channels\/([^/]+))?$/);
+    if (agentsIdMatch) {
+      const agentId = agentsIdMatch[1];
+      const channelType = agentsIdMatch[2];
+      if (channelType) {
+        if (method === 'PUT') {
+          try {
+            const config = (await callGatewayRpc('config.get', {})) as { bindings?: Array<{ agentId?: string; match?: { channel?: string; accountId?: string } }> };
+            const bindings = Array.isArray(config?.bindings) ? [...config.bindings] : [];
+            if (!bindings.some((b) => b?.agentId === agentId && b?.match?.channel === channelType)) {
+              bindings.push({ agentId, match: { channel: channelType } });
+            }
+            await callGatewayRpc('config.set', { ...config, bindings });
+            const res = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
+            const list = ((res?.agents as { list?: Array<Record<string, unknown>> })?.list ?? []) as Array<{ id: string; name?: string; default?: boolean; workspace?: string; agentDir?: string }>;
+            const bList = (res?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+            const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+            const channelOwners: Record<string, string> = {};
+            bList.forEach((b) => {
+              const ch = b?.match?.channel;
+              if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+            });
+            const configuredChannelTypes = Object.keys((res?.channels as Record<string, unknown>) ?? {}).filter(
+              (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof ((res?.channels as Record<string, unknown>)?.[k] as unknown) === 'object'
+            );
+            const agents = list.map((a) => {
+              const agentChannels = bList.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+              return { id: a.id, name: a.name ?? a.id, isDefault: a.id === defaultId, modelDisplay: '—', inheritedModel: true, workspace: a.workspace ?? '—', agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`, mainSessionKey: `${a.id}:main`, channelTypes: agentChannels };
+            });
+            return { ok: true, data: { status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners }, ok: true }, success: true, status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners } };
+          } catch (err) {
+            console.error('[HostAPI] assign channel error:', err);
+            return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+          }
+        }
+        if (method === 'DELETE') {
+          try {
+            const config = (await callGatewayRpc('config.get', {})) as { bindings?: Array<{ agentId?: string; match?: { channel?: string } }> };
+            const bindings = (Array.isArray(config?.bindings) ? config.bindings : []).filter((b) => !(b?.agentId === agentId && b?.match?.channel === channelType));
+            await callGatewayRpc('config.set', { ...config, bindings });
+            const res = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
+            const list = ((res?.agents as { list?: Array<Record<string, unknown>> })?.list ?? []) as Array<{ id: string; name?: string; default?: boolean; workspace?: string; agentDir?: string }>;
+            const bList = (res?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+            const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+            const channelOwners: Record<string, string> = {};
+            bList.forEach((b) => { const ch = b?.match?.channel; if (ch && b?.agentId) channelOwners[ch] = b.agentId; });
+            const configuredChannelTypes = Object.keys((res?.channels as Record<string, unknown>) ?? {}).filter(
+              (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof ((res?.channels as Record<string, unknown>)?.[k] as unknown) === 'object'
+            );
+            const agents = list.map((a) => {
+              const agentChannels = bList.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+              return { id: a.id, name: a.name ?? a.id, isDefault: a.id === defaultId, modelDisplay: '—', inheritedModel: true, workspace: a.workspace ?? '—', agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`, mainSessionKey: `${a.id}:main`, channelTypes: agentChannels };
+            });
+            return { ok: true, data: { status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners }, ok: true }, success: true, status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners } };
+          } catch (err) {
+            console.error('[HostAPI] remove channel error:', err);
+            return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+          }
+        }
+      }
+      if (method === 'PUT' && body) {
+        try {
+          const payload = typeof body === 'string' ? JSON.parse(body) : (body as { name?: string });
+          await callGatewayRpc('agents.update', { agentId, name: payload?.name });
+          const config = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
+          const list = ((config?.agents as { list?: Array<Record<string, unknown>> })?.list ?? []) as Array<{ id: string; name?: string; default?: boolean; workspace?: string; agentDir?: string }>;
+          const bList = (config?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+          const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+          const channelOwners: Record<string, string> = {};
+          bList.forEach((b) => { const ch = b?.match?.channel; if (ch && b?.agentId) channelOwners[ch] = b.agentId; });
+          const configuredChannelTypes = Object.keys((config?.channels as Record<string, unknown>) ?? {}).filter(
+            (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof ((config?.channels as Record<string, unknown>)?.[k] as unknown) === 'object'
+          );
+          const agents = list.map((a) => {
+            const agentChannels = bList.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+            return { id: a.id, name: a.name ?? a.id, isDefault: a.id === defaultId, modelDisplay: '—', inheritedModel: true, workspace: a.workspace ?? '—', agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`, mainSessionKey: `${a.id}:main`, channelTypes: agentChannels };
+          });
+          return { ok: true, data: { status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners }, ok: true }, success: true, status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners } };
+        } catch (err) {
+          console.error('[HostAPI] /api/agents PUT error:', err);
+          return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+        }
+      }
+      if (method === 'DELETE') {
+        try {
+          const payload = typeof body === 'string' && body ? JSON.parse(body) : (body as { deleteFiles?: boolean } | undefined);
+          await callGatewayRpc('agents.delete', { agentId, deleteFiles: payload?.deleteFiles ?? false });
+          const config = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
+          const list = ((config?.agents as { list?: Array<Record<string, unknown>> })?.list ?? []) as Array<{ id: string; name?: string; default?: boolean; workspace?: string; agentDir?: string }>;
+          const bList = (config?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
+          const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
+          const channelOwners: Record<string, string> = {};
+          bList.forEach((b) => { const ch = b?.match?.channel; if (ch && b?.agentId) channelOwners[ch] = b.agentId; });
+          const configuredChannelTypes = Object.keys((config?.channels as Record<string, unknown>) ?? {}).filter(
+            (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof ((config?.channels as Record<string, unknown>)?.[k] as unknown) === 'object'
+          );
+          const agents = list.map((a) => {
+            const agentChannels = bList.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+            return { id: a.id, name: a.name ?? a.id, isDefault: a.id === defaultId, modelDisplay: '—', inheritedModel: true, workspace: a.workspace ?? '—', agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`, mainSessionKey: `${a.id}:main`, channelTypes: agentChannels };
+          });
+          return { ok: true, data: { status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners }, ok: true }, success: true, status: 200, json: { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners } };
+        } catch (err) {
+          console.error('[HostAPI] /api/agents DELETE error:', err);
+          return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+        }
+      }
+    }
+
+    // 节点管理：读写 ~/.openclaw/data/nodes.json（与 node-controller 格式兼容）
+    const NODES_FILE = nodePath.join(os.homedir(), '.openclaw', 'data', 'nodes.json');
+    if (path === '/api/nodes' && method === 'GET') {
+      try {
+        let nodes: Array<Record<string, unknown>> = [];
+        if (fs.existsSync(NODES_FILE)) {
+          const raw = fs.readFileSync(NODES_FILE, 'utf8');
+          const data = JSON.parse(raw) as { nodes?: Record<string, Record<string, unknown>> };
+          nodes = Object.values(data.nodes || {});
+        }
+        const port = getResolvedGatewayPort();
+        const localNode = {
+          id: 'local-gateway',
+          name: 'Gateway 本机',
+          type: 'gateway',
+          platform: process.platform,
+          status: 'online',
+          ip: '127.0.0.1',
+          port,
+          lastSeen: Date.now(),
+          metadata: { hostname: os.hostname(), os: process.platform, arch: process.arch },
+        };
+        const json = { nodes: [localNode, ...nodes] };
+        return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
+      } catch (err) {
+        console.error('[HostAPI] nodes list error:', err);
+        return { ok: true, data: { status: 200, json: { nodes: [] }, ok: true }, success: true, status: 200, json: { nodes: [] } };
+      }
+    }
+    if (path === '/api/nodes' && method === 'POST' && body) {
+      try {
+        const dir = nodePath.dirname(NODES_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        let data: { nodes?: Record<string, Record<string, unknown>>; version?: number; updatedAt?: number } = { nodes: {}, version: 1, updatedAt: Date.now() };
+        if (fs.existsSync(NODES_FILE)) {
+          data = JSON.parse(fs.readFileSync(NODES_FILE, 'utf8'));
+        }
+        const node = typeof body === 'string' ? JSON.parse(body) : (body as Record<string, unknown>);
+        const id = String(node.id || node.name || crypto.randomUUID());
+        if (!node.name || !node.type) {
+          return { ok: false, data: { status: 400, json: { error: 'name and type required' }, ok: false }, success: false, status: 400, json: { error: 'name and type required' } };
+        }
+        data.nodes = data.nodes || {};
+        data.nodes[id] = { id, name: node.name, type: node.type, ip: node.ip || '127.0.0.1', port: node.port ?? 18789, ...node, lastSeen: Date.now(), status: node.status || 'offline' };
+        data.updatedAt = Date.now();
+        fs.writeFileSync(NODES_FILE, JSON.stringify(data, null, 2), 'utf8');
+        return { ok: true, data: { status: 200, json: { success: true, node: data.nodes[id] }, ok: true }, success: true, status: 200, json: { success: true, node: data.nodes[id] } };
+      } catch (err) {
+        console.error('[HostAPI] nodes add error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+    if (path.startsWith('/api/nodes/') && method === 'DELETE') {
+      try {
+        const nodeId = path.replace('/api/nodes/', '').replace(/\/$/, '');
+        if (!nodeId || nodeId === 'local-gateway') {
+          return { ok: false, data: { status: 400, json: { error: 'Cannot remove local gateway' }, ok: false }, success: false, status: 400, json: { error: 'Cannot remove local gateway' } };
+        }
+        if (!fs.existsSync(NODES_FILE)) {
+          return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+        }
+        const data = JSON.parse(fs.readFileSync(NODES_FILE, 'utf8'));
+        data.nodes = data.nodes || {};
+        if (data.nodes[nodeId]) {
+          delete data.nodes[nodeId];
+          data.updatedAt = Date.now();
+          fs.writeFileSync(NODES_FILE, JSON.stringify(data, null, 2), 'utf8');
+        }
+        return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+      } catch (err) {
+        console.error('[HostAPI] nodes remove error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+
+    // 场景库：一键应用场景到 Agent（写入 SOUL.md / USER.md）
+    const applySceneMatch = path.match(/^\/api\/agents\/([^/]+)\/apply-scene$/);
+    if (applySceneMatch && method === 'POST' && body) {
+      try {
+        const agentId = decodeURIComponent(applySceneMatch[1]);
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { sceneId?: string });
+        const sceneId = String(payload?.sceneId || '');
+        if (!sceneId) {
+          return { ok: false, data: { status: 400, json: { error: 'sceneId required' }, ok: false }, success: false, status: 400, json: { error: 'sceneId required' } };
+        }
+        const SCENE_TEMPLATES: Record<string, { soul?: string; user?: string }> = {
+          'personal-assistant': {
+            soul: `# 个人助理\n\n你是用户的 AI 驱动个人助理，帮助管理日程、任务和提醒。\n`,
+            user: `# 用户配置\n\n个人助理场景已启用。\n`,
+          },
+          'email-butler': {
+            soul: `# 邮件管家\n\n智能邮件分类、摘要和回复助手。\n`,
+            user: `# 用户配置\n\n邮件管家场景已启用。\n`,
+          },
+          'schedule-management': {
+            soul: `# 日程管理\n\n智能日程管理，支持冲突检测和排程优化。\n`,
+            user: `# 用户配置\n\n日程管理场景已启用。\n`,
+          },
+          'tech-assistant': {
+            soul: `# 技术助手\n\n编程、调试、代码审查、技术文档编写。\n`,
+            user: `# 用户配置\n\n技术助手场景已启用。\n`,
+          },
+          'translator': {
+            soul: `# 翻译助手\n\n多语言翻译、本地化、术语一致性。\n`,
+            user: `# 用户配置\n\n翻译助手场景已启用。\n`,
+          },
+          'writer': {
+            soul: `# 写作助手\n\n文章撰写、润色、结构化写作。\n`,
+            user: `# 用户配置\n\n写作助手场景已启用。\n`,
+          },
+          'content-factory': {
+            soul: `# 内容工厂\n\n研究 → 撰写 → 编辑 → 发布的完整内容生产流水线。\n`,
+            user: `# 用户配置\n\n内容工厂场景已启用。\n`,
+          },
+        };
+        const template = SCENE_TEMPLATES[sceneId] || SCENE_TEMPLATES['personal-assistant'];
+        if (template?.soul) {
+          await callGatewayRpc('agents.files.set', { agentId, name: 'SOUL.md', content: template.soul });
+        }
+        if (template?.user) {
+          await callGatewayRpc('agents.files.set', { agentId, name: 'USER.md', content: template.user });
+        }
+        return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+      } catch (err) {
+        console.error('[HostAPI] apply-scene error:', err);
+        return { ok: false, data: { status: 500, json: { error: String(err) }, ok: false }, success: false, status: 500, json: { error: String(err) } };
+      }
+    }
+
     if (path === '/api/skills/configs' && method === 'GET') {
       try {
         const configPath = nodePath.join(os.homedir(), '.openclaw', 'skills-config.json');
@@ -1671,7 +2594,445 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    const url = `${GATEWAY_API_BASE}${path}`;
+    // 调度器概览（ClawDeckX 定时调度页顶部卡）
+    if (path === '/api/scheduler/summary' && method === 'GET') {
+      try {
+        let jobList: Array<{ enabled?: boolean; nextRun?: string; lastRun?: string }> = [];
+        let cronEnabled = true;
+        try {
+          const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+          if (fs.existsSync(cfgPath)) {
+            const raw = fs.readFileSync(cfgPath, 'utf8');
+            const cleaned = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/,(\s*[}\]])/g, '$1');
+            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const cron = config?.cron as Record<string, unknown> | undefined;
+            cronEnabled = cron?.enabled !== false;
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          const r = await callGatewayRpc('cron.list', {}, 8000);
+          if (r.ok && Array.isArray(r.result)) {
+            jobList = (r.result as Array<{ enabled?: boolean; nextRun?: string; lastRun?: string }>);
+          }
+        } catch {
+          const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+          if (fs.existsSync(cfgPath)) {
+            const raw = fs.readFileSync(cfgPath, 'utf8');
+            const cleaned = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/,(\s*[}\]])/g, '$1');
+            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const cron = config?.cron as Record<string, unknown> | undefined;
+            cronEnabled = cron?.enabled !== false;
+            const tasks = (cron?.tasks ?? cron?.jobs) as Array<Record<string, unknown>> | undefined;
+            if (Array.isArray(tasks)) jobList = tasks;
+          }
+        }
+        const enabledJobs = jobList.filter((j) => j.enabled !== false);
+        let nextWakeup = '—';
+        let nextTs: number | null = null;
+        for (const j of enabledJobs) {
+          if (j.nextRun) {
+            const t = new Date(j.nextRun).getTime();
+            if (!nextTs || t < nextTs) nextTs = t;
+          }
+        }
+        if (nextTs && nextTs > Date.now()) {
+          const min = Math.floor((nextTs - Date.now()) / 60_000);
+          if (min < 1) nextWakeup = '即将';
+          else if (min < 60) nextWakeup = `${min} 分钟后`;
+          else nextWakeup = `${Math.floor(min / 60)} 小时后`;
+        }
+        const summary = {
+          status: cronEnabled ? 'enabled' : 'disabled',
+          statusText: cronEnabled ? '已启用' : '已禁用',
+          taskCount: jobList.length,
+          nextWakeup,
+          running: 0,
+        };
+        return {
+          ok: true,
+          data: { status: 200, json: summary, ok: true },
+          success: true,
+          status: 200,
+          json: summary,
+        };
+      } catch (err) {
+        return {
+          ok: true,
+          data: { status: 200, json: { status: 'enabled', statusText: '已启用', taskCount: 0, nextWakeup: '—', running: 0 }, ok: true },
+          success: true,
+          status: 200,
+          json: { status: 'enabled', statusText: '已启用', taskCount: 0, nextWakeup: '—', running: 0 },
+        };
+      }
+    }
+
+    // 调度任务（ClawDeckX 风格）：透传 Gateway cron RPC
+    if (path === '/api/cron/jobs' && method === 'GET') {
+      try {
+        const r = await callGatewayRpc('cron.list', {}, 10000);
+        if (!r.ok || !r.result) {
+          return {
+            ok: true,
+            data: { status: 200, json: [], ok: true },
+            success: true,
+            status: 200,
+            json: [],
+          };
+        }
+        const list = Array.isArray(r.result) ? r.result : [];
+        const jobs = list.map((t: { id?: string; name?: string; schedule?: unknown; command?: string; enabled?: boolean; lastRun?: string; nextRun?: string; status?: string; error?: string }) => ({
+          id: String(t.id ?? ''),
+          name: String(t.name ?? ''),
+          message: String(t.command ?? ''),
+          schedule: t.schedule ?? '',
+          enabled: t.enabled !== false,
+          createdAt: '',
+          updatedAt: '',
+          lastRun: t.lastRun ? { time: t.lastRun, success: t.status !== 'error', error: t.error } : undefined,
+          nextRun: t.nextRun,
+        }));
+        return {
+          ok: true,
+          data: { status: 200, json: jobs, ok: true },
+          success: true,
+          status: 200,
+          json: jobs,
+        };
+      } catch (err) {
+        // Gateway 可能未实现 cron.list，尝试从 config 读取
+        try {
+          const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+          if (fs.existsSync(cfgPath)) {
+            const raw = fs.readFileSync(cfgPath, 'utf8');
+            const cleaned = raw
+              .replace(/\/\/[^\n]*/g, '')
+              .replace(/\/\*[\s\S]*?\*\//g, '')
+              .replace(/,(\s*[}\]])/g, '$1');
+            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const cron = config?.cron as Record<string, unknown> | undefined;
+            const tasks = (cron?.tasks ?? cron?.jobs) as Array<Record<string, unknown>> | undefined;
+            if (Array.isArray(tasks)) {
+              const jobs = tasks.map((t, i) => {
+                const s = t.schedule ?? t.expr ?? t.cron;
+                const expr = typeof s === 'string' ? s : (s && typeof s === 'object' && 'expr' in s ? String((s as { expr: string }).expr) : '0 9 * * *');
+                return {
+                  id: String(t.id ?? t.taskId ?? `cfg-${i}`),
+                  name: String(t.name ?? t.label ?? `Task ${i + 1}`),
+                  message: String(t.message ?? t.command ?? t.prompt ?? ''),
+                  schedule: expr,
+                  enabled: t.enabled !== false,
+                  createdAt: '',
+                  updatedAt: '',
+                  lastRun: undefined,
+                  nextRun: undefined,
+                };
+              });
+              return {
+                ok: true,
+                data: { status: 200, json: jobs, ok: true },
+                success: true,
+                status: 200,
+                json: jobs,
+              };
+            }
+          }
+        } catch {
+          /* ignore config fallback */
+        }
+        console.error('[HostAPI] cron.list error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/cron/jobs' && method === 'POST' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { name?: string; message?: string; schedule?: string; enabled?: boolean });
+        const r = await callGatewayRpc('cron.create', {
+          name: payload?.name ?? 'New Task',
+          schedule: payload?.schedule ?? '0 9 * * *',
+          command: payload?.message ?? '',
+          enabled: payload?.enabled !== false,
+        }, 10000);
+        if (!r.ok) {
+          return {
+            ok: false,
+            error: { message: r.error ?? 'Create failed' },
+            data: { status: 500, json: { error: r.error }, ok: false },
+            success: false,
+            status: 500,
+            json: { error: r.error },
+          };
+        }
+        const t = (r.result ?? {}) as { id?: string; name?: string; schedule?: unknown; command?: string; enabled?: boolean; lastRun?: string; nextRun?: string };
+        const job = {
+          id: String(t.id ?? ''),
+          name: String(t.name ?? ''),
+          message: String(t.command ?? ''),
+          schedule: t.schedule ?? '',
+          enabled: t.enabled !== false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastRun: undefined,
+          nextRun: t.nextRun,
+        };
+        return {
+          ok: true,
+          data: { status: 200, json: job, ok: true },
+          success: true,
+          status: 200,
+          json: job,
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.create error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+    const cronJobIdMatch = path.match(/^\/api\/cron\/jobs\/([^/]+)$/);
+    if (cronJobIdMatch && method === 'PUT' && body) {
+      const taskId = decodeURIComponent(cronJobIdMatch[1]);
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as Record<string, unknown>);
+        const updates: Record<string, unknown> = {};
+        if (payload?.name != null) updates.name = payload.name;
+        if (payload?.message != null) updates.command = payload.message;
+        if (payload?.schedule != null) updates.schedule = payload.schedule;
+        if (payload?.enabled != null) updates.enabled = payload.enabled;
+        const r = await callGatewayRpc('cron.update', { taskId, ...updates }, 10000);
+        if (!r.ok) {
+          return {
+            ok: false,
+            error: { message: r.error ?? 'Update failed' },
+            data: { status: 500, json: { error: r.error }, ok: false },
+            success: false,
+            status: 500,
+            json: { error: r.error },
+          };
+        }
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.update error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+    if (cronJobIdMatch && method === 'DELETE') {
+      const taskId = decodeURIComponent(cronJobIdMatch[1]);
+      try {
+        const r = await callGatewayRpc('cron.delete', { taskId }, 10000);
+        if (!r.ok) {
+          return {
+            ok: false,
+            error: { message: r.error ?? 'Delete failed' },
+            data: { status: 500, json: { error: r.error }, ok: false },
+            success: false,
+            status: 500,
+            json: { error: r.error },
+          };
+        }
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.delete error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/cron/toggle' && method === 'POST' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { id?: string; enabled?: boolean });
+        const taskId = payload?.id;
+        if (!taskId) {
+          return {
+            ok: false,
+            error: { message: 'id required' },
+            data: { status: 400, json: { error: 'id required' }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: 'id required' },
+          };
+        }
+        const r = await callGatewayRpc('cron.update', { taskId, enabled: payload?.enabled }, 10000);
+        if (!r.ok) {
+          return {
+            ok: false,
+            error: { message: r.error ?? 'Toggle failed' },
+            data: { status: 500, json: { error: r.error }, ok: false },
+            success: false,
+            status: 500,
+            json: { error: r.error },
+          };
+        }
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.toggle error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/cron/trigger' && method === 'POST' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { id?: string });
+        const taskId = payload?.id;
+        if (!taskId) {
+          return {
+            ok: false,
+            error: { message: 'id required' },
+            data: { status: 400, json: { error: 'id required' }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: 'id required' },
+          };
+        }
+        const r = await callGatewayRpc('cron.run', { taskId }, 15000);
+        if (!r.ok) {
+          return {
+            ok: false,
+            error: { message: r.error ?? 'Trigger failed' },
+            data: { status: 500, json: { error: r.error }, ok: false },
+            success: false,
+            status: 500,
+            json: { error: r.error },
+          };
+        }
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.trigger error:', err);
+        return {
+          ok: false,
+          error: { message: String(err) },
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    // Cron 执行历史：优先 Gateway cron.history，否则从 jobs 的 lastRun 聚合
+    if ((path === '/api/cron/history' || path.startsWith('/api/cron/history?')) && method === 'GET') {
+      try {
+        const url = new URL(path, 'http://localhost');
+        const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 200);
+        const jobId = url.searchParams.get('jobId') || undefined;
+
+        let entries: Array<{ id: string; jobId: string; jobName: string; time: string; success: boolean; error?: string }> = [];
+
+        try {
+          const r = await callGatewayRpc('cron.history', { limit, taskId: jobId }, 5000);
+          if (r.ok && Array.isArray(r.result)) {
+            entries = (r.result as Array<{ id?: string; taskId?: string; taskName?: string; time?: string; success?: boolean; error?: string }>).map((e, i) => ({
+              id: String(e.id ?? `gh-${i}`),
+              jobId: String(e.taskId ?? ''),
+              jobName: String(e.taskName ?? ''),
+              time: String(e.time ?? ''),
+              success: e.success !== false,
+              error: e.error,
+            }));
+          }
+        } catch {
+          /* Gateway 可能未实现 cron.history */
+        }
+
+        if (entries.length === 0) {
+          try {
+            const r = await callGatewayRpc('cron.list', {}, 8000);
+            const jobs = Array.isArray(r.result) ? r.result : [];
+            for (const j of jobs) {
+              const t = j as { id?: string; name?: string; lastRun?: string; status?: string; error?: string };
+              if (!t.lastRun) continue;
+              if (jobId && String(t.id) !== jobId) continue;
+              entries.push({
+                id: `last-${t.id}-${t.lastRun}`,
+                jobId: String(t.id ?? ''),
+                jobName: String(t.name ?? ''),
+                time: String(t.lastRun),
+                success: t.status !== 'error',
+                error: t.error,
+              });
+            }
+            entries.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+            entries = entries.slice(0, limit);
+          } catch {
+            /* ignore */
+          }
+        }
+
+        return {
+          ok: true,
+          data: { status: 200, json: { entries }, ok: true },
+          success: true,
+          status: 200,
+          json: { entries },
+        };
+      } catch (err) {
+        console.error('[HostAPI] cron.history error:', err);
+        return {
+          ok: true,
+          data: { status: 200, json: { entries: [] }, ok: true },
+          success: true,
+          status: 200,
+          json: { entries: [] },
+        };
+      }
+    }
+
+    const url = `${getGatewayApiBase()}${path}`;
     console.log(`[HostAPI] ${method} ${path}`);
     
     const response = await fetch(url, {

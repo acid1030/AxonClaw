@@ -1,6 +1,6 @@
 /**
- * Cron Page
- * Manage scheduled tasks
+ * AxonClaw - 定时调度 (ClawDeckX 风格)
+ * 调度器概览 | 任务列表 | 历史记录
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -10,34 +10,29 @@ import {
   Trash2,
   RefreshCw,
   X,
-  Calendar,
-  AlertCircle,
+  Search,
+  Pencil,
+  Copy,
+  List,
+  Loader2,
+  History,
   CheckCircle2,
   XCircle,
-  MessageSquare,
-  Loader2,
-  Timer,
-  History,
-  Pause,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
+import { hostApiFetch } from '@/lib/host-api';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { formatRelativeTime, cn } from '@/lib/utils';
+import { formatRelativeTimeZh, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
-import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
-import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 
-// Common cron schedule presets
 const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
   { key: 'everyMinute', value: '* * * * *', type: 'interval' },
   { key: 'every5Min', value: '*/5 * * * *', type: 'interval' },
@@ -49,128 +44,69 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
   { key: 'monthly1st', value: '0 9 1 * *', type: 'monthly' },
 ];
 
-// Parse cron schedule to human-readable format
-// Handles both plain cron strings and Gateway CronSchedule objects:
-//   { kind: "cron", expr: "...", tz?: "..." }
-//   { kind: "every", everyMs: number }
-//   { kind: "at", at: "..." }
-function parseCronSchedule(schedule: unknown, t: TFunction<'cron'>): string {
-  // Handle Gateway CronSchedule object format
-  if (schedule && typeof schedule === 'object') {
-    const s = schedule as { kind?: string; expr?: string; tz?: string; everyMs?: number; at?: string };
-    if (s.kind === 'cron' && typeof s.expr === 'string') {
-      return parseCronExpr(s.expr, t);
+function getScheduleShort(schedule: unknown): string {
+  if (typeof schedule === 'string') {
+    if (schedule === '* * * * *') return '每隔 1 分钟';
+    if (schedule === '*/5 * * * *') return '每隔 5 分钟';
+    if (schedule === '*/15 * * * *') return '每隔 15 分钟';
+    if (schedule === '0 * * * *') return '每隔 1h';
+    if (schedule === '0 9 * * *') return '每天 9:00';
+    if (schedule === '0 18 * * *') return '每天 18:00';
+    const parts = schedule.split(' ');
+    if (parts[0]?.startsWith('*/') && parts[1] === '*') {
+      const m = parseInt(parts[0].slice(2), 10);
+      if (m < 60) return `每隔 ${m} 分钟`;
     }
+    if (parts[0] === '0' && parts[1] !== '*' && parts[2] === '*') {
+      return `每天 ${parts[1]}:00`;
+    }
+  }
+  if (schedule && typeof schedule === 'object') {
+    const s = schedule as { kind?: string; expr?: string; everyMs?: number };
     if (s.kind === 'every' && typeof s.everyMs === 'number') {
       const ms = s.everyMs;
-      if (ms < 60_000) return t('schedule.everySeconds', { count: Math.round(ms / 1000) });
-      if (ms < 3_600_000) return t('schedule.everyMinutes', { count: Math.round(ms / 60_000) });
-      if (ms < 86_400_000) return t('schedule.everyHours', { count: Math.round(ms / 3_600_000) });
-      return t('schedule.everyDays', { count: Math.round(ms / 86_400_000) });
+      if (ms < 60_000) return `每隔 ${Math.round(ms / 1000)} 秒`;
+      if (ms < 3_600_000) return `每隔 ${Math.round(ms / 60_000)} 分钟`;
+      if (ms < 86_400_000) return `每隔 ${Math.round(ms / 3_600_000)}h`;
+      return `每隔 ${Math.round(ms / 86_400_000)} 天`;
     }
-    if (s.kind === 'at' && typeof s.at === 'string') {
-      try {
-        return t('schedule.onceAt', { time: new Date(s.at).toLocaleString() });
-      } catch {
-        return t('schedule.onceAt', { time: s.at });
-      }
-    }
-    return String(schedule);
+    if (s.kind === 'cron' && s.expr) return getScheduleShort(s.expr);
   }
-
-  // Handle plain cron string
-  if (typeof schedule === 'string') {
-    return parseCronExpr(schedule, t);
-  }
-
-  return String(schedule ?? t('schedule.unknown'));
-}
-
-// Parse a plain cron expression string to human-readable text
-function parseCronExpr(cron: string, t: TFunction<'cron'>): string {
-  const preset = schedulePresets.find((p) => p.value === cron);
-  if (preset) return t(`presets.${preset.key}` as const);
-
-  const parts = cron.split(' ');
-  if (parts.length !== 5) return cron;
-
-  const [minute, hour, dayOfMonth, , dayOfWeek] = parts;
-
-  if (minute === '*' && hour === '*') return t('presets.everyMinute');
-  if (minute.startsWith('*/')) return t('schedule.everyMinutes', { count: Number(minute.slice(2)) });
-  if (hour === '*' && minute === '0') return t('presets.everyHour');
-  if (dayOfWeek !== '*' && dayOfMonth === '*') {
-    return t('schedule.weeklyAt', { day: dayOfWeek, time: `${hour}:${minute.padStart(2, '0')}` });
-  }
-  if (dayOfMonth !== '*') {
-    return t('schedule.monthlyAtDay', { day: dayOfMonth, time: `${hour}:${minute.padStart(2, '0')}` });
-  }
-  if (hour !== '*') {
-    return t('schedule.dailyAt', { time: `${hour}:${minute.padStart(2, '0')}` });
-  }
-
-  return cron;
+  return String(schedule ?? '—');
 }
 
 function estimateNextRun(scheduleExpr: string): string | null {
   const now = new Date();
   const next = new Date(now.getTime());
-
-  if (scheduleExpr === '* * * * *') {
-    next.setSeconds(0, 0);
-    next.setMinutes(next.getMinutes() + 1);
-    return next.toLocaleString();
+  const parts = scheduleExpr.split(' ');
+  if (parts.length !== 5) return null;
+  if (scheduleExpr === '0 * * * *') {
+    next.setMinutes(0, 0, 0);
+    next.setHours(next.getHours() + 1);
+    return next.toISOString();
   }
-
   if (scheduleExpr === '*/5 * * * *') {
     const delta = 5 - (next.getMinutes() % 5 || 5);
     next.setSeconds(0, 0);
     next.setMinutes(next.getMinutes() + delta);
-    return next.toLocaleString();
+    return next.toISOString();
   }
-
-  if (scheduleExpr === '*/15 * * * *') {
-    const delta = 15 - (next.getMinutes() % 15 || 15);
+  if (scheduleExpr === '* * * * *') {
     next.setSeconds(0, 0);
-    next.setMinutes(next.getMinutes() + delta);
-    return next.toLocaleString();
+    next.setMinutes(next.getMinutes() + 1);
+    return next.toISOString();
   }
-
-  if (scheduleExpr === '0 * * * *') {
-    next.setMinutes(0, 0, 0);
-    next.setHours(next.getHours() + 1);
-    return next.toLocaleString();
-  }
-
-  if (scheduleExpr === '0 9 * * *' || scheduleExpr === '0 18 * * *') {
-    const targetHour = scheduleExpr === '0 9 * * *' ? 9 : 18;
-    next.setSeconds(0, 0);
-    next.setHours(targetHour, 0, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    return next.toLocaleString();
-  }
-
-  if (scheduleExpr === '0 9 * * 1') {
-    next.setSeconds(0, 0);
-    next.setHours(9, 0, 0, 0);
-    const day = next.getDay();
-    const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7;
-    next.setDate(next.getDate() + daysUntilMonday);
-    return next.toLocaleString();
-  }
-
-  if (scheduleExpr === '0 9 1 * *') {
-    next.setSeconds(0, 0);
-    next.setDate(1);
-    next.setHours(9, 0, 0, 0);
-    if (next <= now) next.setMonth(next.getMonth() + 1);
-    return next.toLocaleString();
-  }
-
   return null;
 }
 
-// Create/Edit Task Dialog
+interface SchedulerSummary {
+  status: string;
+  statusText: string;
+  taskCount: number;
+  nextWakeup: string;
+  running: number;
+}
+
 interface TaskDialogProps {
   job?: CronJob;
   onClose: () => void;
@@ -178,53 +114,31 @@ interface TaskDialogProps {
 }
 
 function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
-  const { t } = useTranslation('cron');
   const [saving, setSaving] = useState(false);
-
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
-  // Extract cron expression string from CronSchedule object or use as-is if string
   const initialSchedule = (() => {
     const s = job?.schedule;
     if (!s) return '0 9 * * *';
     if (typeof s === 'string') return s;
-    if (typeof s === 'object' && 'expr' in s && typeof (s as { expr: string }).expr === 'string') {
-      return (s as { expr: string }).expr;
-    }
+    if (typeof s === 'object' && 'expr' in s) return (s as { expr: string }).expr ?? '0 9 * * *';
     return '0 9 * * *';
   })();
   const [schedule, setSchedule] = useState(initialSchedule);
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
-  const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      toast.error(t('toast.nameRequired'));
-      return;
-    }
-    if (!message.trim()) {
-      toast.error(t('toast.messageRequired'));
-      return;
-    }
-
+    if (!name.trim()) { toast.error('请输入任务名称'); return; }
+    if (!message.trim()) { toast.error('请输入提示词'); return; }
     const finalSchedule = useCustom ? customSchedule : schedule;
-    if (!finalSchedule.trim()) {
-      toast.error(t('toast.scheduleRequired'));
-      return;
-    }
-
+    if (!finalSchedule.trim()) { toast.error('请选择或输入调度'); return; }
     setSaving(true);
     try {
-      await onSave({
-        name: name.trim(),
-        message: message.trim(),
-        schedule: finalSchedule,
-        enabled,
-      });
+      await onSave({ name: name.trim(), message: message.trim(), schedule: finalSchedule, enabled });
       onClose();
-      toast.success(job ? t('toast.updated') : t('toast.created'));
+      toast.success(job ? '已更新' : '已创建');
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -234,118 +148,51 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-card overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
+      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0 border-b border-white/10">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
-            <CardDescription className="text-[15px] mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
+            <h2 className="text-lg font-semibold text-white/90">{job ? '编辑任务' : '新建任务'}</h2>
+            <p className="text-sm text-white/50 mt-0.5">支持周期性、定时和 Cron 表达式</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-lg h-8 w-8 text-white/60 hover:text-white">
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
-          {/* Name */}
-          <div className="space-y-2.5">
-            <Label htmlFor="name" className="text-[14px] text-foreground/80 font-bold">{t('dialog.taskName')}</Label>
-            <Input
-              id="name"
-              placeholder={t('dialog.taskNamePlaceholder')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-            />
+        <CardContent className="space-y-4 pt-4 overflow-y-auto flex-1 p-4">
+          <div>
+            <Label className="text-sm font-medium text-white/80">任务名称</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：记忆同步" className="mt-1.5 h-9 bg-white/5 border-white/10 text-white" />
           </div>
-
-          {/* Message */}
-          <div className="space-y-2.5">
-            <Label htmlFor="message" className="text-[14px] text-foreground/80 font-bold">{t('dialog.message')}</Label>
-            <Textarea
-              id="message"
-              placeholder={t('dialog.messagePlaceholder')}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={3}
-              className="rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
-            />
+          <div>
+            <Label className="text-sm font-medium text-white/80">提示词 / 命令</Label>
+            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="要发送给 AI 的提示词" rows={3} className="mt-1.5 bg-white/5 border-white/10 text-white resize-none" />
           </div>
-
-          {/* Schedule */}
-          <div className="space-y-2.5">
-            <Label className="text-[14px] text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
+          <div>
+            <Label className="text-sm font-medium text-white/80">调度</Label>
             {!useCustom ? (
-              <div className="grid grid-cols-2 gap-2">
-                {schedulePresets.map((preset) => (
-                  <Button
-                    key={preset.value}
-                    type="button"
-                    variant={schedule === preset.value ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSchedule(preset.value)}
-                    className={cn(
-                      "justify-start h-10 rounded-xl font-medium text-[13px] transition-all",
-                      schedule === preset.value
-                        ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm border-transparent"
-                        : "bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
-                    )}
-                  >
-                    <Timer className="h-4 w-4 mr-2 opacity-70" />
-                    {t(`presets.${preset.key}` as const)}
+              <div className="grid grid-cols-2 gap-2 mt-1.5">
+                {schedulePresets.map((p) => (
+                  <Button key={p.value} type="button" variant="outline" size="sm" onClick={() => setSchedule(p.value)} className={cn('justify-start h-9', schedule === p.value ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70')}>
+                    {getScheduleShort(p.value)}
                   </Button>
                 ))}
               </div>
             ) : (
-              <Input
-                placeholder={t('dialog.cronPlaceholder')}
-                value={customSchedule}
-                onChange={(e) => setCustomSchedule(e.target.value)}
-                className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-              />
+              <Input value={customSchedule} onChange={(e) => setCustomSchedule(e.target.value)} placeholder="0 9 * * *" className="mt-1.5 h-9 bg-white/5 border-white/10 text-white font-mono" />
             )}
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-[12px] text-muted-foreground/80 font-medium">
-                {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
-              </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setUseCustom(!useCustom)}
-                className="text-[12px] h-7 px-2 text-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"
-              >
-                {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
-              </Button>
-            </div>
+            <button type="button" onClick={() => setUseCustom(!useCustom)} className="text-xs text-white/50 hover:text-white/80 mt-1.5">
+              {useCustom ? '使用预设' : '自定义 Cron'}
+            </button>
           </div>
-
-          {/* Enabled */}
-          <div className="flex items-center justify-between bg-[#eeece3] dark:bg-muted p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
-            <div>
-              <Label className="text-[14px] text-foreground/80 font-bold">{t('dialog.enableImmediately')}</Label>
-              <p className="text-[13px] text-muted-foreground mt-0.5">
-                {t('dialog.enableImmediatelyDesc')}
-              </p>
-            </div>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-sm font-medium text-white/80">创建后启用</Label>
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="rounded" />
           </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="rounded-full px-6 h-[42px] text-[13px] font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm">
-              {t('common:actions.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleSubmit} disabled={saving} className="rounded-full px-6 h-[42px] text-[13px] font-semibold shadow-sm border border-transparent transition-all">
-              {saving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('common:status.saving', 'Saving...')}
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  {job ? t('dialog.saveChanges') : t('dialog.createTitle')}
-                </>
-              )}
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={onClose} className="border-white/10 text-white/80">取消</Button>
+            <Button onClick={handleSubmit} disabled={saving} className="bg-indigo-500 hover:bg-indigo-600 text-white">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {job ? '保存' : '创建'}
             </Button>
           </div>
         </CardContent>
@@ -354,375 +201,355 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   );
 }
 
-// Job Card Component
-interface CronJobCardProps {
+interface TaskCardProps {
   job: CronJob;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   onTrigger: () => Promise<void>;
 }
 
-function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
-  const { t } = useTranslation('cron');
-  const [triggering, setTriggering] = useState(false);
+interface CronHistoryEntry {
+  id: string;
+  jobId: string;
+  jobName: string;
+  time: string;
+  success: boolean;
+  error?: string;
+}
 
-  const handleTrigger = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+function CronHistorySection({ isOnline, onRefresh }: { isOnline: boolean; onRefresh: () => void }) {
+  const [entries, setEntries] = useState<CronHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    if (!isOnline) return;
+    setLoading(true);
+    try {
+      const res = await hostApiFetch<{ entries?: CronHistoryEntry[] }>('/api/cron/history?limit=50');
+      setEntries(Array.isArray(res?.entries) ? res.entries : []);
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [isOnline]);
+
+  useEffect(() => {
+    void fetchHistory();
+  }, [fetchHistory]);
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-[#1e293b] mt-6 overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-sky-400" />
+          <span className="text-sm font-medium text-white/80">运行历史</span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => { fetchHistory(); onRefresh(); }} disabled={!isOnline || loading} className="h-7 px-2 text-white/50 hover:text-white/80">
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+        </Button>
+      </div>
+      <div className="p-4">
+        {!isOnline ? (
+          <div className="py-8 text-center text-white/40 text-sm">请先启动 Gateway 以查看执行历史</div>
+        ) : entries.length === 0 ? (
+          <div className="py-8 text-center text-white/40 text-sm">{loading ? '加载中...' : '暂无执行记录'}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-white/50 border-b border-white/10">
+                  <th className="pb-2 pr-4 font-medium">任务</th>
+                  <th className="pb-2 pr-4 font-medium">执行时间</th>
+                  <th className="pb-2 pr-4 font-medium">状态</th>
+                  <th className="pb-2 font-medium">备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-2 pr-4 text-white/80">{e.jobName || e.jobId || '—'}</td>
+                    <td className="py-2 pr-4 text-white/60">{formatRelativeTimeZh(e.time)}</td>
+                    <td className="py-2 pr-4">
+                      <span className={e.success ? 'text-emerald-400' : 'text-red-400'}>
+                        {e.success ? <><CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />成功</> : <><XCircle className="h-3.5 w-3.5 inline mr-1" />失败</>}
+                      </span>
+                    </td>
+                    <td className="py-2 text-white/40 text-xs max-w-[200px] truncate" title={e.error}>{e.error || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TaskCard({ job, onToggle, onEdit, onDuplicate, onDelete, onTrigger }: TaskCardProps) {
+  const [triggering, setTriggering] = useState(false);
+  const expr = typeof job.schedule === 'string' ? job.schedule : (job.schedule && typeof job.schedule === 'object' && 'expr' in job.schedule ? (job.schedule as { expr: string }).expr : '');
+  const nextRun = job.nextRun || (expr ? estimateNextRun(expr) : null);
+  const lastRun = job.lastRun?.time;
+
+  const handleRun = async () => {
     setTriggering(true);
     try {
       await onTrigger();
-      toast.success(t('toast.triggered'));
-    } catch (error) {
-      console.error('Failed to trigger cron job:', error);
-      toast.error(t('toast.failedTrigger', { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setTriggering(false);
     }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDelete();
-  };
-
   return (
-    <div
-      className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
-      onClick={onEdit}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform">
-            <Clock className={cn("h-5 w-5", job.enabled ? "text-foreground" : "text-muted-foreground")} />
+    <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4 hover:border-white/15 transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-semibold text-white/90">{job.name}</h3>
+            <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', job.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/50')}>
+              {job.enabled ? '已启用' : '已禁用'}
+            </span>
           </div>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-[16px] font-semibold text-foreground truncate">{job.name}</h3>
-              <div
-                className={cn(
-                  "w-2 h-2 rounded-full shrink-0",
-                  job.enabled ? "bg-green-500" : "bg-muted-foreground"
-                )}
-                title={job.enabled ? t('stats.active') : t('stats.paused')}
-              />
-            </div>
-            <p className="text-[13px] text-muted-foreground flex items-center gap-1.5">
-              <Timer className="h-3.5 w-3.5" />
-              {parseCronSchedule(job.schedule, t)}
-            </p>
+          <p className="text-sm text-white/50 mt-1">{getScheduleShort(job.schedule)}</p>
+          <p className="text-sm text-white/60 mt-2 line-clamp-2 leading-relaxed">{job.message}</p>
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <span className="text-xs text-white/40">代理 ID: main</span>
+            <span className="px-1.5 py-0.5 rounded bg-white/5 text-xs text-white/50">main</span>
+            <span className="px-1.5 py-0.5 rounded bg-white/5 text-xs text-white/50">now</span>
           </div>
         </div>
-
-        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          <Switch
-            checked={job.enabled}
-            onCheckedChange={onToggle}
-          />
+        <div className="shrink-0 text-right">
+          <div className="text-xs text-white/50">
+            <span className={job.lastRun?.success !== false ? 'text-emerald-400' : 'text-red-400'}>状态: {job.lastRun?.success !== false ? 'ok' : 'error'}</span>
+          </div>
+          {nextRun && job.enabled && (
+            <div className="text-xs text-sky-400 mt-0.5">下次执行: {formatRelativeTimeZh(nextRun)}</div>
+          )}
+          {lastRun && (
+            <div className="text-xs text-white/40 mt-0.5">上次: {formatRelativeTimeZh(lastRun)}</div>
+          )}
         </div>
       </div>
-
-      <div className="flex-1 flex flex-col justify-end mt-2 pl-[62px]">
-        <div className="flex items-start gap-2 mb-3">
-          <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
-          <p className="text-[13.5px] text-muted-foreground line-clamp-2 leading-[1.5]">
-            {job.message}
-          </p>
-        </div>
-
-        {/* Metadata */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground/80 font-medium mb-3">
-          {job.target && (
-            <span className="flex items-center gap-1.5">
-              {CHANNEL_ICONS[job.target.channelType as ChannelType]}
-              {job.target.channelName}
-            </span>
-          )}
-
-          {job.lastRun && (
-            <span className="flex items-center gap-1.5">
-              <History className="h-3.5 w-3.5" />
-              {t('card.last')}: {formatRelativeTime(job.lastRun.time)}
-              {job.lastRun.success ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5 text-red-500" />
-              )}
-            </span>
-          )}
-
-          {job.nextRun && job.enabled && (
-            <span className="flex items-center gap-1.5">
-              <Calendar className="h-3.5 w-3.5" />
-              {t('card.next')}: {new Date(job.nextRun).toLocaleString()}
-            </span>
-          )}
-        </div>
-
-        {/* Last Run Error */}
-        {job.lastRun && !job.lastRun.success && job.lastRun.error && (
-          <div className="flex items-start gap-2 p-2.5 mb-3 rounded-xl bg-destructive/10 border border-destructive/20 text-[13px] text-destructive">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="line-clamp-2">{job.lastRun.error}</span>
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity mt-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleTrigger}
-            disabled={triggering}
-            className="h-8 px-3 text-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-[13px] font-medium transition-colors"
-          >
-            {triggering ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-            ) : (
-              <Play className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            {t('card.runNow')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            className="h-8 px-3 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg text-[13px] font-medium transition-colors"
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            {t('common:actions.delete', 'Delete')}
-          </Button>
-        </div>
+      <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-white/5">
+        <Button variant="ghost" size="sm" onClick={onEdit} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
+          <Pencil className="h-3.5 w-3.5 mr-1" />
+          编辑
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onDuplicate} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
+          <Copy className="h-3.5 w-3.5 mr-1" />
+          复制
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onToggle(!job.enabled)} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
+          {job.enabled ? '禁用' : '启用'}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleRun} disabled={triggering} className="h-8 px-2 text-sky-400 hover:text-sky-300 hover:bg-sky-500/10">
+          {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+          运行
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onDelete} className="h-8 px-2 text-red-400 hover:text-red-300 hover:bg-red-500/10">
+          <Trash2 className="h-3.5 w-3.5 mr-1" />
+          删除
+        </Button>
       </div>
     </div>
   );
 }
 
 export function Cron() {
-  const { t } = useTranslation('cron');
   const { jobs, loading, error, fetchJobs, createJob, updateJob, toggleJob, deleteJob, triggerJob } = useCronStore();
-  const gatewayStatus = useGatewayStore((state) => state.status);
+  const gatewayStatus = useGatewayStore((s) => s.status);
+  const [summary, setSummary] = useState<SchedulerSummary | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
-  const [jobToDelete, setJobToDelete] = useState<{ id: string } | null>(null);
+  const [jobToDelete, setJobToDelete] = useState<CronJob | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [sortBy, setSortBy] = useState<'next' | 'name'>('next');
 
-  const isGatewayRunning = gatewayStatus.state === 'running';
+  const isOnline = gatewayStatus.state === 'running';
 
-  // Fetch jobs on mount
-  useEffect(() => {
-    if (isGatewayRunning) {
-      fetchJobs();
+  const refresh = useCallback(async () => {
+    if (isOnline) {
+      await fetchJobs();
+      try {
+        const s = await hostApiFetch<SchedulerSummary>('/api/scheduler/summary');
+        setSummary(s);
+      } catch {
+        setSummary({ status: 'enabled', statusText: '已启用', taskCount: 0, nextWakeup: '—', running: 0 });
+      }
     }
-  }, [fetchJobs, isGatewayRunning]);
+  }, [isOnline, fetchJobs]);
 
-  // Statistics
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
   const safeJobs = Array.isArray(jobs) ? jobs : [];
-  const activeJobs = safeJobs.filter((j) => j.enabled);
-  const pausedJobs = safeJobs.filter((j) => !j.enabled);
-  const failedJobs = safeJobs.filter((j) => j.lastRun && !j.lastRun.success);
+  let filtered = safeJobs;
+  if (filterStatus === 'enabled') filtered = filtered.filter((j) => j.enabled);
+  else if (filterStatus === 'disabled') filtered = filtered.filter((j) => !j.enabled);
+  if (search.trim()) filtered = filtered.filter((j) => j.name.toLowerCase().includes(search.toLowerCase()) || String(j.message).toLowerCase().includes(search.toLowerCase()));
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
+    const na = a.nextRun ? new Date(a.nextRun).getTime() : 0;
+    const nb = b.nextRun ? new Date(b.nextRun).getTime() : 0;
+    return na - nb;
+  });
 
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
-    if (editingJob) {
-      await updateJob(editingJob.id, input);
-    } else {
-      await createJob(input);
-    }
+    if (editingJob) await updateJob(editingJob.id, input);
+    else await createJob(input);
   }, [editingJob, createJob, updateJob]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
-    try {
-      await toggleJob(id, enabled);
-      toast.success(enabled ? t('toast.enabled') : t('toast.paused'));
-    } catch {
-      toast.error(t('toast.failedUpdate'));
-    }
-  }, [toggleJob, t]);
+    await toggleJob(id, enabled);
+    toast.success(enabled ? '已启用' : '已禁用');
+  }, [toggleJob]);
 
+  const handleDuplicate = useCallback((job: CronJob) => {
+    const input: CronJobCreateInput = {
+      name: `${job.name} (副本)`,
+      message: job.message,
+      schedule: typeof job.schedule === 'string' ? job.schedule : (job.schedule && typeof job.schedule === 'object' && 'expr' in job.schedule ? (job.schedule as { expr: string }).expr : '0 9 * * *'),
+      enabled: job.enabled,
+    };
+    createJob(input).then(() => toast.success('已复制')).catch((e) => toast.error(String(e)));
+  }, [createJob]);
 
-
-  if (loading) {
+  if (loading && safeJobs.length === 0) {
     return (
-      <div className="flex flex-col w-full min-h-full dark:bg-background items-center justify-center">
+      <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 dark:bg-background overflow-hidden">
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
-          <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-              {t('title')}
-            </h1>
-            <p className="text-[17px] text-foreground/70 font-medium">
-              {t('subtitle')}
-            </p>
-          </div>
-          <div className="flex items-center gap-3 md:mt-2">
-            <Button
-              variant="outline"
-              onClick={fetchJobs}
-              disabled={!isGatewayRunning}
-              className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-2" />
-              {t('refresh')}
-            </Button>
-            <Button
-              onClick={() => {
-                setEditingJob(undefined);
-                setShowDialog(true);
-              }}
-              disabled={!isGatewayRunning}
-              className="h-9 text-[13px] font-medium rounded-full px-4 shadow-none"
-            >
-              <Plus className="h-3.5 w-3.5 mr-2" />
-              {t('newTask')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
-          {/* Gateway Warning */}
-          {!isGatewayRunning && (
-            <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-              <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
-                {t('gatewayWarning')}
-              </span>
-            </div>
-          )}
-
-          {/* Error Display */}
-          {error && (
-            <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              <span className="text-destructive text-sm font-medium">
-                {error}
-              </span>
-            </div>
-          )}
-
-          {/* Statistics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-primary" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-[40px] leading-none font-serif text-foreground">{safeJobs.length}</p>
-                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.total')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-green-500/10 flex items-center justify-center">
-                  <Play className="h-5 w-5 text-green-600 dark:text-green-500 ml-0.5" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-[40px] leading-none font-serif text-foreground">{activeJobs.length}</p>
-                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.active')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-yellow-500/10 flex items-center justify-center">
-                  <Pause className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-[40px] leading-none font-serif text-foreground">{pausedJobs.length}</p>
-                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.paused')}</p>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="h-11 w-11 rounded-full bg-destructive/10 flex items-center justify-center">
-                  <XCircle className="h-5 w-5 text-destructive" />
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-[40px] leading-none font-serif text-foreground">{failedJobs.length}</p>
-                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.failed')}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Jobs List */}
-          {safeJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
-              <Clock className="h-10 w-10 mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
-              <p className="text-[14px] text-center mb-6 max-w-md">
-                {t('empty.description')}
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-xl font-bold text-white/90">定时调度</h1>
+              <p className="text-sm text-white/50 mt-1">
+                定时调度用于配置 AI 代理的自动执行任务，支持周期性、定时和 Cron 表达式三种调度方式
               </p>
-              <Button
-                onClick={() => {
-                  setEditingJob(undefined);
-                  setShowDialog(true);
-                }}
-                disabled={!isGatewayRunning}
-                className="rounded-full px-6 h-10"
-              >
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="outline" size="sm" onClick={refresh} disabled={!isOnline || loading} className="border-white/10 text-white/70 hover:bg-white/5">
+                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              </Button>
+              <Button onClick={() => { setEditingJob(undefined); setShowDialog(true); }} disabled={!isOnline} className="bg-indigo-500 hover:bg-indigo-600 text-white">
                 <Plus className="h-4 w-4 mr-2" />
-                {t('empty.create')}
+                新建任务
               </Button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              {safeJobs.map((job) => (
-                <CronJobCard
+          </div>
+
+          {/* Scheduler Overview */}
+          <div className="rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden mb-6">
+            <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-sky-400" />
+              <span className="text-sm font-medium text-white/80">调度器</span>
+            </div>
+            <div className="grid grid-cols-4 gap-px bg-white/5">
+              <div className="p-4 bg-[#0f172a]">
+                <div className="text-xs text-white/50">状态</div>
+                <div className="text-sm font-medium text-emerald-400 mt-0.5">{summary?.statusText ?? '已启用'}</div>
+              </div>
+              <div className="p-4 bg-[#0f172a]">
+                <div className="text-xs text-white/50">任务数</div>
+                <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.taskCount ?? safeJobs.length}</div>
+              </div>
+              <div className="p-4 bg-[#0f172a]">
+                <div className="text-xs text-white/50">下次唤醒</div>
+                <div className="text-sm font-medium text-sky-400 mt-0.5">{summary?.nextWakeup ?? '—'}</div>
+              </div>
+              <div className="p-4 bg-[#0f172a]">
+                <div className="text-xs text-white/50">运行中</div>
+                <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.running ?? 0}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Task List */}
+          <div className="rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <List className="h-4 w-4 text-sky-400" />
+                <span className="text-sm font-medium text-white/80">任务数 ({sorted.length})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+                  <Input placeholder="搜索任务..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 w-48 bg-white/5 border-white/10 text-sm" />
+                </div>
+                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as 'all' | 'enabled' | 'disabled')} className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80">
+                  <option value="all">全部</option>
+                  <option value="enabled">已启用</option>
+                  <option value="disabled">已禁用</option>
+                </select>
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'next' | 'name')} className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80">
+                  <option value="next">下次执行 ↑</option>
+                  <option value="name">按名称</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              {error && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>
+              )}
+              {!isOnline && (
+                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm text-center">
+                  请先启动 Gateway 以加载定时任务
+                </div>
+              )}
+              {isOnline && sorted.length === 0 && (
+                <div className="py-12 text-center text-white/50 text-sm">
+                  {search.trim() ? '无匹配任务' : '暂无定时任务'}
+                </div>
+              )}
+              {sorted.map((job) => (
+                <TaskCard
                   key={job.id}
                   job={job}
                   onToggle={(enabled) => handleToggle(job.id, enabled)}
-                  onEdit={() => {
-                    setEditingJob(job);
-                    setShowDialog(true);
-                  }}
-                  onDelete={() => setJobToDelete({ id: job.id })}
-                  onTrigger={() => triggerJob(job.id)}
+                  onEdit={() => { setEditingJob(job); setShowDialog(true); }}
+                  onDuplicate={() => handleDuplicate(job)}
+                  onDelete={() => setJobToDelete(job)}
+                  onTrigger={async () => { await triggerJob(job.id); await refresh(); }}
                 />
               ))}
             </div>
-          )}
+          </div>
 
+          {/* History */}
+          <CronHistorySection isOnline={isOnline} onRefresh={refresh} />
         </div>
       </div>
 
-      {/* Create/Edit Dialog */}
       {showDialog && (
-        <TaskDialog
-          job={editingJob}
-          onClose={() => {
-            setShowDialog(false);
-            setEditingJob(undefined);
-          }}
-          onSave={handleSave}
-        />
+        <TaskDialog job={editingJob} onClose={() => { setShowDialog(false); setEditingJob(undefined); }} onSave={async (input) => { await handleSave(input); setShowDialog(false); setEditingJob(undefined); refresh(); }} />
       )}
 
       <ConfirmDialog
         open={!!jobToDelete}
-        title={t('common:actions.confirm', 'Confirm')}
-        message={t('card.deleteConfirm')}
-        confirmLabel={t('common:actions.delete', 'Delete')}
-        cancelLabel={t('common:actions.cancel', 'Cancel')}
+        title="确认删除"
+        message={`确定删除任务「${jobToDelete?.name}」？`}
+        confirmLabel="删除"
+        cancelLabel="取消"
         variant="destructive"
         onConfirm={async () => {
           if (jobToDelete) {
             await deleteJob(jobToDelete.id);
             setJobToDelete(null);
-            toast.success(t('toast.deleted'));
+            toast.success('已删除');
+            refresh();
           }
         }}
         onCancel={() => setJobToDelete(null)}

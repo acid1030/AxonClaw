@@ -14,7 +14,7 @@ export type UsageHistoryEntry = {
 };
 
 export type UsageWindow = '7d' | '30d' | 'all';
-export type UsageGroupBy = 'model' | 'day';
+export type UsageGroupBy = 'model' | 'day' | 'session';
 
 export type UsageGroup = {
   label: string;
@@ -23,6 +23,8 @@ export type UsageGroup = {
   outputTokens: number;
   cacheTokens: number;
   sortKey: number | string;
+  /** sessionId when groupBy='session' */
+  sessionId?: string;
 };
 
 export function formatUsageDay(timestamp: string): string {
@@ -48,32 +50,48 @@ export function groupUsageHistory(
   const grouped = new Map<string, UsageGroup>();
 
   for (const entry of entries) {
-    const label = groupBy === 'model'
-      ? (entry.model || 'Unknown')
-      : formatUsageDay(entry.timestamp);
-    const current = grouped.get(label) ?? {
+    const key =
+      groupBy === 'model'
+        ? (entry.model || 'Unknown')
+        : groupBy === 'session'
+          ? (entry.sessionId || 'unknown')
+          : formatUsageDay(entry.timestamp);
+    const label =
+      groupBy === 'session' && key.length > 10
+        ? `${key.slice(0, 8)}…`
+        : key;
+    const current = grouped.get(key) ?? {
       label,
       totalTokens: 0,
       inputTokens: 0,
       outputTokens: 0,
       cacheTokens: 0,
-      sortKey: groupBy === 'day' ? getUsageDaySortKey(entry.timestamp) : label.toLowerCase(),
+      sortKey:
+        groupBy === 'day'
+          ? getUsageDaySortKey(entry.timestamp)
+          : groupBy === 'session'
+            ? entry.timestamp
+            : key.toLowerCase(),
+      sessionId: groupBy === 'session' ? entry.sessionId : undefined,
     };
     current.totalTokens += entry.totalTokens;
     current.inputTokens += entry.inputTokens;
     current.outputTokens += entry.outputTokens;
     current.cacheTokens += entry.cacheReadTokens + entry.cacheWriteTokens;
-    grouped.set(label, current);
+    grouped.set(key, current);
   }
 
   const sorted = Array.from(grouped.values()).sort((a, b) => {
     if (groupBy === 'day') {
       return Number(a.sortKey) - Number(b.sortKey);
     }
+    if (groupBy === 'session') {
+      return String(b.sortKey).localeCompare(String(a.sortKey), undefined, { numeric: true });
+    }
     return b.totalTokens - a.totalTokens;
   });
 
-  return groupBy === 'model' ? sorted.slice(0, 8) : sorted;
+  return groupBy === 'model' ? sorted.slice(0, 8) : groupBy === 'session' ? sorted.slice(0, 12) : sorted;
 }
 
 export function filterUsageHistoryByWindow(

@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { FileCheck, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
+import { PageHeader } from '@/components/common/PageHeader';
 
 interface ApprovalItem {
   id: string;
@@ -59,13 +60,14 @@ export const ApprovalCenterView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0f172a]">
-      <div className="flex-shrink-0 py-4 border-b border-indigo-500/20">
-        <h1 className="text-xl font-semibold text-foreground">审批中心</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          ClawDeckX 风格：审批列表、详情、通过/拒绝。需 OpenClaw 支持 approvals API。
-        </p>
-      </div>
-      <div className="flex-1 overflow-auto py-6">
+      <div className="w-full flex flex-col h-full py-6">
+        <PageHeader
+          title="审批中心"
+          subtitle="ClawDeckX 风格：审批列表、详情、通过/拒绝。需 OpenClaw 支持 approvals API。"
+          stats={[{ label: '待审批', value: items.filter((i) => i.status === 'pending').length }]}
+          statsBorderColor="border-indigo-500/40"
+        />
+      <div className="flex-1 overflow-auto min-h-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin h-8 w-8 border-2 border-indigo-500 border-t-transparent rounded-full" />
@@ -113,6 +115,7 @@ export const ApprovalCenterView: React.FC = () => {
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

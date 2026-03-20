@@ -28,13 +28,13 @@ export const CommandsSection: React.FC<SectionProps> = ({ setField, getField }) 
         <SelectField
           label="原生命令"
           desc="内置命令启用"
-          value={String(g(['native']) ?? 'auto')}
+          value={TRISTATE_OPTIONS.some((o) => o.value === String(g(['native']) ?? 'auto')) ? String(g(['native']) ?? 'auto') : 'auto'}
           onChange={(v) => s(['native'], v)}
           options={TRISTATE_OPTIONS}
         />
         <SelectField
           label="原生技能"
-          value={String(g(['nativeSkills']) ?? 'auto')}
+          value={TRISTATE_OPTIONS.some((o) => o.value === String(g(['nativeSkills']) ?? 'auto')) ? String(g(['nativeSkills']) ?? 'auto') : 'auto'}
           onChange={(v) => s(['nativeSkills'], v)}
           options={TRISTATE_OPTIONS}
         />
@@ -86,7 +86,7 @@ export const CommandsSection: React.FC<SectionProps> = ({ setField, getField }) 
         <ArrayField
           label="所有者允许来源"
           desc="用户 ID 列表"
-          value={((g(['ownerAllowFrom']) as unknown[]) ?? []).map(String)}
+          value={Array.isArray(g(['ownerAllowFrom'])) ? (g(['ownerAllowFrom']) as unknown[]).map(String) : []}
           onChange={(v) => s(['ownerAllowFrom'], v)}
           placeholder="user-id"
         />

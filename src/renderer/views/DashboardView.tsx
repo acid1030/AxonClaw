@@ -168,17 +168,24 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   // 从日志解析的异常事件（ClawDeckX 风格：ERROR/WARN/exception/failed）
   const [logAbnormal, setLogAbnormal] = useState<Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }>>([]);
 
-  const checkConnection = useCallback(async (showLoading = false) => {
-    if (showLoading) setConnectionVerified(null);
-    try {
-      const r = await invokeIpc<{ success: boolean; error?: string }>('gateway:checkConnection');
-      setConnectionVerified(r?.success ?? false);
-      return r?.success ?? false;
-    } catch {
-      setConnectionVerified(false);
-      return false;
-    }
-  }, []);
+  const setStatus = useGatewayStore((s) => s.setStatus);
+  const checkConnection = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) setConnectionVerified(null);
+      try {
+        const r = await invokeIpc<{ success: boolean; port?: number; error?: string }>('gateway:checkConnection');
+        setConnectionVerified(r?.success ?? false);
+        if (r?.success && r?.port) {
+          setStatus({ state: 'running', port: r.port });
+        }
+        return r?.success ?? false;
+      } catch {
+        setConnectionVerified(false);
+        return false;
+      }
+    },
+    [setStatus]
+  );
 
   const isOnline =
     connectionVerified === true ||
@@ -481,44 +488,44 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6">
-        {/* 顶部健康条 */}
-        <div
-          className={cn(
-            'h-[3px] w-full transition-all duration-700 shrink-0',
-            isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
-          )}
-        />
-
       <div className="flex flex-col flex-1 min-h-0 pt-4">
-        {/* 标题 + 刷新 */}
-        <div className="flex items-start sm:items-center justify-between gap-2 mb-4 shrink-0">
-          <div>
-            <h1 className="text-base font-bold text-foreground">概览</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              {lastUpdate && (
-                <p className="text-xs text-muted-foreground">
-                  更新: {timeFormatter.format(lastUpdate)}
-                </p>
-              )}
-              {refreshCountdown > 0 && refreshCountdown < FAST_INTERVAL / 1000 && (
-                <span className="text-xs text-muted-foreground/70 tabular-nums">
-                  {refreshCountdown}s 后刷新
-                </span>
-              )}
+        {/* 标题 + 绿线：固定在顶部 */}
+        <div className="sticky top-0 z-10 shrink-0 pb-4 bg-[#0f172a]">
+          <div className="flex items-start sm:items-center justify-between gap-2 mb-2">
+            <div>
+              <h1 className="text-base font-bold text-foreground">概览</h1>
+              <div className="flex items-center gap-2 mt-0.5">
+                {lastUpdate && (
+                  <p className="text-xs text-muted-foreground">
+                    更新: {timeFormatter.format(lastUpdate)}
+                  </p>
+                )}
+                {refreshCountdown > 0 && refreshCountdown < FAST_INTERVAL / 1000 && (
+                  <span className="text-xs text-muted-foreground/70 tabular-nums">
+                    {refreshCountdown}s 后刷新
+                  </span>
+                )}
+              </div>
             </div>
+            <button
+              aria-label="刷新"
+              onClick={refreshAll}
+              disabled={loading}
+              className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-all disabled:opacity-40 shrink-0"
+            >
+              <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+            </button>
           </div>
-          <button
-            aria-label="刷新"
-            onClick={refreshAll}
-            disabled={loading}
-            className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-all disabled:opacity-40 shrink-0"
-          >
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-          </button>
+          <div
+            className={cn(
+              'h-[3px] w-full transition-all duration-700 shrink-0',
+              isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+            )}
+          />
         </div>
 
-        <div className="space-y-8 flex-1 overflow-y-auto min-h-0 pb-8">
-          {/* 资源告警：CPU/内存/磁盘 > 90% */}
+        <div className="flex flex-col gap-y-4 sm:gap-y-6 flex-1 overflow-y-auto min-h-0 pb-8">
+          {/* 资源告警：在 Gateway 上方 */}
           {hasResourceAlert && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -526,15 +533,16 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </div>
           )}
 
-          {/* Gateway Hero */}
-          <div
-            className={cn(
-              'relative overflow-hidden rounded-xl border-2 p-4 sm:p-5',
-              isOnline
-                ? 'border-green-500/30 bg-[#1e293b]'
-                : 'border-amber-500/40 bg-[#1e293b]'
-            )}
-          >
+          {/* Gateway 独立区域：仅包含 Gateway 面板，不包含 KPI 及其他 */}
+          <div className="flex-shrink-0 w-full">
+            <div
+              className={cn(
+                'relative overflow-hidden rounded-xl border-2 p-4 sm:p-5 w-full',
+                isOnline
+                  ? 'border-green-500/30 bg-[#1e293b]'
+                  : 'border-amber-500/40 bg-[#1e293b]'
+              )}
+            >
             <div className="flex items-start sm:items-center gap-3 sm:gap-4">
               <div
                 className={cn(
@@ -577,7 +585,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1.5 text-xs text-muted-foreground items-center">
                   {gatewayStatus?.port && (
                     <span className="font-mono">
-                      {gatewayStatus.port === 18789 ? '127.0.0.1:18789' : `port ${gatewayStatus.port}`}
+                      {`127.0.0.1:${gatewayStatus.port ?? 18789}`}
                     </span>
                   )}
                   {isOnline && (
@@ -651,9 +659,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               </div>
             </div>
           </div>
+          </div>
 
+          {/* KPI 及以下所有面板：在 Gateway 父区域之外，与 Gateway 平级 */}
+          <div className="flex flex-col gap-y-4 sm:gap-y-6 flex-shrink-0 w-full mt-6 sm:mt-8">
           {/* KPI 卡片 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+          <div className="flex-shrink-0 w-full grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 sm:gap-5">
             {kpiCards.map((kpi) => (
               <button
                 key={kpi.label}
@@ -669,7 +680,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       {kpi.label}
                     </p>
-                    <p className="text-base sm:text-lg font-black tabular-nums mt-0.5 text-foreground">
+                    <p className="text-base sm:text-lg font-black tabular-nums mt-0.5" style={{ color: kpi.color }}>
                       {kpi.value}
                     </p>
                   </div>
@@ -767,7 +778,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 主机信息：CPU | 系统内存 | 磁盘空间 (ClawDeckX GaugeCards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
             <GaugeCard
               pct={hostInfo?.cpuUsage ?? 0}
               label="CPU 使用率"
@@ -847,18 +858,21 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           )}
 
           {/* 协程数 | 进程运行 | 服务器运行 (ClawDeckX) */}
-          <div className="grid grid-cols-3 gap-6">
-            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+          <div className="grid grid-cols-3 gap-6 sm:gap-8">
+            <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-indigo-400">{hostInfo?.coroutineCount ?? 0}</p>
               <p className="text-xs text-slate-400 mt-1">协程数</p>
             </div>
-            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+            <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-amber-400">
                 {hostInfo?.processUptime != null ? formatUptime(hostInfo.processUptime * 1000) : '--'}
               </p>
               <p className="text-xs text-slate-400 mt-1">进程运行</p>
             </div>
-            <div className="rounded-xl border-2 border-slate-500/40 bg-[#1e293b] p-4 text-center">
+            <div className={cn(
+              'rounded-xl border-2 bg-[#1e293b] p-4 text-center',
+              isOnline ? 'border-emerald-500/40' : 'border-slate-500/40'
+            )}>
               <p className={cn(
                 'text-2xl font-black tabular-nums',
                 isOnline ? 'text-emerald-400' : 'text-slate-400'
@@ -870,7 +884,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 进程内存 | 环境 (ClawDeckX 风格) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
             <div className="rounded-xl border-2 border-violet-500/40 bg-[#1e293b] p-4">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
                 <RefreshCw className="w-3.5 h-3.5 text-violet-500" />
@@ -916,7 +930,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           </div>
 
           {/* 中部：系统健康 | 最近异常事件 */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
             <div className="lg:col-span-2 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -1118,6 +1132,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 ))
               )}
             </div>
+          </div>
           </div>
         </div>
       </div>

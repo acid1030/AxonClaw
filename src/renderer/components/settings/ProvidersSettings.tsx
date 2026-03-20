@@ -103,7 +103,12 @@ function getAuthModeLabel(
   }
 }
 
-export function ProvidersSettings() {
+interface ProvidersSettingsProps {
+  /** 嵌入模式：隐藏顶部标题，适用于系统设置页的 API 密钥区块 */
+  embedded?: boolean;
+}
+
+export function ProvidersSettings({ embedded }: ProvidersSettingsProps = {}) {
   const { t } = useTranslation('settings');
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const {
@@ -190,15 +195,25 @@ export function ProvidersSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-serif text-foreground font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-          {t('aiProviders.title', 'AI Providers')}
-        </h2>
-        <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-5 h-9 shadow-none font-medium text-[13px]">
-          <Plus className="h-4 w-4 mr-2" />
-          {t('aiProviders.add')}
-        </Button>
-      </div>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-serif text-foreground font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+            {t('aiProviders.title', 'AI Providers')}
+          </h2>
+          <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-5 h-9 shadow-none font-medium text-[13px]">
+            <Plus className="h-4 w-4 mr-2" />
+            {t('aiProviders.add')}
+          </Button>
+        </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end mb-2">
+          <Button onClick={() => setShowAddDialog(true)} size="sm" variant="outline" className="rounded-lg h-8 px-3 text-xs border-white/10 bg-white/5 hover:bg-white/10">
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            {t('aiProviders.add')}
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useGatewayStore } from '@/stores/gateway';
 import { configGet, configSet, configGetPath, type OpenClawConfig } from '@/services/config-api';
 import { toast } from 'sonner';
@@ -51,6 +52,12 @@ import {
   MessagesSection,
   AudioSection,
   BrowserSection,
+  ModelsSection,
+  ChannelsSection,
+  AgentsSection,
+  ToolsSection,
+  TemplatesSection,
+  ExtensionsSection,
 } from '@/views/ConfigurationCenter/sections';
 
 /** 配置区块定义：id、标签、图标、对应 config 顶层 key */
@@ -262,6 +269,12 @@ export const ConfigurationCenterView: React.FC = () => {
     messages: MessagesSection,
     audio: AudioSection,
     browser: BrowserSection,
+    models: ModelsSection,
+    channels: ChannelsSection,
+    agents: AgentsSection,
+    tools: ToolsSection,
+    templates: TemplatesSection,
+    extensions: ExtensionsSection,
   };
 
   const filteredSections = searchQuery
@@ -274,8 +287,9 @@ export const ConfigurationCenterView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0f172a]">
-      {/* 顶部栏 */}
-      <div className="flex-shrink-0 py-4 border-b border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* 顶部栏：标题 + 绿线，固定在顶部 */}
+      <div className="sticky top-0 z-10 flex-shrink-0 bg-[#0f172a] pt-4 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-semibold text-foreground">配置中心</h1>
           <div className="flex items-center gap-1.5">
@@ -335,6 +349,12 @@ export const ConfigurationCenterView: React.FC = () => {
             保存
           </Button>
         </div>
+      </div>
+      {/* 标题下方绿线 */}
+      <div className={cn(
+        'h-[3px] w-full transition-all duration-700 shrink-0 mt-3',
+        isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+      )} />
       </div>
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -426,11 +446,13 @@ export const ConfigurationCenterView: React.FC = () => {
               )}
             </div>
           ) : (
-            <div className="flex-1 flex flex-col overflow-hidden p-4 overflow-y-auto">
+            <div className="flex-1 flex flex-col overflow-hidden p-4 overflow-y-auto dark">
               {FORM_SECTIONS[activeSection] ? (
-                <div className="space-y-4 pb-8">
-                  {React.createElement(FORM_SECTIONS[activeSection], sectionProps)}
-                </div>
+                <ErrorBoundary>
+                  <div className="space-y-4 pb-8">
+                    {React.createElement(FORM_SECTIONS[activeSection], sectionProps)}
+                  </div>
+                </ErrorBoundary>
               ) : (
                 <SectionEditor
                   section={activeSection}

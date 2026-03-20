@@ -13,6 +13,26 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Format relative time in Chinese (e.g. "54 分钟前", "6 分钟后")
+ */
+export function formatRelativeTimeZh(dateOrMs: string | Date | number): string {
+  const now = Date.now();
+  const ts = typeof dateOrMs === 'number' ? dateOrMs : new Date(dateOrMs).getTime();
+  const diffMs = ts - now;
+  const isFuture = diffMs > 0;
+  const absMs = Math.abs(diffMs);
+  const diffMin = Math.floor(absMs / 60_000);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  const suffix = isFuture ? '后' : '前';
+  if (diffMin < 1) return isFuture ? '即将' : '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟${suffix}`;
+  if (diffHour < 24) return `${diffHour} 小时${suffix}`;
+  if (diffDay < 7) return `${diffDay} 天${suffix}`;
+  return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/**
  * Format relative time (e.g., "2 minutes ago")
  */
 export function formatRelativeTime(date: string | Date): string {

@@ -18,9 +18,22 @@ const MSG_COLORS = {
   errors: '#ef4444',
 };
 const CHANNEL_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1'];
-const kpiCard =
-  'rounded-2xl p-3 shadow-sm bg-white/[0.04] dark:bg-white/[0.02] border border-slate-200/40 dark:border-white/[0.06]';
-const kpiLabel = 'text-[9px] font-bold text-slate-400 dark:text-white/30 uppercase mb-1.5';
+
+/** 根据数据类型返回边框样式 */
+function kpiCardBorder(type: 'token' | 'active' | 'activity' | 'messages' | 'channels' | 'cost' | 'models'): string {
+  const borders: Record<string, string> = {
+    token: 'border-blue-500/25',
+    active: 'border-green-500/25',
+    activity: 'border-blue-500/25',
+    messages: 'border-indigo-500/25',
+    channels: 'border-purple-500/25',
+    cost: 'border-emerald-500/25',
+    models: 'border-purple-500/25',
+  };
+  return `rounded-2xl p-3 shadow-sm bg-[#1e293b] border-2 ${borders[type] ?? 'border-indigo-500/20'}`;
+}
+
+const kpiLabel = 'text-[9px] font-bold text-white/40 uppercase mb-1.5';
 
 export interface KPIDashboardProps {
   stats: {
@@ -68,7 +81,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
       {/* Token Distribution */}
-      <div className={kpiCard}>
+      <div className={kpiCardBorder('token')}>
         <div className={kpiLabel}>{a.totalTokens || 'Tokens'}</div>
         <div className="flex items-center gap-2">
           <MiniDonut
@@ -80,10 +93,10 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
             innerRadius={0.5}
           />
           <div>
-            <div className="text-base font-extrabold text-slate-800 dark:text-white/85 tabular-nums leading-none">
+            <div className="text-base font-extrabold text-white/90 tabular-nums leading-none">
               {fmtTok(stats.totalTok)}
             </div>
-            <div className="text-[8px] text-slate-400 dark:text-white/25">
+            <div className="text-[8px] text-white/35">
               <span className="text-blue-500">●</span> {a.input || 'In'}{' '}
               <span className="text-amber-500">●</span> {a.output || 'Out'}
             </div>
@@ -92,7 +105,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
       </div>
 
       {/* 24h Active */}
-      <div className={kpiCard}>
+      <div className={kpiCardBorder('active')}>
         <div className={kpiLabel}>{a.active24h || '24h Active'}</div>
         <div className="flex items-center gap-2">
           <span className="relative flex h-3 w-3">
@@ -101,25 +114,25 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
             )}
             <span
               className={`relative inline-flex rounded-full h-3 w-3 ${
-                stats.active24h > 0 ? 'bg-green-500' : 'bg-slate-300 dark:bg-white/20'
+                stats.active24h > 0 ? 'bg-green-500' : 'bg-white/20'
               }`}
             />
           </span>
-          <span className="text-base font-extrabold text-slate-800 dark:text-white/85 tabular-nums">
+          <span className="text-base font-extrabold text-white/90 tabular-nums">
             {stats.active24h}
           </span>
         </div>
       </div>
 
       {/* Activity Sparkline */}
-      <div className={kpiCard}>
+      <div className={kpiCardBorder('activity')}>
         <div className={kpiLabel}>{a.activity7d || '7d Activity'}</div>
         <MiniSparklineValues values={activityValues} height={32} color="#3b82f6" />
       </div>
 
       {/* Messages Breakdown */}
       {agg?.messages && agg.messages.total > 0 && (
-        <div className={kpiCard}>
+        <div className={kpiCardBorder('messages')}>
           <div className={kpiLabel}>{a.messages || 'Messages'}</div>
           <div className="flex items-center gap-2">
             <MiniDonut
@@ -133,7 +146,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
               innerRadius={0.55}
             />
             <div>
-              <div className="text-base font-extrabold text-slate-800 dark:text-white/85 tabular-nums leading-none">
+              <div className="text-base font-extrabold text-white/90 tabular-nums leading-none">
                 {agg.messages.total}
               </div>
               <div className="flex flex-wrap gap-x-1.5 text-[7px] mt-0.5">
@@ -147,7 +160,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
 
       {/* Channel Distribution */}
       {channelEntries.length > 1 && (
-        <div className={kpiCard}>
+        <div className={kpiCardBorder('channels')}>
           <div className={kpiLabel}>{a.channels || 'Channels'}</div>
           <div className="flex items-center gap-2">
             <MiniDonut
@@ -158,7 +171,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
               }))}
               innerRadius={0.5}
             />
-            <div className="text-[8px] text-slate-400 dark:text-white/25 leading-tight">
+            <div className="text-[8px] text-white/25 leading-tight">
               {channelEntries.slice(0, 3).map(([name, count]) => (
                 <div key={name}>
                   {name}: {count}
@@ -171,7 +184,7 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
 
       {/* Cost Trend */}
       {costTrend && costTrend.length > 0 && costTrend.some((d) => d.totalCost > 0) && (
-        <div className={kpiCard}>
+        <div className={kpiCardBorder('cost')}>
           <div className={kpiLabel}>{a.costTrend || 'Cost 7d'}</div>
           <MiniSparklineValues values={costTrend.map((d) => d.totalCost)} height={32} color="#10b981" />
           <div className="text-[8px] text-emerald-500 font-bold tabular-nums mt-0.5">
@@ -192,24 +205,24 @@ export const KPIDashboard: React.FC<KPIDashboardProps> = ({
         const maxCount = modelEntries[0]?.[1] || 1;
         if (modelEntries.length === 0) return null;
         return (
-          <div className={kpiCard}>
+          <div className={kpiCardBorder('models')}>
             <div className={kpiLabel}>{a.modelDist || 'Models'}</div>
             <div className="space-y-1">
               {modelEntries.map(([name, count]) => (
                 <div key={name} className="flex items-center gap-1.5">
-                  <div className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden">
+                  <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-purple-500/80 to-purple-400/60 transition-all"
                       style={{ width: `${(count / maxCount) * 100}%` }}
                     />
                   </div>
                   <span
-                    className="text-[7px] text-slate-400 dark:text-white/25 font-mono truncate max-w-[60px]"
+                    className="text-[7px] text-white/25 font-mono truncate max-w-[60px]"
                     title={name}
                   >
                     {name.split('/').pop()}
                   </span>
-                  <span className="text-[7px] text-slate-500 dark:text-white/35 font-bold tabular-nums">
+                  <span className="text-[7px] text-white/35 font-bold tabular-nums">
                     {count}
                   </span>
                 </div>

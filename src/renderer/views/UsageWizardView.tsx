@@ -44,14 +44,21 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
   const doneCount = items.filter((i) => i.done).length;
   const total = items.length;
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const isOnline = gatewayStatus.state === 'running';
 
   return (
     <div className="h-full flex flex-col overflow-y-auto bg-[#0f172a]">
-      <div className="flex-1 py-8 w-full">
-        <h1 className="text-2xl font-semibold text-foreground mb-2">使用向导</h1>
-        <p className="text-sm text-muted-foreground mb-8">
+      <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-4 pb-4">
+        <h1 className="text-base font-bold text-foreground mb-2">使用向导</h1>
+        <p className="text-xs text-muted-foreground mb-2">
           ClawDeckX 风格：配置完成度检查，分步引导完成设置
         </p>
+        <div className={cn(
+          'h-[3px] w-full transition-all duration-700 shrink-0',
+          isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
+        )} />
+      </div>
+      <div className="flex-1 py-8 w-full">
 
         {/* 完成度 */}
         <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-6 mb-8">

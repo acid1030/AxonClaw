@@ -3,7 +3,6 @@
  * First-time setup experience for new users
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Check,
@@ -20,10 +19,9 @@ import {
   ExternalLink,
   Copy,
 } from 'lucide-react';
-import { TitleBar } from '@/components/layout/TitleBar';
+// TitleBar 可选：Electron 无边框窗口时使用
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
@@ -110,7 +108,8 @@ import {
   hasConfiguredCredentials,
   pickPreferredAccount,
 } from '@/lib/provider-accounts';
-import clawxIcon from '@/assets/logo.svg';
+// 使用 public 目录下的 logo
+const clawxIcon = '/logo.png';
 
 // Use the shared provider registry for setup providers
 const providers = SETUP_PROVIDERS;
@@ -127,9 +126,14 @@ function getProtocolBaseUrlPlaceholder(
 // NOTE: Channel types moved to Settings > Channels page
 // NOTE: Skill bundles moved to Settings > Skills page - auto-install essential skills during setup
 
-export function Setup() {
+export interface SetupWizardContentProps {
+  onComplete: () => void;
+  showTitleBar?: boolean;
+}
+
+/** 共享安装向导内容，供 Setup 页与 InstallationWizardView 使用 */
+export function SetupWizardContent({ onComplete, showTitleBar = false }: SetupWizardContentProps) {
   const { t } = useTranslation(['setup', 'channels']);
-  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<number>(STEP.WELCOME);
 
   // Setup state
@@ -148,8 +152,6 @@ export function Setup() {
   const step = steps[safeStepIndex] ?? steps[STEP.WELCOME];
   const isFirstStep = safeStepIndex === STEP.WELCOME;
   const isLastStep = safeStepIndex === steps.length - 1;
-
-  const markSetupComplete = useSettingsStore((state) => state.markSetupComplete);
 
   // Derive canProceed based on current step - computed directly to avoid useEffect
   const canProceed = useMemo(() => {
@@ -171,10 +173,8 @@ export function Setup() {
 
   const handleNext = async () => {
     if (isLastStep) {
-      // Complete setup
-      markSetupComplete();
       toast.success(t('complete.title'));
-      navigate('/');
+      onComplete();
     } else {
       setCurrentStep((i) => i + 1);
     }
@@ -185,8 +185,7 @@ export function Setup() {
   };
 
   const handleSkip = () => {
-    markSetupComplete();
-    navigate('/');
+    onComplete();
   };
 
   // Auto-proceed when installation is complete
@@ -201,7 +200,11 @@ export function Setup() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <TitleBar />
+      {showTitleBar && (
+        <div className="h-8 shrink-0 bg-[#0f172a] border-b border-white/5 flex items-center px-4">
+          <span className="text-sm font-medium text-white/80">AxonClaw 安装向导</span>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {/* Progress Indicator */}
         <div className="flex justify-center pt-8">
@@ -314,6 +317,23 @@ export function Setup() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// ==================== Setup Page (standalone with TitleBar) ====================
+
+export function Setup() {
+  const { t } = useTranslation('setup');
+  const markSetupComplete = useSettingsStore((state) => state.markSetupComplete);
+
+  return (
+    <SetupWizardContent
+      showTitleBar
+      onComplete={() => {
+        markSetupComplete();
+        toast.success(t('complete.title'));
+      }}
+    />
   );
 }
 
@@ -597,14 +617,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         <XCircle className="h-5 w-5 flex-shrink-0" />
         <span>{displayMsg}</span>
         {isLong && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="cursor-pointer text-red-300 hover:text-red-200 font-medium">...</span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-sm whitespace-normal break-words text-xs">
-              {message}
-            </TooltipContent>
-          </Tooltip>
+          <span className="cursor-pointer text-red-300 hover:text-red-200 font-medium" title={message}>...</span>
         )}
       </span>
     );

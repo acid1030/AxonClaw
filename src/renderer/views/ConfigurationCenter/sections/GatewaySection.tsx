@@ -30,6 +30,11 @@ const AUTH_MODE_OPTIONS = [
   { value: 'trusted-proxy', label: '可信代理' },
   { value: 'none', label: '无' },
 ];
+
+function ensureInOptions(value: string, options: { value: string }[]): string {
+  if (!value) return '';
+  return options.some((o) => o.value === value) ? value : '';
+}
 const RELOAD_MODE_OPTIONS = [
   { value: 'off', label: '关闭' },
   { value: 'restart', label: '重启' },
@@ -53,13 +58,13 @@ export const GatewaySection: React.FC<SectionProps> = ({ setField, getField }) =
         />
         <SelectField
           label="运行模式"
-          value={String(g(['mode']) ?? 'local')}
+          value={ensureInOptions(String(g(['mode']) ?? 'local'), MODE_OPTIONS) || 'local'}
           onChange={(v) => s(['mode'], v)}
           options={MODE_OPTIONS}
         />
         <SelectField
           label="绑定地址"
-          value={String(g(['bind']) ?? 'auto')}
+          value={ensureInOptions(String(g(['bind']) ?? 'auto'), BIND_OPTIONS) || 'auto'}
           onChange={(v) => s(['bind'], v)}
           options={BIND_OPTIONS}
         />
@@ -82,7 +87,7 @@ export const GatewaySection: React.FC<SectionProps> = ({ setField, getField }) =
       <ConfigSection title="认证" icon={Lock} iconColor="text-red-500">
         <SelectField
           label="认证模式"
-          value={String(g(['auth', 'mode']) ?? '')}
+          value={ensureInOptions(String(g(['auth', 'mode']) ?? ''), AUTH_MODE_OPTIONS)}
           onChange={(v) => s(['auth', 'mode'], v)}
           options={AUTH_MODE_OPTIONS}
         />

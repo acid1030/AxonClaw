@@ -13,7 +13,7 @@ import { ContentView } from '@/views/ContentView';
 import { WorkflowView } from '@/views/WorkflowView';
 import { Skills } from '@/pages/Skills';
 import { ModelsView } from '@/views/ModelsView';
-import { CronView } from '@/views/CronView';
+import { Cron } from '@/pages/Cron';
 import { RunView } from '@/views/RunView';
 import { UsageView } from '@/views/UsageView';
 import { AlertsView } from '@/views/AlertsView';
@@ -21,6 +21,7 @@ import { LogsView } from '@/views/LogsView';
 import { NodesView } from '@/views/NodesView';
 import { ExtensionsView } from '@/views/ExtensionsView';
 import { SystemView } from '@/views/SystemView';
+import { DiagnosticsView } from '@/views/DiagnosticsView';
 import { KnowledgeView } from '@/views/KnowledgeView';
 import { ActivityMonitorView } from '@/views/ActivityMonitorView';
 import { InstallationWizardView } from '@/views/InstallationWizardView';
@@ -78,11 +79,11 @@ const MainLayout: React.FC = () => {
       case 'workflow':
         return <WorkflowView />;
       case 'skill':
-        return <Skills />;
+        return <Skills onNavigateTo={(view) => setActiveNav(view)} />;
       case 'model':
         return <ModelsView />;
       case 'cron':
-        return <CronView />;
+        return <Cron />;
       case 'run':
         return <RunView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'usage':
@@ -98,9 +99,9 @@ const MainLayout: React.FC = () => {
       case 'system':
         return <SystemView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'health':
-        return <SystemView onNavigateTo={(view) => setActiveNav(view)} defaultTab="diagnostic" />;
+        return <DiagnosticsView standalone onNavigateTo={(view) => setActiveNav(view)} />;
       case 'knowledge':
-        return <KnowledgeView />;
+        return <KnowledgeView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'activity':
         return <ActivityMonitorView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'install':
@@ -126,9 +127,11 @@ const MainLayout: React.FC = () => {
         onViewChange={setActiveNav}
       />
 
-      {/* Main Content - 左右边距 10px，内容占满宽度 */}
-      <main className="flex-1 overflow-hidden px-[10px] w-full min-w-0">
-        {renderContent()}
+      {/* Main Content - 左右边距 10px；min-h-0 + flex 确保健康中心等页面的滚动区域正确计算高度 */}
+      <main className="flex-1 min-h-0 flex flex-col overflow-hidden px-[10px] w-full min-w-0">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {renderContent()}
+        </div>
       </main>
 
       {/* Floating Panel */}
