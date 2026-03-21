@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
-import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
+import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp, stripFilePathsFromText } from './message-utils';
 
 interface ChatMessageProps {
   message: RawMessage;
@@ -155,10 +155,10 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
-        {/* Main text bubble */}
+        {/* Main text bubble — strip file paths for assistant so they appear as FileCards below */}
         {hasText && (
           <MessageBubble
-            text={text}
+            text={!isUser && attachedFiles.length > 0 ? stripFilePathsFromText(text) : text}
             isUser={isUser}
             isStreaming={isStreaming}
           />

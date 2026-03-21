@@ -667,6 +667,71 @@ async function fetchAgentsFromClawDeckX(): Promise<{
 } | null> {
   const bases = [`http://127.0.0.1:${CLAWDECKX_HTTP_PORT}`, `http://127.0.0.1:${getResolvedGatewayPort()}`];
   for (const base of bases) {
+    // ClawDeckX 使用 POST /api/v1/gw/proxy { method: 'agents.list', params: {} }，与 gwApi.agents() 一致
+    try {
+      const res = await fetch(`${base}/api/v1/gw/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'agents.list', params: {} }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as unknown;
+      const raw = Array.isArray(data) ? data : (data && typeof data === 'object' && 'agents' in (data as object) ? (data as { agents?: unknown[] }).agents : null);
+      const list = Array.isArray(raw) ? raw : [];
+      if (list.length === 0) continue;
+      const defaultId = (data && typeof data === 'object' && 'defaultId' in (data as object) ? (data as { defaultId?: string }).defaultId : null) ?? list.find((a: Record<string, unknown>) => a.default)?.id ?? list[0]?.id ?? 'main';
+      const configRes = await fetch(`${base}/api/v1/gw/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'config.get', params: {} }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+      let bindings: Array<{ agentId?: string; match?: { channel?: string } }> = [];
+      let configChannels: Record<string, unknown> = {};
+      if (configRes?.ok) {
+        const cfg = (await configRes.json()) as Record<string, unknown>;
+        bindings = (cfg.bindings as Array<{ agentId?: string; match?: { channel?: string } }>) ?? [];
+        configChannels = (cfg.channels as Record<string, unknown>) ?? {};
+      }
+      const configuredChannelTypes = Object.keys(configChannels).filter(
+        (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof configChannels[k] === 'object'
+      );
+      const channelOwners: Record<string, string> = {};
+      bindings.forEach((b) => {
+        const ch = b?.match?.channel;
+        if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+      });
+      return {
+        agents: list.map((a: Record<string, unknown>) => {
+          const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+          const model = a.model;
+          const modelDisplay =
+            typeof model === 'string'
+              ? model
+              : typeof model === 'object' && model && 'primary' in (model as object)
+                ? (model as { primary?: string }).primary
+                : '—';
+          return {
+            id: String(a.id ?? ''),
+            name: String(a.name ?? a.id ?? ''),
+            isDefault: a.id === defaultId,
+            modelDisplay: String(modelDisplay ?? '—'),
+            inheritedModel: !a.model,
+            workspace: String(a.workspace ?? '—'),
+            agentDir: String(a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`),
+            mainSessionKey: `${a.id}:main`,
+            channelTypes: agentChannels,
+          };
+        }),
+        defaultAgentId: String(defaultId),
+        configuredChannelTypes,
+        channelOwners,
+      };
+    } catch {
+      /* try next base */
+    }
+    // 兼容旧版或非 ClawDeckX 的 GET 接口
     for (const apiPath of ['/api/agents', '/api/config', '/config']) {
       try {
         const res = await fetch(`${base}${apiPath}`, { signal: AbortSignal.timeout(5000) });
@@ -722,7 +787,7 @@ async function fetchAgentsFromClawDeckX(): Promise<{
                 channelTypes: agentChannels,
               };
             }),
-            defaultAgentId: defaultId,
+            defaultAgentId: String(defaultId),
             configuredChannelTypes,
             channelOwners,
           };
@@ -2152,31 +2217,80 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       return { ok: true, data: { status: 200, json: { path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { path: OPENCLAW_CONFIG_PATH } };
     }
 
-    // 代理管理：/api/agents - 透传 Gateway RPC（config.get + agents.*）构建 AgentsSnapshot
-    // 1. 优先 WebSocket RPC（callGatewayRpcWithRetry）
-    // 2. 失败时尝试 ClawDeckX HTTP API (18080) 或 Gateway 同端口 HTTP
+    // 代理管理：/api/agents - 与 ClawDeckX 一致，使用 agents.list RPC
+    // 1. 优先 agents.list（ClawDeckX 同款）
+    // 2. 失败时尝试 config.get 构建
+    // 3. 再失败时尝试 ClawDeckX HTTP (18080)
     if (path === '/api/agents' && method === 'GET') {
       try {
-        let config: Record<string, unknown> | null = null;
-        try {
-          config = (await callGatewayRpcWithRetry('config.get', {})) as Record<string, unknown>;
-        } catch {
-          const fallback = await fetchAgentsFromClawDeckX();
-          if (fallback) {
-            return { ok: true, data: { status: 200, json: fallback, ok: true }, success: true, status: 200, json: fallback };
+        const buildSnapshot = (
+          list: Array<Record<string, unknown>>,
+          defaultId: string,
+          bindings: Array<{ agentId?: string; match?: { channel?: string } }>,
+          configChannels: Record<string, unknown>,
+          defaultModelStr: string,
+          defaultWorkspace: string
+        ) => {
+          const channelOwners: Record<string, string> = {};
+          const configuredChannelTypes = Object.keys(configChannels ?? {}).filter(
+            (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof (configChannels as Record<string, unknown>)?.[k] === 'object'
+          );
+          bindings.forEach((b) => {
+            const ch = b?.match?.channel;
+            if (ch && b?.agentId) channelOwners[ch] = b.agentId;
+          });
+          const agents = list.map((a) => {
+            const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
+            const model = a.model;
+            const modelDisplay =
+              typeof model === 'string'
+                ? model
+                : typeof model === 'object' && model && 'primary' in model
+                  ? (model as { primary?: string }).primary
+                  : defaultModelStr;
+            const inheritedModel = !a.model;
+            return {
+              id: String(a.id ?? ''),
+              name: String(a.name ?? a.id ?? ''),
+              isDefault: a.id === defaultId,
+              modelDisplay: String(modelDisplay ?? '—'),
+              inheritedModel,
+              workspace: String(a.workspace ?? defaultWorkspace ?? '—'),
+              agentDir: String(a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`),
+              mainSessionKey: `${a.id}:main`,
+              channelTypes: agentChannels,
+            };
+          });
+          return { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners };
+        };
+
+        // 1) 优先 agents.list（ClawDeckX 同款）
+        const agentsListRes = await callGatewayRpcWithRetry('agents.list', {});
+        if (agentsListRes.ok && agentsListRes.result != null) {
+          const raw = agentsListRes.result as unknown;
+          const list = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' && 'agents' in raw ? (raw as { agents?: unknown[] }).agents : []) ?? [];
+          const rawObj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+          const defaultId = (rawObj.defaultId as string) ?? (rawObj.defaultAgentId as string) ?? list.find((a: Record<string, unknown>) => a.default)?.id ?? list[0]?.id ?? 'main';
+          let bindings: Array<{ agentId?: string; match?: { channel?: string } }> = [];
+          let configChannels: Record<string, unknown> = {};
+          const configRes = await callGatewayRpc('config.get', {}).catch(() => ({ ok: false }));
+          if (configRes.ok && 'result' in configRes && configRes.result != null) {
+            const cfg = configRes.result as Record<string, unknown>;
+            bindings = (cfg.bindings as Array<{ agentId?: string; match?: { channel?: string } }>) ?? [];
+            configChannels = (cfg.channels as Record<string, unknown>) ?? {};
           }
-          throw new Error('Gateway RPC 与 ClawDeckX HTTP 均不可用');
+          const defaultModel = (rawObj.defaultModel as string) ?? '—';
+          const defaultWorkspace = (rawObj.defaultWorkspace as string) ?? '—';
+          const json = buildSnapshot(list, String(defaultId), bindings, configChannels, defaultModel, defaultWorkspace);
+          return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
         }
-        const configTyped = config as {
+
+        // 2) 回退 config.get
+        const configRes = await callGatewayRpcWithRetry('config.get', {});
+        if (!configRes.ok || configRes.result == null) throw new Error('config.get failed');
+        const configTyped = configRes.result as {
           agents?: {
-            list?: Array<{
-              id: string;
-              name?: string;
-              default?: boolean;
-              workspace?: string;
-              agentDir?: string;
-              model?: string | { primary?: string; fallbacks?: string[] };
-            }>;
+            list?: Array<Record<string, unknown>>;
             defaults?: { model?: string | { primary?: string }; workspace?: string };
           };
           bindings?: Array<{ agentId?: string; match?: { channel?: string } }>;
@@ -2184,47 +2298,16 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         };
         const list = configTyped?.agents?.list ?? [];
         const defaultModel = configTyped?.agents?.defaults?.model;
-        const modelStr = typeof defaultModel === 'string' ? defaultModel : defaultModel?.primary;
+        const modelStr = typeof defaultModel === 'string' ? defaultModel : (typeof defaultModel === 'object' && defaultModel?.primary ? defaultModel.primary : '—');
         const defaultId = list.find((a) => a.default)?.id ?? list[0]?.id ?? 'main';
         const bindings = (configTyped?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
-        const channelOwners: Record<string, string> = {};
-        const configuredChannelTypes = Object.keys(configTyped?.channels ?? {}).filter(
-          (k) => k !== 'defaults' && k !== 'modelByChannel' && typeof (configTyped?.channels as Record<string, unknown>)?.[k] === 'object'
-        );
-        bindings.forEach((b) => {
-          const ch = b?.match?.channel;
-          if (ch && b?.agentId) channelOwners[ch] = b.agentId;
-        });
-        const agents = list.map((a) => {
-          const agentChannels = bindings.filter((b) => b?.agentId === a.id).map((b) => b?.match?.channel).filter(Boolean) as string[];
-          const model = a.model;
-          const modelDisplay =
-            typeof model === 'string'
-              ? model
-              : typeof model === 'object' && model?.primary
-                ? model.primary
-                : modelStr ?? '—';
-          const inheritedModel = !a.model;
-          return {
-            id: a.id,
-            name: a.name ?? a.id,
-            isDefault: a.id === defaultId,
-            modelDisplay: String(modelDisplay ?? '—'),
-            inheritedModel,
-            workspace: a.workspace ?? configTyped?.agents?.defaults?.workspace ?? '—',
-            agentDir: a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`,
-            mainSessionKey: `${a.id}:main`,
-            channelTypes: agentChannels,
-          };
-        });
-        const json = {
-          agents,
-          defaultAgentId: defaultId,
-          configuredChannelTypes,
-          channelOwners,
-        };
+        const json = buildSnapshot(list, String(defaultId), bindings, configTyped?.channels ?? {}, modelStr, configTyped?.agents?.defaults?.workspace ?? '—');
         return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
       } catch (err) {
+        const fallback = await fetchAgentsFromClawDeckX();
+        if (fallback) {
+          return { ok: true, data: { status: 200, json: fallback, ok: true }, success: true, status: 200, json: fallback };
+        }
         console.error('[HostAPI] /api/agents GET error:', err);
         return {
           ok: false,
@@ -3030,6 +3113,57 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           json: { entries: [] },
         };
       }
+    }
+
+    // ClawDeckX（18080）多代理 API — OpenClaw Gateway 无此路由，需转发到 ClawDeckX HTTP
+    if (path.startsWith('/api/v1/multi-agent')) {
+      const bases = [`http://127.0.0.1:${CLAWDECKX_HTTP_PORT}`];
+      let lastErr: string | null = null;
+      for (const base of bases) {
+        try {
+          const response = await fetch(`${base}${path}`, {
+            method: method || 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(headers && typeof headers === 'object' ? headers : {}),
+            },
+            body: body || undefined,
+            signal: AbortSignal.timeout(120_000),
+          });
+          let json: unknown = undefined;
+          let text: string | undefined = undefined;
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            try {
+              json = await response.json();
+            } catch {
+              text = await response.text();
+            }
+          } else {
+            text = await response.text();
+          }
+          return {
+            ok: true,
+            data: {
+              status: response.status,
+              ok: response.ok,
+              json,
+              text,
+            },
+            success: response.ok,
+            status: response.status,
+            json,
+            text,
+          };
+        } catch (e) {
+          lastErr = e instanceof Error ? e.message : String(e);
+        }
+      }
+      return {
+        ok: false,
+        error: { message: lastErr || 'ClawDeckX 多代理 API 不可用（请启动 ClawDeckX 或检查 18080 端口）' },
+        success: false,
+      };
     }
 
     const url = `${getGatewayApiBase()}${path}`;

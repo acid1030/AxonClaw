@@ -275,8 +275,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   stop: async () => {
     try {
-      await hostApiFetch('/api/gateway/stop', { method: 'POST' });
-      set({ status: { ...get().status, state: 'stopped' }, lastError: null });
+      const status = await invokeIpc<GatewayStatus>('gateway:stop');
+      set({ status: { ...get().status, ...status }, lastError: null });
     } catch (error) {
       console.error('Failed to stop Gateway:', error);
       set({ lastError: String(error) });
@@ -286,9 +286,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   restart: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/restart', {
-        method: 'POST',
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('gateway:restart');
       if (!result.success) {
         set({
           status: { ...get().status, state: 'error', error: result.error },

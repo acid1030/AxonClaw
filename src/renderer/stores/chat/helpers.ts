@@ -390,12 +390,18 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
  *   1. [media attached: path (mime) | path] patterns (attachment-button flow)
  *   2. Raw image file paths typed in message text (e.g. /Users/.../image.png)
  * Uses local cache for previews when available; missing previews are loaded async.
+ *
+ * For assistant messages: even when _attachedFiles already exists (e.g. from tool results),
+ * we still extract paths from text and merge them so files appear as separate cards outside
+ * the bubble instead of raw paths inside the bubble.
  */
 function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
   return messages.map((msg, idx) => {
-    // Only process user and assistant messages; skip if already enriched
-    if ((msg.role !== 'user' && msg.role !== 'assistant') || msg._attachedFiles) return msg;
+    if (msg.role !== 'user' && msg.role !== 'assistant') return msg;
     const text = getMessageText(msg.content);
+
+    // User messages: skip if already enriched (attachments come from upload flow)
+    if (msg.role === 'user' && msg._attachedFiles) return msg;
 
     // Path 1: [media attached: path (mime) | path] — guaranteed format from attachment button
     const mediaRefs = extractMediaRefs(text);
@@ -431,14 +437,19 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
     }
 
     const allRefs = [...mediaRefs, ...rawRefs];
-    if (allRefs.length === 0) return msg;
+    const existingPaths = new Set(
+      (msg._attachedFiles || []).map(f => f.filePath).filter(Boolean),
+    );
+    const newRefs = allRefs.filter(r => !existingPaths.has(r.filePath));
+    if (newRefs.length === 0 && !msg._attachedFiles) return msg;
 
-    const files: AttachedFileMeta[] = allRefs.map(ref => {
+    const newFiles: AttachedFileMeta[] = newRefs.map(ref => {
       const cached = _imageCache.get(ref.filePath);
       if (cached) return { ...cached, filePath: ref.filePath };
       const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
       return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
     });
+    const files = [...(msg._attachedFiles || []), ...newFiles];
     return { ...msg, _attachedFiles: files };
   });
 }

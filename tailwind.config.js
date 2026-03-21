@@ -5,6 +5,7 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    "./src/renderer/data/official-multi-agent/**/*.json",
   ],
   theme: {
     container: {

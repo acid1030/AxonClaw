@@ -372,6 +372,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     try {
       await restartGateway();
       await initGateway();
+      // 重启后重新检测连接，确认新进程已就绪
       await checkConnection(true);
     } catch (e) {
       console.error('Gateway restart error:', e);
@@ -388,8 +389,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     clearError();
     try {
       await stopGateway();
+      // 不调用 checkConnection：停止后若存在外部网关，checkConnection 会重新检测到并覆盖为 running
       await initGateway();
-      await checkConnection(true);
     } catch (e) {
       console.error('Gateway stop error:', e);
     } finally {

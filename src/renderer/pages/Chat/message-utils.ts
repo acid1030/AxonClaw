@@ -207,6 +207,44 @@ export function extractToolUse(message: RawMessage | unknown): Array<{ id: strin
 }
 
 /**
+ * Extract raw file paths from message text.
+ * Same logic as chat store — used for stripping paths from bubble display.
+ */
+export function extractFilePathsFromText(text: string): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  for (const regex of [unixRegex, winRegex]) {
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const p = match[1];
+      if (p && !seen.has(p)) {
+        seen.add(p);
+        paths.push(p);
+      }
+    }
+  }
+  return paths;
+}
+
+/**
+ * Strip file paths from text so they don't appear inside the bubble.
+ * Paths are shown as separate FileCards outside the bubble instead.
+ */
+export function stripFilePathsFromText(text: string): string {
+  const paths = extractFilePathsFromText(text);
+  if (paths.length === 0) return text;
+  let result = text;
+  for (const p of paths.sort((a, b) => b.length - a.length)) {
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(escaped, 'g'), '');
+  }
+  return result.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
  * Format a Unix timestamp (seconds) to relative time string.
  */
 export function formatTimestamp(timestamp: unknown): string {

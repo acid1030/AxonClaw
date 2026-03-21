@@ -8,7 +8,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Plus,
   RefreshCw,
-  Clock,
   Pencil,
   Trash2,
   Bot,
@@ -18,22 +17,14 @@ import {
   MessageSquare,
   Calendar,
   Sparkles,
-  Rocket,
   Search,
   BarChart3,
-  Play,
-  Headphones,
-  Cloud,
-  Image,
-  Send,
   Bell,
   Laptop,
   Languages,
   PenTool,
   BookOpen,
   LayoutTemplate,
-  GitMerge,
-  Radio,
   Eye,
   Zap,
   Mail,
@@ -47,6 +38,7 @@ import { useCronStore } from '@/stores/cron';
 import { useSkillsStore } from '@/stores/skills';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayOnline } from '@/hooks/useGatewayOnline';
+import { MultiAgentCollaborationPanel } from '@/components/multiagent/MultiAgentCollaborationPanel';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
@@ -59,7 +51,7 @@ import type { ChannelType } from '@/types/channel';
 import { CHANNEL_NAMES, CHANNEL_ICONS } from '@/types/channel';
 import { AgentSettingsModal } from '@/pages/Agents';
 import { hostApiFetch } from '@/lib/host-api';
-import { agentFilesList, agentFileGet, agentFileSet, configGet, agentSkills, agentsDelete, wake } from '@/services/agent-api';
+import { agentFilesList, agentFileGet, agentFileSet, configGet, agentSkills, wake } from '@/services/agent-api';
 
 const TABS = [
   { id: 'overview', label: '概览', icon: BarChart3 },
@@ -70,60 +62,10 @@ const TABS = [
   { id: 'cron', label: '定时任务', icon: Calendar },
   { id: 'chat', label: '对话', icon: MessageSquare },
   { id: 'scenarios', label: '场景库', icon: LayoutTemplate },
-  { id: 'multi-agent', label: '多代理', icon: Sparkles },
+  { id: 'multi-agent', label: '多代理协作', icon: Sparkles },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
-
-const WORKFLOW_TEMPLATES = [
-  {
-    id: 'content-factory',
-    title: 'Content Factory',
-    desc: 'End-to-end content production pipeline with research, writing, editing, and publishing',
-    roles: 4,
-    tag: 'Sequential',
-    tagColor: 'bg-blue-500/20 text-blue-400',
-    icon: FileText,
-    iconColor: 'text-violet-400',
-  },
-  {
-    id: 'research-team',
-    title: 'Research Team',
-    desc: 'Collaborative research team with lead researcher, analysts, and critics',
-    roles: 4,
-    tag: 'Collaborative',
-    tagColor: 'bg-violet-500/20 text-violet-400',
-    icon: Search,
-    iconColor: 'text-blue-400',
-  },
-  {
-    id: 'devops-team',
-    title: 'DevOps Team',
-    desc: 'Automated incident response and infrastructure management team',
-    roles: 4,
-    tag: 'Event-Driven',
-    tagColor: 'bg-amber-500/20 text-amber-400',
-    icon: Cloud,
-    iconColor: 'text-orange-400',
-  },
-  {
-    id: 'support-team',
-    title: 'Customer Support Team',
-    desc: 'Tiered customer support with routing and escalation',
-    roles: 3,
-    tag: 'Routing',
-    tagColor: 'bg-blue-500/20 text-blue-400',
-    icon: Headphones,
-    iconColor: 'text-emerald-400',
-  },
-];
-
-const TEAM_ROLES = [
-  { id: 'researcher', label: 'Researcher', icon: Search, color: 'text-blue-400' },
-  { id: 'writer', label: 'Writer', icon: Pencil, color: 'text-emerald-400' },
-  { id: 'editor', label: 'Editor', icon: Image, color: 'text-amber-400' },
-  { id: 'publisher', label: 'Publisher', icon: Send, color: 'text-violet-400' },
-];
 
 function formatSchedule(schedule: unknown): string {
   if (typeof schedule === 'string') return schedule;
@@ -151,6 +93,9 @@ export const AgentsView: React.FC = () => {
     createAgent,
     assignChannel,
     removeChannel,
+    resolveLabel,
+    resolveEmoji,
+    defaultAgentId,
   } = useAgentsStore();
   const { channels, fetchChannels } = useChannelsStore();
   const { jobs, fetchJobs } = useCronStore();
@@ -162,8 +107,6 @@ export const AgentsView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string>('content-factory');
-  const [deploymentMode, setDeploymentMode] = useState<'enhance' | 'independent'>('enhance');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showChannelModal, setShowChannelModal] = useState(false);
   const [channelToRemove, setChannelToRemove] = useState<ChannelType | null>(null);
@@ -171,7 +114,6 @@ export const AgentsView: React.FC = () => {
   const [waking, setWaking] = useState(false);
   const [wakeResult, setWakeResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [searchAgent, setSearchAgent] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'cards'>('cards');
 
   useEffect(() => {
     void Promise.all([fetchAgents(), fetchChannels()]);
@@ -217,11 +159,11 @@ export const AgentsView: React.FC = () => {
     toast.success(t('toast.agentCreated'));
   }, [createAgent, t]);
 
+  const { deleteAgent } = useAgentsStore();
   const handleDeleteAgent = useCallback(async () => {
     if (!agentToDelete) return;
     try {
-      await agentsDelete({ agentId: agentToDelete.id, deleteFiles });
-      await fetchAgents();
+      await deleteAgent(agentToDelete.id, deleteFiles);
       setAgentToDelete(null);
       if (selectedAgentId === agentToDelete.id) {
         setSelectedAgentId(safeAgents.filter((a) => a.id !== agentToDelete.id)[0]?.id ?? null);
@@ -230,7 +172,7 @@ export const AgentsView: React.FC = () => {
     } catch (e) {
       toast.error(String(e));
     }
-  }, [agentToDelete, deleteFiles, fetchAgents, selectedAgentId, safeAgents, t]);
+  }, [agentToDelete, deleteFiles, deleteAgent, selectedAgentId, safeAgents, t]);
 
   const handleChannelSaved = useCallback(async (channelType: ChannelType) => {
     if (!selectedAgent) return;
@@ -301,33 +243,15 @@ export const AgentsView: React.FC = () => {
               className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-[#0f172a] border border-indigo-500/20 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
             />
           </div>
-          <div className="flex gap-1 mt-2">
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={cn(
-                'flex-1 px-2 py-1 rounded text-[10px] font-medium',
-                viewMode === 'cards' ? 'bg-indigo-500/30 text-indigo-400' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              卡片
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={cn(
-                'flex-1 px-2 py-1 rounded text-[10px] font-medium',
-                viewMode === 'list' ? 'bg-indigo-500/30 text-indigo-400' : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              列表
-            </button>
-          </div>
           <p className="text-xs text-muted-foreground mt-1">{filteredAgents.length} 个代理</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {viewMode === 'list' &&
-            filteredAgents.map((agent) => (
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+          {filteredAgents.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground text-center py-8">暂无代理</p>
+          ) : filteredAgents.map((agent) => {
+              const label = resolveLabel(agent);
+              const emoji = resolveEmoji(agent);
+              return (
               <button
                 key={agent.id}
                 onClick={() => setSelectedAgentId(agent.id)}
@@ -340,11 +264,11 @@ export const AgentsView: React.FC = () => {
               >
                 <div className="h-9 w-9 shrink-0 rounded-full bg-indigo-500/30 flex items-center justify-center">
                   <span className="text-sm font-medium">
-                    {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
+                    {emoji || label.charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{agent.name}</p>
+                  <p className="text-sm font-medium truncate">{label}</p>
                   <p className="text-xs opacity-70 truncate">{agent.id}</p>
                 </div>
                 {agent.isDefault && (
@@ -353,255 +277,112 @@ export const AgentsView: React.FC = () => {
                   </span>
                 )}
               </button>
-            ))}
+              );
+            })}
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
-        {/* 顶部栏：搜索、新建、同步 */}
-        <div className="shrink-0 flex items-center justify-between gap-3 py-3 px-4 border-b border-indigo-500/20">
-          <div className="flex items-center gap-2 flex-1 max-w-md">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="搜索 Agent / 角色..."
-                value={searchAgent}
-                onChange={(e) => setSearchAgent(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
-              />
-            </div>
+        {!selectedAgent ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+            <Bot className="h-12 w-12 mb-3 opacity-40" />
+            <p className="text-sm">选择一个 Agent 查看详情</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => setShowAddDialog(true)}
-              className="gap-1.5 bg-indigo-500 hover:bg-indigo-600 border-indigo-500/40"
-            >
-              <Plus className="h-4 w-4" />
-              新建 Agent
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleRefresh}
-              className="gap-1.5 border-indigo-500/40"
-            >
-              <RefreshCw className="h-4 w-4" />
-              同步配置
-            </Button>
-          </div>
-        </div>
-
-        {viewMode === 'cards' && !selectedAgentId && filteredAgents.length > 0 ? (
-          /* 角色卡片 grid 视图 */
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-foreground">子代理管理</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">角色卡片、状态与能力标签</p>
-              <div className="flex gap-2 mt-2">
-                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">多角色</span>
-                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">任务分配</span>
-                <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">协作消息</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              {filteredAgents.map((agent) => (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => setSelectedAgentId(agent.id)}
-                  className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4 text-left hover:border-indigo-500/50 transition-colors group"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-indigo-500/30 flex items-center justify-center group-hover:bg-indigo-500/40 transition-colors">
-                        <span className="text-lg font-medium">
-                          {(agent.name || agent.id || 'A').charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-foreground">{agent.name}</div>
-                        <div className="text-xs text-muted-foreground">{agent.modelDisplay || agent.id}</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400">
-                      在线
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {agent.channelTypes.slice(0, 3).map((t) => (
-                      <span
-                        key={t}
-                        className="px-2 py-0.5 rounded text-[10px] bg-slate-600/50 text-muted-foreground"
-                      >
-                        {CHANNEL_NAMES[t as ChannelType] || t}
-                      </span>
-                    ))}
-                    {agent.channelTypes.length === 0 && (
-                      <span className="text-[10px] text-muted-foreground">暂无渠道</span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-            {/* 协作能力 */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-foreground mb-3">协作能力</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="font-medium text-foreground">任务编排</div>
-                      <div className="text-xs text-muted-foreground">分解 / 分配 / 协调</div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">P0</span>
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">复杂任务拆解</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">SubTask</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">负载均衡策略</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Least-loaded</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">协作结果合并</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Merge</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="font-medium text-foreground">消息总线</div>
-                      <div className="text-xs text-muted-foreground">Agent 间通信</div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400">P0</span>
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Topic 订阅</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">MessageBus</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">广播 / 请求响应</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Realtime</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">冲突解决</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-600/50">Resolve</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : selectedAgent ? (
-          <div className="flex-1 flex min-h-0">
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        ) : (
+          <>
             {/* Agent Header */}
-            <div className="shrink-0 flex items-center justify-between py-4 border-b border-indigo-500/20">
-        <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-indigo-500/30 flex items-center justify-center border-2 border-indigo-500/40">
-                  <span className="text-base font-medium">
-                    {(selectedAgent.name || selectedAgent.id).charAt(0).toUpperCase()}
-                  </span>
+            <div className="shrink-0 px-4 md:px-5 pt-3 md:pt-4 pb-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-lg font-bold text-indigo-400 shrink-0">
+                  {resolveEmoji(selectedAgent) || resolveLabel(selectedAgent).charAt(0).toUpperCase()}
                 </div>
-                <div>
-                  <h1 className="text-lg font-semibold text-foreground">{selectedAgent.name}</h1>
-                  <p className="text-xs text-muted-foreground">{selectedAgent.id}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 relative">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
-                  title="唤醒 Agent"
-                  disabled={!isOnline || waking}
-                  onClick={async () => {
-                    setWaking(true);
-                    setWakeResult(null);
-                    try {
-                      await wake({ mode: 'now', text: '检查' });
-                      setWakeResult({ ok: true, text: '已唤醒' });
-                      setTimeout(() => setWakeResult(null), 3000);
-                    } catch (e) {
-                      setWakeResult({ ok: false, text: `唤醒失败: ${e}` });
-                    } finally {
-                      setWaking(false);
-                    }
-                  }}
-                >
-                  <Bell className={cn('h-4 w-4', waking && 'animate-spin')} />
-                </Button>
-                {wakeResult && (
-                  <span
-                    className={cn(
-                      'absolute top-12 right-0 px-3 py-1.5 rounded-xl text-xs font-bold z-30',
-                      wakeResult.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-foreground truncate">{resolveLabel(selectedAgent)}</h2>
+                    {selectedAgent.isDefault && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold">default</span>
                     )}
-                  >
-                    {wakeResult.text}
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-indigo-500/20"
-                  title="History"
-                >
-                  <Clock className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-indigo-500/20"
-                  title="Edit"
-                  onClick={() => setShowSettingsModal(true)}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                {!selectedAgent.isDefault && (
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-mono">{selectedAgent.id}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/20"
-                    title="Delete"
-                    onClick={() => setAgentToDelete(selectedAgent)}
+                    className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+                    title="唤醒 Agent"
+                    disabled={!isOnline || waking}
+                    onClick={async () => {
+                      setWaking(true);
+                      setWakeResult(null);
+                      try {
+                        await wake({ mode: 'now', text: '检查' });
+                        setWakeResult({ ok: true, text: '已唤醒' });
+                        setTimeout(() => setWakeResult(null), 3000);
+                      } catch (e) {
+                        setWakeResult({ ok: false, text: `唤醒失败: ${e}` });
+                      } finally {
+                        setWaking(false);
+                      }
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Bell className={cn('h-4 w-4', waking && 'animate-spin')} />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-indigo-500/20"
+                    title="编辑"
+                    onClick={() => setShowSettingsModal(true)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  {!selectedAgent.isDefault && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/20"
+                      title="删除"
+                      onClick={() => setAgentToDelete(selectedAgent)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {wakeResult && (
+                  <div className={cn(
+                    'absolute top-14 right-4 px-3 py-1.5 rounded-xl text-[10px] font-bold z-30 shadow-lg',
+                    wakeResult.ok ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  )}>
+                    {wakeResult.text}
+                  </div>
                 )}
+              </div>
+
+              {/* Tabs — horizontally scrollable */}
+              <div className="flex gap-0.5 mt-3 border-b border-white/[0.06] overflow-x-auto">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      'px-3 py-2 text-[11px] font-medium border-b-2 transition-all whitespace-nowrap shrink-0',
+                      activeTab === tab.id
+                        ? 'border-indigo-400 text-indigo-400'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="shrink-0 flex items-center gap-1 py-2 border-b border-indigo-500/20 overflow-x-auto">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap',
-                    activeTab === tab.id
-                      ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-[1px]'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  <tab.icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+            {/* Panel Content */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-5">
               {activeTab === 'overview' && (
-                <OverviewTab agent={selectedAgent} channels={channels} />
+                <OverviewTab agent={selectedAgent} />
               )}
               {activeTab === 'files' && <FilesTab agent={selectedAgent} isOnline={isOnline} />}
               {activeTab === 'tools' && <ToolsTab agent={selectedAgent} isOnline={isOnline} />}
@@ -624,91 +405,14 @@ export const AgentsView: React.FC = () => {
                 <ScenariosTab agent={selectedAgent} onRefresh={handleRefresh} />
               )}
               {activeTab === 'multi-agent' && (
-                <MultiAgentTab
-                  selectedWorkflow={selectedWorkflow}
-                  onSelectWorkflow={setSelectedWorkflow}
-                  deploymentMode={deploymentMode}
-                  onDeploymentModeChange={setDeploymentMode}
+                <MultiAgentCollaborationPanel
+                  defaultAgentId={defaultAgentId || agents.find((a) => a.isDefault)?.id || selectedAgent.id}
+                  onDeploy={handleRefresh}
+                  isOnline={isOnline}
                 />
               )}
             </div>
-          </div>
-
-            {/* Right Panel - 运行概览 / 今日任务 / 快捷操作 */}
-            <aside className="w-80 shrink-0 flex flex-col gap-4 p-4 border-l border-indigo-500/20 bg-[#0b1224] overflow-y-auto">
-              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">运行概览</h3>
-                    <p className="text-xs text-muted-foreground">实时健康</p>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-400">
-                    {isOnline ? '在线' : '离线'}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Gateway 连接</p>
-                    <p className="text-sm font-medium text-foreground">{isOnline ? '稳定' : '未连接'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">活跃渠道</p>
-                    <p className="text-sm font-medium text-foreground">
-                      {selectedAgent.channelTypes.filter((t) => {
-                        const ch = channels.find((c) => c.type === t);
-                        return ch?.status === 'connected';
-                      }).length}
-                      {' / '}
-                      {selectedAgent.channelTypes.length || 0}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Agent 任务队列</p>
-                    <p className="text-sm font-medium text-foreground">—</p>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-foreground">今日任务</h3>
-                  <p className="text-xs text-muted-foreground">多 Agent 协作</p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-lg border border-indigo-500/10 bg-[#162238] px-3 py-2">
-                    <div>
-                      <p className="text-xs font-medium text-foreground">—</p>
-                      <p className="text-[10px] text-muted-foreground">暂无任务</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-indigo-500/20 bg-[#1e293b] p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-foreground">快捷操作</h3>
-                  <p className="text-xs text-muted-foreground">常用指令</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">运行诊断</span>
-                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">备份数据</span>
-                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">新建模板</span>
-                  <span className="px-2 py-1 rounded-lg text-xs bg-[#1f2a44] text-muted-foreground cursor-pointer hover:text-foreground">启动 Channel</span>
-                </div>
-              </div>
-            </aside>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-            <Bot className="h-16 w-16 mb-4 opacity-50" />
-            <p className="text-sm mb-2">暂无代理</p>
-            <p className="text-xs mb-4">创建第一个 Agent 开始使用</p>
-            <Button
-              onClick={() => setShowAddDialog(true)}
-              className="bg-indigo-500 hover:bg-indigo-600 text-white border-2 border-indigo-500/40"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              新建 Agent
-            </Button>
-          </div>
+          </>
         )}
       </main>
 
@@ -773,70 +477,51 @@ export const AgentsView: React.FC = () => {
   );
 };
 
-function OverviewTab({
-  agent,
-  channels,
-}: {
-  agent: AgentSummary;
-  channels: Array<{ type: string; status: string }>;
-}) {
-  const runtimeByType = Object.fromEntries(channels.map((c) => [c.type, c]));
-  const assigned = agent.channelTypes.map((t) => ({
-    type: t,
-    status: runtimeByType[t]?.status ?? 'disconnected',
-  }));
+function OverviewTab({ agent }: { agent: AgentSummary }) {
+  const { resolveLabel, resolveEmoji, resolveAgentConfig, identity, defaultAgentId } = useAgentsStore();
+  const isOnline = useGatewayOnline();
+  const cfg = resolveAgentConfig(agent.id);
+  const ident = identity[agent.id];
+  const label = resolveLabel(agent);
+  const emoji = resolveEmoji(agent);
+
+  const skillsValue = Array.isArray(cfg.skills)
+    ? `${cfg.skills.length} selected`
+    : cfg.skills && typeof cfg.skills === 'object' && Object.keys(cfg.skills).length > 0
+      ? `${Object.keys(cfg.skills).length} selected`
+      : '全部';
+
+  const cards = [
+    { label: '工作区', value: cfg.workspace || '—', icon: Laptop },
+    { label: '模型', value: cfg.model, icon: Bot },
+    { label: '身份', value: emoji ? `${emoji} ${ident?.name || label}` : (ident?.name || label), icon: Star },
+    { label: '状态', value: isOnline ? '在线' : '离线', icon: Zap, statusColor: isOnline ? 'text-emerald-400' : 'text-slate-400' },
+    { label: '默认代理', value: agent.id === defaultAgentId ? '是' : '否', icon: Star },
+    { label: '技能', value: skillsValue, icon: Puzzle },
+  ];
 
   return (
-    <div className="flex-1 overflow-y-auto py-6">
-      <div className="max-w-3xl space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">概览</h2>
-          <p className="text-sm text-muted-foreground mt-1">Agent 基本信息与配置</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Agent ID</p>
-            <p className="font-mono text-sm text-foreground">{agent.id}</p>
-          </div>
-          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Model</p>
-            <p className="text-sm text-foreground">
-              {agent.modelDisplay}
-              {agent.inheritedModel ? ' (继承)' : ''}
-            </p>
-          </div>
-          <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Workspace</p>
-            <p className="font-mono text-sm text-foreground truncate" title={agent.workspace}>
-              {agent.workspace || '—'}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">渠道</p>
-          {assigned.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无渠道</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {assigned.map(({ type, status }) => (
-                <span
-                  key={type}
-                  className={cn(
-                    'px-2 py-1 rounded-lg text-xs font-medium',
-                    status === 'connected'
-                      ? 'bg-emerald-500/20 text-emerald-400'
-                      : 'bg-slate-500/20 text-slate-400'
-                  )}
-                >
-                  {CHANNEL_NAMES[type as ChannelType] || type} · {status}
-                </span>
-              ))}
+    <div className="space-y-4 max-w-5xl">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {cards.map((kv) => (
+          <div key={kv.label} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <kv.icon className={cn('w-3.5 h-3.5', kv.statusColor || 'text-white/40')} />
+              <span className="text-[11px] font-bold text-white/40 uppercase">{kv.label}</span>
             </div>
-          )}
-        </div>
+            <p className={cn('text-[11px] font-semibold font-mono truncate', kv.statusColor || 'text-white/70')}>
+              {kv.value}
+            </p>
+          </div>
+        ))}
       </div>
+
+      {ident?.theme && (
+        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
+          <p className="text-[11px] font-bold text-white/40 uppercase mb-1">主题</p>
+          <p className="text-[11px] text-white/50">{ident.theme}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1683,142 +1368,6 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function MultiAgentTab({
-  selectedWorkflow,
-  onSelectWorkflow,
-  deploymentMode,
-  onDeploymentModeChange,
-}: {
-  selectedWorkflow: string;
-  onSelectWorkflow: (id: string) => void;
-  deploymentMode: 'enhance' | 'independent';
-  onDeploymentModeChange: (m: 'enhance' | 'independent') => void;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto py-6">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">多代理协作</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            ClawDeckX 风格：部署多代理协作工作流，实现复杂自动化任务
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              工作流模板
-            </p>
-            <div className="space-y-2 max-h-[320px] overflow-y-auto">
-              {WORKFLOW_TEMPLATES.map((tpl) => (
-                <button
-                  key={tpl.id}
-                  onClick={() => onSelectWorkflow(tpl.id)}
-                  className={cn(
-                    'w-full flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-colors',
-                    selectedWorkflow === tpl.id
-                      ? 'border-indigo-500/60 bg-indigo-500/10'
-                      : 'border-indigo-500/20 hover:border-indigo-500/40 bg-[#1e293b]'
-                  )}
-                >
-                  <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center shrink-0', tpl.iconColor)}>
-                    <tpl.icon className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-foreground">{tpl.title}</h3>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.desc}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-[11px] text-muted-foreground">{tpl.roles} Agent Roles</span>
-                      <span className={cn('text-[10px] px-2 py-0.5 rounded-full', tpl.tagColor)}>
-                        {tpl.tag}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            </div>
-
-          <div className="space-y-6">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                部署模式
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => onDeploymentModeChange('enhance')}
-                  className={cn(
-                    'w-full flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-colors',
-                    deploymentMode === 'enhance'
-                      ? 'border-indigo-500/60 bg-indigo-500/10'
-                      : 'border-indigo-500/20 hover:border-indigo-500/40 bg-[#1e293b]'
-                  )}
-                >
-                  <Sparkles className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">增强当前 Agent</h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-                        推荐
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      为当前 Agent 添加工作流能力，使其可调用子代理。
-                    </p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => onDeploymentModeChange('independent')}
-                  className={cn(
-                    'w-full flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-colors',
-                    deploymentMode === 'independent'
-                      ? 'border-indigo-500/60 bg-indigo-500/10'
-                      : 'border-indigo-500/20 hover:border-indigo-500/40 bg-[#1e293b]'
-                  )}
-                >
-                  <Rocket className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-foreground">部署独立子代理</h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
-                        高级
-                      </span>
-              </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      创建多个独立子代理，供主代理调用。
-                    </p>
-              </div>
-                </button>
-              </div>
-            </div>
-
-            <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl border-2 border-emerald-500/40">
-              <Play className="h-5 w-5 mr-2" />
-              部署
-            </Button>
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                团队成员
-              </p>
-              <div className="flex flex-wrap gap-4">
-                {TEAM_ROLES.map((role) => (
-                  <div key={role.id} className="flex flex-col items-center gap-2">
-                    <div className={cn('h-10 w-10 rounded-full bg-[#1e293b] border-2 border-indigo-500/20 flex items-center justify-center', role.color)}>
-                      <role.icon className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-foreground/80">{role.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
