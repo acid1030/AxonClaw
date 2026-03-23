@@ -805,6 +805,7 @@ function getGatewayWsUrl(): string {
 }
 // 保存 path 模块引用，避免在 hostapi:fetch handler 中被同名参数遮蔽
 const nodePath = path;
+const OPENCLAW_CFG_PATH = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
 
 function parseOpenclawConfigText(raw: string): Record<string, unknown> {
   try {
@@ -817,6 +818,32 @@ function parseOpenclawConfigText(raw: string): Record<string, unknown> {
       .replace(/,(\s*[}\]])/g, '$1');
     return JSON.parse(cleaned) as Record<string, unknown>;
   }
+}
+
+function readOpenclawConfig(): Record<string, unknown> {
+  try {
+    if (fs.existsSync(OPENCLAW_CFG_PATH)) {
+      const raw = fs.readFileSync(OPENCLAW_CFG_PATH, 'utf8');
+      return parseOpenclawConfigText(raw);
+    }
+  } catch (err) {
+    console.warn('[HostAPI] read config failed:', err);
+  }
+  return {};
+}
+
+function writeOpenclawConfig(config: Record<string, unknown>): void {
+  const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(OPENCLAW_CFG_PATH, JSON.stringify(config, null, 2), 'utf8');
+}
+
+function getUiSettingsFromConfig(config: Record<string, unknown>): { language: string; theme: string } {
+  const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const language = typeof ui.language === 'string' && ui.language.trim() ? ui.language.trim() : 'zh';
+  const themeRaw = typeof ui.theme === 'string' ? ui.theme.trim().toLowerCase() : 'system';
+  const theme = themeRaw === 'light' || themeRaw === 'dark' || themeRaw === 'system' ? themeRaw : 'system';
+  return { language, theme };
 }
 
 ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) => {
@@ -1180,6 +1207,92 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
     }
 
+    // 特殊处理：/api/settings（通用设置：语言 + 风格）
+    if (path === '/api/settings' && method === 'GET') {
+      try {
+        const config = readOpenclawConfig();
+        const ui = getUiSettingsFromConfig(config);
+        return {
+          ok: true,
+          data: { status: 200, json: ui, ok: true },
+          success: true,
+          status: 200,
+          json: ui,
+        };
+      } catch (err) {
+        const msg = String(err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+
+    if (path === '/api/settings/language' && method === 'PUT' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { value?: string });
+        const language = String(payload?.value ?? '').trim() || 'zh';
+        const config = readOpenclawConfig();
+        const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+        ui.language = language;
+        config.ui = ui;
+        writeOpenclawConfig(config);
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true, value: language }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true, value: language },
+        };
+      } catch (err) {
+        const msg = String(err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+
+    if (path === '/api/settings/theme' && method === 'PUT' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { value?: string });
+        const requested = String(payload?.value ?? '').trim().toLowerCase();
+        const theme = requested === 'light' || requested === 'dark' || requested === 'system'
+          ? requested
+          : 'system';
+        const config = readOpenclawConfig();
+        const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+        ui.theme = theme;
+        config.ui = ui;
+        writeOpenclawConfig(config);
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true, value: theme }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true, value: theme },
+        };
+      } catch (err) {
+        const msg = String(err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+
     // 特殊处理：/api/settings/storage 存储与日志路径（ClawDeckX 系统设置）
     if (path === '/api/settings/storage' && method === 'GET') {
       const dataDir = nodePath.join(os.homedir(), '.openclaw');
@@ -1196,12 +1309,11 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     }
 
     // 特殊处理：/api/settings/bind-address 绑定地址（ClawDeckX 访问安全）
-    const openclawCfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
     if (path === '/api/settings/bind-address' && method === 'GET') {
       try {
         let config: Record<string, unknown> = {};
-        if (fs.existsSync(openclawCfgPath)) {
-          const raw = fs.readFileSync(openclawCfgPath, 'utf8');
+        if (fs.existsSync(OPENCLAW_CFG_PATH)) {
+          const raw = fs.readFileSync(OPENCLAW_CFG_PATH, 'utf8');
           config = parseOpenclawConfigText(raw);
         }
         const gw = (config?.gateway ?? {}) as Record<string, unknown>;
@@ -1241,8 +1353,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const mode = payload?.mode ?? '127.0.0.1';
         const customHost = String(payload?.customHost ?? '').trim();
         let config: Record<string, unknown> = {};
-        if (fs.existsSync(openclawCfgPath)) {
-          const raw = fs.readFileSync(openclawCfgPath, 'utf8');
+        if (fs.existsSync(OPENCLAW_CFG_PATH)) {
+          const raw = fs.readFileSync(OPENCLAW_CFG_PATH, 'utf8');
           config = parseOpenclawConfigText(raw);
         }
         const gw = ((config.gateway as Record<string, unknown>) ?? {}) as Record<string, unknown>;
@@ -1257,9 +1369,9 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           gw.customBindHost = customHost || '0.0.0.0';
         }
         config.gateway = { ...gw };
-        const dir = nodePath.dirname(openclawCfgPath);
+        const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(openclawCfgPath, JSON.stringify(config, null, 2), 'utf8');
+        fs.writeFileSync(OPENCLAW_CFG_PATH, JSON.stringify(config, null, 2), 'utf8');
         return {
           ok: true,
           data: { status: 200, json: { success: true }, ok: true },

@@ -47,6 +47,21 @@ const MainLayout: React.FC = () => {
   const isConnected = gatewayStatus.state === 'running';
 
   const language = useSettingsStore((s) => s.language);
+  const theme = useSettingsStore((s) => s.theme);
+
+  // Initialize settings from config file on mount
+  useEffect(() => {
+    const { init } = useSettingsStore.getState();
+    init().catch(console.error);
+  }, []);
+
+  // Apply theme class to document root
+  useEffect(() => {
+    const root = document.documentElement;
+    const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+    root.classList.toggle('dark', isDark);
+  }, [theme]);
 
   // Initialize gateway on mount
   useEffect(() => {
