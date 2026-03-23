@@ -110,6 +110,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const [alertLoading, setAlertLoading] = useState(false);
 
   const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
+  const updateStatus = useUpdateStore((s) => s.status);
+  const updateInfo = useUpdateStore((s) => s.updateInfo);
+  const updateProgress = useUpdateStore((s) => s.progress);
+  const updateError = useUpdateStore((s) => s.error);
+  const initUpdate = useUpdateStore((s) => s.init);
+  const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
+  const downloadUpdate = useUpdateStore((s) => s.downloadUpdate);
+  const installUpdate = useUpdateStore((s) => s.installUpdate);
   const isOnline = useGatewayStore((s) => s.status.state === 'running');
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
@@ -119,6 +127,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const setAlertDesktopNotification = useSettingsStore((s) => s.setAlertDesktopNotification);
 
   const currentUser = 'admin';
+
+  useEffect(() => {
+    void initUpdate();
+  }, [initUpdate]);
 
   useEffect(() => {
     hostApiFetch<{ dataDir?: string; logDir?: string }>('/api/settings/storage')
@@ -331,6 +343,53 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                       <div className={cn('text-xs mt-0.5', isOnline ? 'text-emerald-400' : 'text-amber-400')}>
                         Gateway {isOnline ? '在线' : '离线'}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className={rowClass}>
+                    <div className="flex items-center gap-2">
+                      <Download className="w-4 h-4 text-blue-400" />
+                      <div>
+                        <div className="text-sm font-medium text-white/80">更新</div>
+                        <div className="text-xs text-white/40 mt-0.5">
+                          {updateStatus === 'available'
+                            ? `发现新版本 v${updateInfo?.version ?? ''}`
+                            : updateStatus === 'downloading'
+                              ? `下载中 ${Math.round(updateProgress?.percent ?? 0)}%`
+                              : updateStatus === 'downloaded'
+                                ? '更新已下载，等待安装'
+                                : updateStatus === 'checking'
+                                  ? '正在检查更新...'
+                                  : updateStatus === 'error'
+                                    ? (updateError || '更新检查失败')
+                                    : '检查并安装新版本'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {updateStatus === 'available' ? (
+                        <button
+                          onClick={() => void downloadUpdate()}
+                          className="px-3 py-1.5 rounded-lg text-xs border bg-indigo-500/20 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30"
+                        >
+                          下载更新
+                        </button>
+                      ) : updateStatus === 'downloaded' ? (
+                        <button
+                          onClick={installUpdate}
+                          className="px-3 py-1.5 rounded-lg text-xs border bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
+                        >
+                          立即安装
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => void checkForUpdates()}
+                          disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                          className="px-3 py-1.5 rounded-lg text-xs border bg-white/5 border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-50"
+                        >
+                          检查更新
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
