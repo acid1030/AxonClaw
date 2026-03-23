@@ -106,7 +106,7 @@ const CronView: React.FC = () => {
   const enabledCount = safeJobs.filter((j) => j.enabled).length;
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0b1220] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
           title="定时任务"
@@ -127,12 +127,12 @@ const CronView: React.FC = () => {
         )}
 
         {!isOnline ? (
-          <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center">
+          <div className="rounded-xl border-2 border-slate-700/60 bg-[#1f2937] p-8 text-center">
             <p className="text-muted-foreground text-sm">请先启动 Gateway 以加载定时任务</p>
             <p className="text-muted-foreground/70 text-xs mt-1">点击上方「启动 Gateway」按钮</p>
           </div>
         ) : safeJobs.length === 0 ? (
-          <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center">
+          <div className="rounded-xl border-2 border-slate-700/60 bg-[#1f2937] p-8 flex flex-col items-center justify-center">
             <Clock className="w-10 h-10 text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground text-sm">暂无定时任务</p>
           </div>
@@ -141,7 +141,7 @@ const CronView: React.FC = () => {
             {safeJobs.map((job) => (
               <div
                 key={job.id}
-                className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-4 flex items-center justify-between gap-4"
+                className="rounded-xl border-2 border-slate-700/60 bg-[#1f2937] p-4 flex items-center justify-between gap-4"
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div
