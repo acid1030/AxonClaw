@@ -328,7 +328,11 @@ async function invokeViaIpc<T>(channel: string, args: unknown[]): Promise<T> {
       return response.data as T;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes('APP_REQUEST_UNSUPPORTED:') || message.includes('Invalid IPC channel: app:request')) {
+      if (
+        message.includes('APP_REQUEST_UNSUPPORTED:')
+        || message.includes('Invalid IPC channel: app:request')
+        || message.includes("No handler registered for 'app:request'")
+      ) {
         // Fallback to legacy channel handlers.
       } else {
         throw normalizeAppError(err, { transport: 'ipc', channel, source: 'app:request' });
