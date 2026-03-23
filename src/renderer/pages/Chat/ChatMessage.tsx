@@ -37,6 +37,18 @@ function imageSrc(img: ExtractedImage): string | null {
   return null;
 }
 
+/** Resolve attached file image preview src (preview first, then file path fallback). */
+function attachedImageSrc(file: AttachedFileMeta): string | null {
+  if (file.preview) return file.preview;
+  const raw = file.filePath?.trim();
+  if (!raw) return null;
+  if (raw.startsWith('file://') || raw.startsWith('data:') || raw.startsWith('blob:') || /^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+  if (raw.startsWith('/')) return `file://${encodeURI(raw)}`;
+  return null;
+}
+
 export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
@@ -47,7 +59,6 @@ export const ChatMessage = memo(function ChatMessage({
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
   const isToolResult = role === 'toolresult' || role === 'tool_result';
   const text = extractText(message);
-  const hasText = text.trim().length > 0;
   const thinking = extractThinking(message);
   const images = extractImages(message);
   const tools = extractToolUse(message);
@@ -82,7 +93,18 @@ export const ChatMessage = memo(function ChatMessage({
       }));
   })();
 
-  const allAttachedFiles = [...attachedFiles, ...textFileCards];
+  const allAttachedFiles = (() => {
+    const merged = [...attachedFiles, ...textFileCards];
+    const seen = new Set<string>();
+    return merged.filter((f) => {
+      const key = (f.filePath && `path:${f.filePath}`) || (f.preview && `preview:${f.preview}`) || `name:${f.fileName}|mime:${f.mimeType}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+  const displayText = allAttachedFiles.length > 0 ? stripFilePathsFromText(text) : text;
+  const hasText = displayText.trim().length > 0;
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
@@ -159,14 +181,15 @@ export const ChatMessage = memo(function ChatMessage({
               // Skip image attachments if we already have images from content blocks
               if (isImage && images.length > 0) return null;
               if (isImage) {
-                return file.preview ? (
+                const src = attachedImageSrc(file);
+                return src ? (
                   <ImageThumbnail
                     key={`local-${i}`}
-                    src={file.preview}
+                    src={src}
                     fileName={file.fileName}
                     filePath={file.filePath}
                     mimeType={file.mimeType}
-                    onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
+                    onPreview={() => setLightboxImg({ src, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
                   />
                 ) : (
                   <div
@@ -186,7 +209,7 @@ export const ChatMessage = memo(function ChatMessage({
         {/* Main text bubble — strip file paths for assistant so they appear as FileCards below */}
         {hasText && (
           <MessageBubble
-            text={allAttachedFiles.length > 0 ? stripFilePathsFromText(text) : text}
+            text={displayText}
             isUser={isUser}
             isStreaming={isStreaming}
           />
@@ -218,19 +241,20 @@ export const ChatMessage = memo(function ChatMessage({
             {allAttachedFiles.map((file, i) => {
               const isImage = file.mimeType.startsWith('image/');
               if (isImage && images.length > 0) return null;
-              if (isImage && file.preview) {
-                return (
-                  <ImagePreviewCard
-                    key={`local-${i}`}
-                    src={file.preview}
-                    fileName={file.fileName}
-                    filePath={file.filePath}
-                    mimeType={file.mimeType}
-                    onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
-                  />
-                );
-              }
-              if (isImage && !file.preview) {
+              if (isImage) {
+                const src = attachedImageSrc(file);
+                if (src) {
+                  return (
+                    <ImagePreviewCard
+                      key={`local-${i}`}
+                      src={src}
+                      fileName={file.fileName}
+                      filePath={file.filePath}
+                      mimeType={file.mimeType}
+                      onPreview={() => setLightboxImg({ src, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
+                    />
+                  );
+                }
                 return (
                   <div key={`local-${i}`} className="w-36 h-36 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 flex items-center justify-center text-muted-foreground">
                     <File className="h-8 w-8" />
@@ -418,7 +442,7 @@ function MessageBubble({
 // ── Thinking Block ──────────────────────────────────────────────
 
 function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-[14px]">
@@ -427,11 +451,12 @@ function ThinkingBlock({ content }: { content: string }) {
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span className="font-medium">Thinking</span>
+        <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+        <span className="text-sm font-medium">Thinking</span>
       </button>
       {expanded && (
         <div className="px-3 pb-3 text-muted-foreground">
-          <div className="prose prose-sm dark:prose-invert max-w-none opacity-75">
+          <div className="prose prose-sm dark:prose-invert max-w-none opacity-75 text-sm">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         </div>
@@ -636,8 +661,7 @@ function ToolCard({ name, input }: { name: string; input: unknown }) {
         className="flex items-center gap-2 w-full px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
-        <Wrench className="h-3 w-3 shrink-0 opacity-60" />
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-green-500" />
         <span className="font-mono text-xs">{name}</span>
         {expanded ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
       </button>
