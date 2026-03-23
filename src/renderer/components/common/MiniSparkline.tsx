@@ -1,6 +1,6 @@
 /**
  * Mini sparkline chart
- * AxonClawX style: small SVG line + gradient fill
+ * ClawDeckX style: small SVG line + gradient fill
  */
 import { useId } from 'react';
 import { cn } from '@/lib/utils';

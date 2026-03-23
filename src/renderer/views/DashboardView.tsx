@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Dashboard View
- * AxonClawX 风格布局：Gateway Hero、KPI 卡片、最近会话
+ * ClawDeckX 风格布局：Gateway Hero、KPI 卡片、最近会话
  * 不改变技术架构，使用现有 stores + hostApiFetch + IPC
  */
 
@@ -165,7 +165,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     count24h: number;
     healthScore: number;
   } | null>(null);
-  // 从日志解析的异常事件（AxonClawX 风格：ERROR/WARN/exception/failed）
+  // 从日志解析的异常事件（ClawDeckX 风格：ERROR/WARN/exception/failed）
   const [logAbnormal, setLogAbnormal] = useState<Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }>>([]);
 
   const setStatus = useGatewayStore((s) => s.setStatus);
@@ -272,7 +272,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     }
   }, []);
 
-  // 从日志解析异常事件（AxonClawX 风格）
+  // 从日志解析异常事件（ClawDeckX 风格）
   const fetchLogAbnormal = useCallback(async () => {
     try {
       const res = await hostApiFetch<{ events?: Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> }>('/api/logs/abnormal?limit=10');
@@ -465,7 +465,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     setTrendChartWidth(Math.max(320, el.offsetWidth));
     return () => ro.disconnect();
   }, []);
-  // AxonClawX 风格健康评分：告警 + 网关 + 服务商
+  // ClawDeckX 风格健康评分：告警 + 网关 + 服务商
   const computedHealthScore = (() => {
     const base = alertSummary?.healthScore ?? 100;
     let score = base;
@@ -696,7 +696,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             ))}
           </div>
 
-          {/* 安全状态信息面板 (AxonClawX 风格：宿主机上方，始终显示) */}
+          {/* 安全状态信息面板 (ClawDeckX 风格：宿主机上方，始终显示) */}
           {(() => {
             const secCritical = alertSummary?.high ?? 0;
             const secWarn = alertSummary?.medium ?? 0;
@@ -753,7 +753,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             );
           })()}
 
-          {/* 宿主机信息 (AxonClawX) */}
+          {/* 宿主机信息 (ClawDeckX) */}
           <div className="rounded-xl border-2 border-cyan-500/40 bg-[#1e293b] px-5 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Monitor className="w-5 h-5 text-cyan-500" />
@@ -778,7 +778,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </div>
           </div>
 
-          {/* 主机信息：CPU | 系统内存 | 磁盘空间 (AxonClawX GaugeCards) */}
+          {/* 主机信息：CPU | 系统内存 | 磁盘空间 (ClawDeckX GaugeCards) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
             <GaugeCard
               pct={hostInfo?.cpuUsage ?? 0}
@@ -843,7 +843,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </GaugeCard>
           </div>
 
-          {/* 路径信息 (AxonClawX) */}
+          {/* 路径信息 (ClawDeckX) */}
           {hostInfo?.env?.cwd && hostInfo?.diskUsage?.[0] && (
             <div className="rounded-xl border-2 border-emerald-500/40 bg-[#1e293b] p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -858,7 +858,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </div>
           )}
 
-          {/* 协程数 | 进程运行 | 服务器运行 (AxonClawX) */}
+          {/* 协程数 | 进程运行 | 服务器运行 (ClawDeckX) */}
           <div className="grid grid-cols-3 gap-6 sm:gap-8">
             <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-indigo-400">{hostInfo?.coroutineCount ?? 0}</p>
@@ -884,7 +884,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </div>
           </div>
 
-          {/* 进程内存 | 环境 (AxonClawX 风格) */}
+          {/* 进程内存 | 环境 (ClawDeckX 风格) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
             <div className="rounded-xl border-2 border-violet-500/40 bg-[#1e293b] p-4">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
@@ -981,7 +981,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   <p className="text-sm font-semibold text-foreground">{safeAgents.length}</p>
                 </div>
               </div>
-              {/* 服务商状态（AxonClawX：真实数据，在趋势图上方） */}
+              {/* 服务商状态（ClawDeckX：真实数据，在趋势图上方） */}
               <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-indigo-500/20 flex-shrink-0">
                 {safeProviders.length > 0 ? (
                   <>
@@ -1040,7 +1040,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
                 {(() => {
-                  // 合并告警 + 日志解析的异常（AxonClawX：告警优先，不足时用日志补充）
+                  // 合并告警 + 日志解析的异常（ClawDeckX：告警优先，不足时用日志补充）
                   const merged = [
                     ...alerts.slice(0, 5),
                     ...logAbnormal.slice(0, Math.max(0, 5 - alerts.length)),

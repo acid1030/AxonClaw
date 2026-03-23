@@ -7,8 +7,6 @@ import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { subscribeHostEvent } from '@/lib/host-events';
 import type { GatewayStatus } from '../types/gateway';
-import { useChatStore } from './chat';
-import { useChannelsStore } from './channels';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -67,7 +65,11 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
       state: p.state ?? data.state,
       message: p.message ?? data.message,
     };
-    useChatStore.getState().handleChatEvent(normalizedEvent);
+    import('./chat')
+      .then(({ useChatStore }) => {
+        useChatStore.getState().handleChatEvent(normalizedEvent);
+      })
+      .catch(() => {});
   }
 
   const runId = p.runId ?? data.runId;
@@ -75,78 +77,88 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   if (phase === 'started' && runId != null && sessionKey != null) {
     // 新 run 启动，取消任何待处理的完成宽限
     clearCompletionGrace();
-    const state = useChatStore.getState();
-    const resolvedSessionKey = String(sessionKey);
-    const shouldRefreshSessions =
-      resolvedSessionKey !== state.currentSessionKey
-      || !state.sessions.some((session) => session.key === resolvedSessionKey);
-    if (shouldRefreshSessions) {
-      void state.loadSessions();
-    }
+    import('./chat')
+      .then(({ useChatStore }) => {
+        const state = useChatStore.getState();
+        const resolvedSessionKey = String(sessionKey);
+        const shouldRefreshSessions =
+          resolvedSessionKey !== state.currentSessionKey
+          || !state.sessions.some((session) => session.key === resolvedSessionKey);
+        if (shouldRefreshSessions) {
+          void state.loadSessions();
+        }
 
-    state.handleChatEvent({
-      state: 'started',
-      runId,
-      sessionKey: resolvedSessionKey,
-    });
+        state.handleChatEvent({
+          state: 'started',
+          runId,
+          sessionKey: resolvedSessionKey,
+        });
+      })
+      .catch(() => {});
   }
 
   if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
-    const state = useChatStore.getState();
-    const resolvedSessionKey = sessionKey != null ? String(sessionKey) : null;
-    const shouldRefreshSessions = resolvedSessionKey != null && (
-      resolvedSessionKey !== state.currentSessionKey
-      || !state.sessions.some((session) => session.key === resolvedSessionKey)
-    );
-    if (shouldRefreshSessions) {
-      void state.loadSessions();
-    }
-
-    const matchesCurrentSession = resolvedSessionKey == null || resolvedSessionKey === state.currentSessionKey;
-    const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
-
-    if (matchesCurrentSession || matchesActiveRun) {
-      void state.loadHistory(true);
-    }
-    if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
-      // 多轮对话中 Gateway 会在每个 agent step 发送 completed，
-      // 使用宽限期延迟结束，让新 run 有机会启动
-      clearCompletionGrace();
-      const COMPLETION_GRACE_MS = 5_000;
-      _completionGraceTimer = setTimeout(() => {
-        _completionGraceTimer = null;
-        const s = useChatStore.getState();
-        if (s.sending) {
-          useChatStore.setState({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-          });
-          // 宽限期结束后再刷新一次历史，确保获取完整对话
-          void s.loadHistory(true);
+    import('./chat')
+      .then(({ useChatStore }) => {
+        const state = useChatStore.getState();
+        const resolvedSessionKey = sessionKey != null ? String(sessionKey) : null;
+        const shouldRefreshSessions = resolvedSessionKey != null && (
+          resolvedSessionKey !== state.currentSessionKey
+          || !state.sessions.some((session) => session.key === resolvedSessionKey)
+        );
+        if (shouldRefreshSessions) {
+          void state.loadSessions();
         }
-      }, COMPLETION_GRACE_MS);
-    }
+
+        const matchesCurrentSession = resolvedSessionKey == null || resolvedSessionKey === state.currentSessionKey;
+        const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
+
+        if (matchesCurrentSession || matchesActiveRun) {
+          void state.loadHistory(true);
+        }
+        if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+          // 多轮对话中 Gateway 会在每个 agent step 发送 completed，
+          // 使用宽限期延迟结束，让新 run 有机会启动
+          clearCompletionGrace();
+          const COMPLETION_GRACE_MS = 5_000;
+          _completionGraceTimer = setTimeout(() => {
+            _completionGraceTimer = null;
+            const s = useChatStore.getState();
+            if (s.sending) {
+              useChatStore.setState({
+                sending: false,
+                activeRunId: null,
+                pendingFinal: false,
+                lastUserMessageAt: null,
+              });
+              // 宽限期结束后再刷新一次历史，确保获取完整对话
+              void s.loadHistory(true);
+            }
+          }, COMPLETION_GRACE_MS);
+        }
+      })
+      .catch(() => {});
   }
 }
 
 function handleGatewayChatMessage(data: unknown): void {
-  const chatData = data as Record<string, unknown>;
-  const payload = ('message' in chatData && typeof chatData.message === 'object')
-    ? chatData.message as Record<string, unknown>
-    : chatData;
+  import('./chat').then(({ useChatStore }) => {
+    const chatData = data as Record<string, unknown>;
+    const payload = ('message' in chatData && typeof chatData.message === 'object')
+      ? chatData.message as Record<string, unknown>
+      : chatData;
 
-  if (payload.state) {
-    useChatStore.getState().handleChatEvent(payload);
-    return;
-  }
+    if (payload.state) {
+      useChatStore.getState().handleChatEvent(payload);
+      return;
+    }
 
-  useChatStore.getState().handleChatEvent({
-    state: 'final',
-    message: payload,
-    runId: chatData.runId ?? payload.runId,
-  });
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      message: payload,
+      runId: chatData.runId ?? payload.runId,
+    });
+  }).catch(() => {});
 }
 
 function mapChannelStatus(status: string): 'connected' | 'connecting' | 'disconnected' | 'error' {
@@ -216,12 +228,16 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           unsubscribers.push(subscribeHostEvent<{ channelId?: string; status?: string }>(
             'gateway:channel-status',
             (update) => {
-              if (!update.channelId || !update.status) return;
-              const state = useChannelsStore.getState();
-              const channel = state.channels.find((item) => item.type === update.channelId);
-              if (channel) {
-                state.updateChannel(channel.id, { status: mapChannelStatus(update.status) });
-              }
+              import('./channels')
+                .then(({ useChannelsStore }) => {
+                  if (!update.channelId || !update.status) return;
+                  const state = useChannelsStore.getState();
+                  const channel = state.channels.find((item) => item.type === update.channelId);
+                  if (channel) {
+                    state.updateChannel(channel.id, { status: mapChannelStatus(update.status) });
+                  }
+                })
+                .catch(() => {});
             },
           ));
           gatewayEventUnsubscribers = unsubscribers;

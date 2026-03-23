@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Agents View
- * 参考 AxonClawX：左侧 Agent 列表 + 右侧详情（Overview/Files/Tools/Skills/Channels/Cron/Chat/Scenarios/Multi-Agent）
+ * 参考 ClawDeckX：左侧 Agent 列表 + 右侧详情（Overview/Files/Tools/Skills/Channels/Cron/Chat/Scenarios/Multi-Agent）
  * Skills 风格：#0f172a、#1e293b、彩色边框
  */
 
@@ -1060,7 +1060,7 @@ function CronTab({
   );
 }
 
-/** 场景库分类（与 AxonClawX 一致） */
+/** 场景库分类（与 ClawDeckX 一致） */
 const SCENE_CATEGORIES = [
   { id: 'all', label: '全部' },
   { id: 'productivity', label: '生产力' },
@@ -1072,7 +1072,7 @@ const SCENE_CATEGORIES = [
   { id: 'home', label: '家庭生活' },
 ] as const;
 
-/** 场景模板（AxonClawX 风格） */
+/** 场景模板（ClawDeckX 风格） */
 const SCENE_LIBRARY_TEMPLATES = [
   {
     id: 'personal-assistant',

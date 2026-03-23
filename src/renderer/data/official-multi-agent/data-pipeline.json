@@ -10,7 +10,7 @@
     "icon": "analytics",
     "color": "from-indigo-500 to-purple-500",
     "tags": ["data", "pipeline", "analytics", "automation"],
-    "author": "AxonClawX Team"
+    "author": "ClawDeckX Team"
   },
   "requirements": {
     "skills": ["web", "shell"],

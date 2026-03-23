@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Activity Monitor View
- * AxonClawX 风格：会话活动监控、KPI 仪表盘、批量操作
+ * ClawDeckX 风格：会话活动监控、KPI 仪表盘、批量操作
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -8,7 +8,6 @@ import { Download, ListChecks, Search } from 'lucide-react';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
-import { useChatStore } from '@/stores/chat';
 import { KPIDashboard, type KPIDashboardProps } from '@/components/activity/KPIDashboard';
 import { SessionCard, type SessionCardProps } from '@/components/activity/SessionCard';
 import {
@@ -453,7 +452,9 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
 
   const handleNavigateToChat = useCallback(
     (key: string) => {
-      useChatStore.getState().switchSession(key);
+      import('@/stores/chat').then(({ useChatStore }) => {
+        useChatStore.getState().switchSession(key);
+      });
       onNavigateTo?.('chat');
     },
     [onNavigateTo]

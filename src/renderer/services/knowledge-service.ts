@@ -1,5 +1,5 @@
 /**
- * 知识中心服务 - AxonClawX KnowledgeHub 数据加载
+ * 知识中心服务 - ClawDeckX KnowledgeHub 数据加载
  * 使用 Vite import.meta.glob 在构建时打包 JSON
  */
 

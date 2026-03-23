@@ -1,5 +1,5 @@
 /**
- * KPI Dashboard - AxonClawX style
+ * KPI Dashboard - ClawDeckX style
  * 活动监控顶部统计卡片
  */
 import React from 'react';

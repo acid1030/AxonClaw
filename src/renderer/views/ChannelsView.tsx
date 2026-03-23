@@ -1,16 +1,13 @@
 /**
  * AxonClaw - Channels View
- * Channel 配置界面 - AxonClawX 风格，useChannelsStore 真实数据
+ * Channel 配置界面 - ClawDeckX 风格，useChannelsStore 真实数据
  */
 
-import React, { useEffect, useCallback, useMemo, useState } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
-import { CHANNEL_ICONS, CHANNEL_NAMES, getPrimaryChannels, type ChannelType } from '@/types/channel';
+import { CHANNEL_ICONS, CHANNEL_NAMES, getPrimaryChannels } from '@/types/channel';
 import { PageHeader } from '@/components/common/PageHeader';
-import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
-import { hostApiFetch } from '@/lib/host-api';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 const CHANNEL_GRADIENTS: Record<string, string> = {
@@ -29,48 +26,9 @@ const ChannelsView: React.FC = () => {
   const loading = useChannelsStore((s) => s.loading);
   const error = useChannelsStore((s) => s.error);
   const fetchChannels = useChannelsStore((s) => s.fetchChannels);
+
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isOnline = gatewayStatus.state === 'running';
-
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configType, setConfigType] = useState<ChannelType | null>(null);
-  const [testingType, setTestingType] = useState<ChannelType | null>(null);
-
-  const openConfig = (type: string) => {
-    setConfigType(type as ChannelType);
-    setConfigOpen(true);
-  };
-
-  const configuredTypes = useMemo(() => channels.map((c) => c.type), [channels]);
-
-  const channelTitleColor: Record<string, string> = {
-    telegram: 'text-sky-500',
-    discord: 'text-indigo-500',
-    whatsapp: 'text-emerald-500',
-    dingtalk: 'text-blue-500',
-    feishu: 'text-blue-600',
-    wecom: 'text-green-600',
-    qq: 'text-cyan-600',
-  };
-
-  const runTest = async (type: string) => {
-    try {
-      setTestingType(type as ChannelType);
-      const result = await hostApiFetch<{ success?: boolean; message?: string; error?: string }>('/api/v1/notify/test', {
-        method: 'POST',
-        body: JSON.stringify({ channel: type, message: `AxonClawX 测试消息 · ${new Date().toLocaleTimeString()}` }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (result?.success === false) {
-        throw new Error(result?.error || '测试失败');
-      }
-      toast.success(result?.message || `${CHANNEL_NAMES[type] || type} 测试发送成功`);
-    } catch (err: any) {
-      toast.error(`${CHANNEL_NAMES[type] || type} 测试失败：${err?.message || err}`);
-    } finally {
-      setTestingType(null);
-    }
-  };
 
   const refresh = useCallback(async () => {
     await fetchChannels();
@@ -132,7 +90,7 @@ const ChannelsView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-xl">{icon}</span>
                         <div>
-                          <div className={cn('text-sm font-medium', channelTitleColor[type] || 'text-foreground')}>
+                          <div className="text-sm font-medium text-foreground">
                             {name}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -156,17 +114,14 @@ const ChannelsView: React.FC = () => {
                     </p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => openConfig(type)}
                         className="flex-1 py-2 rounded-xl bg-black/5 dark:bg-white/5 text-xs font-medium text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
                       >
                         配置
                       </button>
                       <button
-                        onClick={() => runTest(type)}
-                        disabled={testingType === type}
-                        className="flex-1 py-2 rounded-xl bg-primary/15 text-primary text-xs font-medium hover:bg-primary/25 transition-colors disabled:opacity-60"
+                        className="flex-1 py-2 rounded-xl bg-primary/15 text-primary text-xs font-medium hover:bg-primary/25 transition-colors"
                       >
-                        {testingType === type ? '测试中…' : '测试'}
+                        测试
                       </button>
                     </div>
                   </div>
@@ -176,20 +131,6 @@ const ChannelsView: React.FC = () => {
           </div>
         )}
       </div>
-
-      {configOpen && (
-        <ChannelConfigModal
-          initialSelectedType={configType}
-          configuredTypes={configuredTypes}
-          onClose={() => {
-            setConfigOpen(false);
-            setConfigType(null);
-          }}
-          onChannelSaved={async () => {
-            await fetchChannels();
-          }}
-        />
-      )}
     </div>
   );
 };

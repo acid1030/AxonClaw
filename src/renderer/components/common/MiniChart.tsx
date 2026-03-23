@@ -1,5 +1,5 @@
 /**
- * Mini chart components - AxonClawX style
+ * Mini chart components - ClawDeckX style
  * MiniDonut, MiniGauge, MiniSparkline (values-based)
  */
 import React from 'react';

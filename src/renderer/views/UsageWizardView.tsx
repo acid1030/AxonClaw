@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 使用向导
- * AxonClawX 风格：配置完成度、分步引导、场景模板
+ * ClawDeckX 风格：配置完成度、分步引导、场景模板
  */
 
 import React, { useEffect, useState } from 'react';
@@ -51,7 +51,7 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
       <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-4 pb-4">
         <h1 className="text-base font-bold text-foreground mb-2">使用向导</h1>
         <p className="text-xs text-muted-foreground mb-2">
-          AxonClawX 风格：配置完成度检查，分步引导完成设置
+          ClawDeckX 风格：配置完成度检查，分步引导完成设置
         </p>
         <div className={cn(
           'h-[3px] w-full transition-all duration-700 shrink-0',

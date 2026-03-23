@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Models View
- * 模型管理界面 - AxonClawX 风格内容复刻
+ * 模型管理界面 - ClawDeckX 风格内容复刻
  */
 
 import React, { useState } from 'react';

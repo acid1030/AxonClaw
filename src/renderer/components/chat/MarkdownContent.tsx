@@ -2,13 +2,11 @@
  * MarkdownContent - 渲染 Markdown 文本，代码块语法高亮
  * 参考 design_v2.html 代码块样式
  */
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { invokeIpc } from '@/lib/api-client';
-import { extractFilePathsFromText } from '@/pages/Chat/message-utils';
 
 interface MarkdownContentProps {
   content: string;
@@ -37,30 +35,11 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components
     );
   },
   pre: ({ children }) => <>{children}</>,
-  a: ({ href, children }) => {
-    const isFileLink = typeof href === 'string' && href.startsWith('file://');
-    const handleClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-      if (!isFileLink || !href) return;
-      e.preventDefault();
-      try {
-        const filePath = decodeURIComponent(href.replace(/^file:\/\//, ''));
-        await invokeIpc('shell:openPath', filePath);
-      } catch (err) {
-        console.error('打开文件失败:', err);
-      }
-    };
-    return (
-      <a
-        href={href}
-        onClick={handleClick}
-        target={isFileLink ? undefined : '_blank'}
-        rel={isFileLink ? undefined : 'noopener noreferrer'}
-        className="text-blue-400 hover:underline"
-      >
-        {children}
-      </a>
-    );
-  },
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+      {children}
+    </a>
+  ),
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
 };
 
@@ -86,24 +65,14 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       <SyntaxHighlighter
         language={lang}
         style={dark}
-        wrapLongLines
         customStyle={{
           margin: 0,
           padding: '12px 16px',
           background: '#0d1117',
           fontSize: '13px',
           lineHeight: 1.5,
-          maxWidth: '100%',
-          overflowX: 'auto',
         }}
-        codeTagProps={{
-          style: {
-            fontFamily: "'SF Mono', 'Cascadia Code', Consolas, monospace",
-            whiteSpace: 'pre-wrap',
-            overflowWrap: 'anywhere',
-            wordBreak: 'break-word',
-          },
-        }}
+        codeTagProps={{ style: { fontFamily: "'SF Mono', 'Cascadia Code', Consolas, monospace" } }}
         showLineNumbers={false}
         PreTag="div"
       >
@@ -114,26 +83,11 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 }
 
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className = '' }) => {
-  const renderedContent = useMemo(() => {
-    if (!content?.trim()) return '';
-    const paths = Array.from(new Set(extractFilePathsFromText(content))).sort((a, b) => b.length - a.length);
-    if (!paths.length) return content;
-
-    let out = content;
-    for (const p of paths) {
-      const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(escaped, 'g');
-      const href = `file://${encodeURIComponent(p).replace(/%2F/g, '/')}`;
-      out = out.replace(re, `[${p}](${href})`);
-    }
-    return out;
-  }, [content]);
-
-  if (!renderedContent.trim()) return null;
+  if (!content?.trim()) return null;
   return (
     <div className={`markdown-content prose prose-invert prose-sm max-w-none ${className}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {renderedContent}
+        {content}
       </ReactMarkdown>
     </div>
   );

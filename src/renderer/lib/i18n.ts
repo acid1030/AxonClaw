@@ -1,5 +1,5 @@
 // AxonClaw - i18n 国际化支持
-// 参考 AxonClawX web/locales 架构
+// 参考 ClawDeckX web/locales 架构
 
 export type Locale = 'zh' | 'en';
 

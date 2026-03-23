@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Gateway 监控视图
- * 替换原日志页，复刻 AxonClawX Gateway 全部功能
+ * 替换原日志页，复刻 ClawDeckX Gateway 全部功能
  * 标签：Logs | Events | Channels | Service | Debug
  */
 

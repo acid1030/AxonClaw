@@ -26,14 +26,6 @@ const COMMON_MODELS = [
   { value: 'ollama/llama3.2', label: 'Ollama Llama 3.2' },
 ];
 
-function buildModelOptions(currentValue: string): { value: string; label: string }[] {
-  if (!currentValue || COMMON_MODELS.some((m) => m.value === currentValue)) {
-    return COMMON_MODELS;
-  }
-  const modelTail = currentValue.includes('/') ? currentValue.split('/').slice(1).join('/') : currentValue;
-  return [{ value: currentValue, label: `${modelTail}（当前配置）` }, ...COMMON_MODELS];
-}
-
 function ProviderCard({
   provider,
   apiKey,
@@ -90,7 +82,7 @@ function ProviderCard({
           <select
             value={defaultModel}
             onChange={(e) => onDefaultModelChange(e.target.value)}
-            className="h-8 px-2.5 rounded-md border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900/80 text-xs text-foreground cursor-pointer"
+            className="h-8 px-2.5 rounded-md border border-slate-200 dark:border-white/10 bg-transparent text-xs text-foreground cursor-pointer"
           >
             <option value="">— 选择 —</option>
             {COMMON_MODELS.filter((m) => m.value.startsWith(provider.id + '/')).map((m) => (
@@ -120,9 +112,6 @@ function ProviderCard({
 export const ModelsSection: React.FC<SectionProps> = ({ setField, getField }) => {
   const g = (p: string[]) => getField(['models', ...p]);
   const s = (p: string[], v: unknown) => setField(['models', ...p], v);
-  const globalDefaultFromAgents = String(getField(['agents', 'defaults', 'model', 'primary']) ?? '');
-  const globalDefaultFromModels = String(g(['default']) ?? '');
-  const globalDefaultModel = globalDefaultFromAgents || globalDefaultFromModels;
 
   const providers = (g(['providers']) as Record<string, Record<string, unknown>>) ?? {};
 
@@ -131,12 +120,9 @@ export const ModelsSection: React.FC<SectionProps> = ({ setField, getField }) =>
       <ConfigSection title="默认模型" icon={Target} iconColor="text-indigo-500">
         <SelectField
           label="全局默认"
-          value={globalDefaultModel}
-          onChange={(v) => {
-            setField(['agents', 'defaults', 'model', 'primary'], v);
-            s(['default'], v);
-          }}
-          options={buildModelOptions(globalDefaultModel)}
+          value={String(g(['default']) ?? '')}
+          onChange={(v) => s(['default'], v)}
+          options={COMMON_MODELS}
           allowEmpty
         />
       </ConfigSection>

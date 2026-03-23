@@ -1,5 +1,5 @@
 /**
- * 场景库数据 - AxonClawX 场景模板
+ * 场景库数据 - ClawDeckX 场景模板
  */
 
 export type SceneCategory = 'all' | 'productivity' | 'social' | 'content' | 'devops' | 'research' | 'finance' | 'family';

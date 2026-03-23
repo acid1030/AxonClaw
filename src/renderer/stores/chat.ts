@@ -1122,28 +1122,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
             .map((session) => [session.key, session.updatedAt!]),
         );
 
-        set((state) => {
-          const remappedLabels: Record<string, string> = { ...state.sessionLabels };
-          for (const [k, v] of Object.entries(state.sessionLabels || {})) {
-            if (!k.startsWith('agent:')) {
-              const canonical = canonicalBySuffix.get(k);
-              if (canonical && !remappedLabels[canonical]) {
-                remappedLabels[canonical] = v;
-              }
-            }
-          }
-
-          return {
-            sessions: sessionsWithCurrent,
-            currentSessionKey: nextSessionKey,
-            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-            sessionLabels: remappedLabels,
-            sessionLastActivity: {
-              ...state.sessionLastActivity,
-              ...discoveredActivity,
-            },
-          };
-        });
+        set((state) => ({
+          sessions: sessionsWithCurrent,
+          currentSessionKey: nextSessionKey,
+          currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+          sessionLastActivity: {
+            ...state.sessionLastActivity,
+            ...discoveredActivity,
+          },
+        }));
 
         if (currentSessionKey !== nextSessionKey) {
           get().loadHistory();
@@ -1169,11 +1156,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     const labelText = getMessageText(firstUser.content).trim();
                     if (labelText) {
                       const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                      const existing = (s.sessionLabels?.[session.key] || '').trim();
-                      // 已有别名（手动命名）时不覆盖
-                      if (!existing) {
-                        next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
-                      }
+                      next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
                     }
                   }
                   if (lastMsg?.timestamp) {
@@ -1367,13 +1350,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const labelText = getMessageText(firstUserMsg.content).trim();
           if (labelText) {
             const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-            set((s) => {
-              const existing = (s.sessionLabels?.[currentSessionKey] || '').trim();
-              if (existing) return {};
-              return {
-                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
-              };
-            });
+            set((s) => ({
+              sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+            }));
           }
         }
       }
@@ -1513,13 +1492,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const labelText = getMessageText(firstUserMsg.content).trim();
           if (labelText) {
             const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-            set((s) => {
-              const existing = (s.sessionLabels?.[currentSessionKey] || '').trim();
-              if (existing) return {};
-              return {
-                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
-              };
-            });
+            set((s) => ({
+              sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+            }));
           }
         }
       }
@@ -1636,22 +1611,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const POLL_START_DELAY = 3_000;
     const POLL_INTERVAL = 4_000;
-    const STREAM_STALE_MS = 10_000;
     const pollHistory = () => {
       const state = get();
       if (!state.sending) { clearHistoryPoll(); return; }
-
-      // 正常流式过程中不打断；但若长时间没有新事件，认为流式中断，改为主动拉历史
       if (state.streamingMessage) {
-        const idleMs = Date.now() - _lastChatEventAt;
-        if (idleMs < STREAM_STALE_MS) {
-          _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-          return;
-        }
-        console.warn(`[chat.poll] streaming stale for ${idleMs}ms, fallback to history refresh`);
-        set({ streamingMessage: null, streamingText: '' });
+        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
+        return;
       }
-
       state.loadHistory(true);
       _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
     };

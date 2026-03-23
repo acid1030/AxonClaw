@@ -1,5 +1,5 @@
 /**
- * 双线趋势图（AxonClawX 风格：令牌 + 费用，含 x 轴日期）
+ * 双线趋势图（ClawDeckX 风格：令牌 + 费用，含 x 轴日期）
  */
 import { useId } from 'react';
 import { cn } from '@/lib/utils';

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "metadata": {
     "name": "添加 AI 提供商",
-    "description": "在 AxonClawX 中添加 OpenAI、Anthropic、Google 等 AI 提供商并配置 API Key",
+    "description": "在 ClawDeckX 中添加 OpenAI、Anthropic、Google 等 AI 提供商并配置 API Key",
     "category": "setup",
     "tags": ["provider", "model", "apikey", "openai", "anthropic", "google"],
     "difficulty": "easy",
@@ -12,7 +12,7 @@
     "i18n": {
       "en": {
         "name": "Add AI Provider",
-        "description": "Add OpenAI, Anthropic, Google or other AI providers and configure API keys in AxonClawX"
+        "description": "Add OpenAI, Anthropic, Google or other AI providers and configure API keys in ClawDeckX"
       }
     }
   },

@@ -4,17 +4,22 @@ import { Icons } from '../Icons/IconComponents';
 import { SidebarItem } from './SidebarItem';
 import { CollapseButton } from './CollapseButton';
 
-// 新菜单结构（按用户要求）
+// 按 ClawDeckX 主菜单顺序：概览、知识、安装向导、配置中心、用量、使用向导、网关监控、审批中心、系统、AI会话、智能代理、节点、活动、调度、技能、健康
 const menuItems = [
-  { id: 'overview', icon: Icons.dashboard, label: '系统概览' },
-  { id: 'chat', icon: Icons.chat, label: 'AI对话' },
-  { id: 'channel-config', icon: Icons.channel, label: '配置中心' },
-  { id: 'agent-config', icon: Icons.agent, label: 'Agent配置' },
-  { id: 'skill-config', icon: Icons.skill, label: '技能中心' },
-  { id: 'cron', icon: Icons.cron, label: '定时任务' },
+  { id: 'dashboard', icon: Icons.dashboard, label: '概览仪表盘' },
+  { id: 'knowledge', icon: Icons.knowledge, label: '知识中心' },
+  { id: 'install', icon: Icons.install, label: '安装向导' },
+  { id: 'config', icon: Icons.config, label: '配置中心' },
+  { id: 'usage', icon: Icons.usage, label: '用量统计' },
+  { id: 'gateway-monitor', icon: Icons.gatewayMonitor, label: '网关监控' },
+  { id: 'system', icon: Icons.system, label: '系统设置' },
+  { id: 'chat', icon: Icons.chat, label: 'AI 会话' },
+  { id: 'agent', icon: Icons.agent, label: '智能代理' },
   { id: 'nodes', icon: Icons.nodes, label: '节点管理' },
-  { id: 'system-monitor', icon: Icons.gatewayMonitor, label: '监控中心' },
-  { id: 'system-config', icon: Icons.system, label: '系统设置' },
+  { id: 'activity', icon: Icons.diagnostic, label: '活动监控' },
+  { id: 'cron', icon: Icons.cron, label: '调度任务' },
+  { id: 'skill', icon: Icons.skill, label: '技能中心' },
+  { id: 'health', icon: Icons.health, label: '健康中心' },
 ];
 
 interface UnifiedSidebarProps {

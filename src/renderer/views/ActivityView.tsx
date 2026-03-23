@@ -1,7 +1,7 @@
 /**
  * AxonClaw - Activity View
  * 活动流：Gateway 事件、消息收发、工具调用记录
- * AxonClawX 风格
+ * ClawDeckX 风格
  */
 
 import React, { useEffect, useState, useCallback } from 'react';

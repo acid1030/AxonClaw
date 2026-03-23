@@ -1,6 +1,6 @@
 /**
  * Health status indicator dot
- * AxonClawX style: green pulse when ok, gray when not
+ * ClawDeckX style: green pulse when ok, gray when not
  */
 import { cn } from '@/lib/utils';
 

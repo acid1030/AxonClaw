@@ -1,6 +1,6 @@
 /**
  * 知识库服务 - 语义记忆搜索与知识管理
- * AxonClawX 知识库完整复刻：技术决策、项目文档、用户偏好、学习笔记
+ * ClawDeckX 知识库完整复刻：技术决策、项目文档、用户偏好、学习笔记
  */
 
 export type KnowledgeBaseCategory = 'decision' | 'project' | 'preference' | 'learning';

@@ -13,8 +13,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { TypewriterMarkdown } from './TypewriterMarkdown';
 import { ChatInput, AttachmentPreview } from '@/pages/Chat/ChatInput';
 import type { FileAttachment } from '@/pages/Chat/ChatInput';
-import { extractImages, extractText, extractThinking, extractFilePathsFromText, stripFilePathsFromText } from '@/pages/Chat/message-utils';
-import { invokeIpc } from '@/lib/api-client';
+import { extractImages, extractText, extractThinking } from '@/pages/Chat/message-utils';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 
 // 可折叠组件
@@ -29,7 +28,7 @@ const CollapsibleBlock: React.FC<{
     <div className="border border-[#4b5563]/50 rounded-lg overflow-hidden my-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-[#1f2937] hover:bg-[#374151] transition-colors text-sm"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-[#1f2937] hover:bg-[#374151] transition-colors text-xs"
       >
         {isOpen ? (
           <ChevronDown className="w-3 h-3 text-[#94a3b8]" />
@@ -37,10 +36,10 @@ const CollapsibleBlock: React.FC<{
           <span className="w-3 h-3 text-[#94a3b8]">▶</span>
         )}
         {icon}
-        <span className="text-[#94a3b8] text-sm">{label}</span>
+        <span className="text-[#94a3b8]">{label}</span>
       </button>
       {isOpen && (
-        <div className="px-3 py-2 bg-[#111827] text-sm text-[#e2e8f0] whitespace-pre-wrap">
+        <div className="px-3 py-2 bg-[#111827] text-xs text-[#e2e8f0] whitespace-pre-wrap">
           {children}
         </div>
       )}
@@ -71,8 +70,6 @@ export const ChatView: React.FC = () => {
   const [aliasEditOpen, setAliasEditOpen] = useState(false);
   const [aliasEditSessionKey, setAliasEditSessionKey] = useState<string | null>(null);
   const [aliasEditValue, setAliasEditValue] = useState('');
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const [sessionLoadingAnim, setSessionLoadingAnim] = useState(false);
 
   // 附件状态镜像，由 ChatInput 通过 onAttachmentsChange 同步
   const [viewAttachments, setViewAttachments] = useState<FileAttachment[]>([]);
@@ -106,87 +103,10 @@ export const ChatView: React.FC = () => {
     setSessionLabel,
   } = useChatStore();
 
-  // 持久化会话别名：刷新/重启后仍保留
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('axon.chat.sessionLabels.v1');
-      if (!raw) return;
-      const saved = JSON.parse(raw) as Record<string, string>;
-      if (!saved || typeof saved !== 'object') return;
-      const current = useChatStore.getState().sessionLabels;
-      const merged = { ...saved, ...current };
-      useChatStore.setState({ sessionLabels: merged });
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('axon.chat.sessionLabels.v1', JSON.stringify(sessionLabels || {}));
-    } catch {
-      // ignore
-    }
-  }, [sessionLabels]);
-
-  const animateTopToBottom = async (el: HTMLDivElement, durationMs = 900): Promise<void> => {
-    const target = Math.max(0, el.scrollHeight - el.clientHeight);
-    if (target <= 0) return;
-    el.scrollTop = 0;
-
-    // 超长会话走快速模式，避免大列表 smooth 造成卡顿
-    if (target > 24000) {
-      el.scrollTop = target;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      return;
-    }
-
-    // 使用原生 smooth scroll，避免逐帧 JS 动画在大列表下卡顿
-    el.scrollTo({ top: target, behavior: 'smooth' });
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
-  };
-
-  const suppressAutoScrollRef = useRef(false);
-
-  const runWithSessionLoading = async (
-    fn: () => Promise<void>,
-    opts: { preserveScroll?: boolean; scanFromTop?: boolean } = {},
-  ) => {
-    const el = chatAreaRef.current;
-    const preserveScroll = !!opts.preserveScroll;
-    const scanFromTop = !!opts.scanFromTop;
-    const prevTop = preserveScroll && el ? el.scrollTop : 0;
-    const prevHeight = preserveScroll && el ? el.scrollHeight : 0;
-
-    suppressAutoScrollRef.current = true;
-    setSessionLoadingAnim(true);
-    const startedAt = Date.now();
-    try {
-      await fn();
-      if (scanFromTop && el) {
-        await animateTopToBottom(el, 1100);
-      } else if (preserveScroll && el) {
-        requestAnimationFrame(() => {
-          const delta = el.scrollHeight - prevHeight;
-          el.scrollTop = prevTop + Math.max(0, delta);
-        });
-      }
-    } finally {
-      const elapsed = Date.now() - startedAt;
-      const remain = Math.max(0, 700 - elapsed);
-      setTimeout(() => {
-        setSessionLoadingAnim(false);
-        suppressAutoScrollRef.current = false;
-      }, remain);
-    }
-  };
-
   const handleRefresh = async () => {
     try {
-      await runWithSessionLoading(async () => {
-        await refresh();
-        await checkHealth();
-      }, { scanFromTop: true });
+      await refresh();
+      await checkHealth();
     } catch (err) {
       console.error('刷新失败:', err);
     }
@@ -217,8 +137,6 @@ export const ChatView: React.FC = () => {
   const loadHistoryRef = useRef<HTMLDivElement>(null);
   const aliasInputRef = useRef<HTMLInputElement>(null);
   const [showBackToBottom, setShowBackToBottom] = useState(false);
-  const [showNewMessageHint, setShowNewMessageHint] = useState(false);
-  const prevMessageCountRef = useRef(0);
   const isConnected = gatewayStatus.state === 'running';
 
   // thinking 动画完成标记：thinking 打字机追赶到末尾后才显示正文
@@ -272,12 +190,10 @@ export const ChatView: React.FC = () => {
     const el = chatAreaRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
-      setShowNewMessageHint(false);
     }
   }, []);
 
   useEffect(() => {
-    if (suppressAutoScrollRef.current) return;
     scrollToBottom();
   }, [messages, streamingText, streamingMessage, scrollToBottom]);
 
@@ -288,28 +204,12 @@ export const ChatView: React.FC = () => {
     const threshold = 10;
     const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     setShowBackToBottom(!nearBottom);
-    if (nearBottom) setShowNewMessageHint(false);
   }, []);
 
   useEffect(() => {
     const t = setTimeout(handleChatAreaScroll, 100);
     return () => clearTimeout(t);
   }, [messages, streamingText, streamingMessage, handleChatAreaScroll]);
-
-  useEffect(() => {
-    const prev = prevMessageCountRef.current;
-    const curr = messages.length;
-    if (curr > prev) {
-      const el = chatAreaRef.current;
-      if (el) {
-        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-        if (distanceFromBottom > 80) {
-          setShowNewMessageHint(true);
-        }
-      }
-    }
-    prevMessageCountRef.current = curr;
-  }, [messages.length]);
 
   useEffect(() => {
     if (!loadHistoryOpen) return;
@@ -432,49 +332,11 @@ export const ChatView: React.FC = () => {
     return () => clearTimeout(timer);
   }, [isFromModelStream, streamingThinking, streamingDisplayText]);
 
-  const formatToolArgs = (args: unknown): string => {
-    const tryParse = (v: unknown): unknown => {
-      if (typeof v !== 'string') return v;
-      const s = v.trim();
-      if (!s) return v;
-      try {
-        return JSON.parse(s);
-      } catch {
-        return v;
-      }
-    };
-
-    let normalized = tryParse(args);
-    // 有些工具会把 JSON 再包一层字符串，最多再解两次
-    for (let i = 0; i < 2; i += 1) {
-      const next = tryParse(normalized);
-      if (next === normalized) break;
-      normalized = next;
-    }
-
-    if (typeof normalized === 'object' && normalized !== null) {
-      return `\`\`\`json\n${JSON.stringify(normalized, null, 2)}\n\`\`\``;
-    }
-
-    if (typeof normalized === 'string') {
-      // 若是普通字符串，尽量把转义换行还原展示
-      const unescaped = normalized.replace(/\\n/g, '\n');
-      return `\`\`\`json\n${JSON.stringify(unescaped, null, 2)}\n\`\`\``;
-    }
-
-    return `\`\`\`json\n${JSON.stringify(normalized, null, 2)}\n\`\`\``;
-  };
-
-  const extractToolUse = (content: unknown): { label: string; detail: string } | null => {
+  const extractToolUse = (content: unknown): string | null => {
     if (!Array.isArray(content)) return null;
     const b = content.find((x: { type?: string }) => x.type === 'tool_use' || x.type === 'toolCall');
-    if (!b) return null;
-    const name = (b as { name?: string }).name || 'tool';
-    const args = (b as { input?: unknown }).input || (b as { arguments?: unknown }).arguments || {};
-    return {
-      label: name,
-      detail: formatToolArgs(args),
-    };
+    if (b) return `${(b as { name?: string }).name || 'tool'}(${JSON.stringify((b as { input?: unknown }).input || (b as { arguments?: unknown }).arguments || {})})`;
+    return null;
   };
 
   const fmtTime = (ts?: number) =>
@@ -544,9 +406,7 @@ export const ChatView: React.FC = () => {
                   onClick={() => {
                     newSession();
                     setDropdownOpen(false);
-                    void runWithSessionLoading(async () => {
-                      await loadHistory();
-                    }, { scanFromTop: true });
+                    loadHistory();
                   }}
                   className="px-4 py-3 cursor-pointer text-sm text-[#6366f1] hover:bg-[#334155]"
                 >
@@ -562,9 +422,8 @@ export const ChatView: React.FC = () => {
             }}
             className="btn-outline flex items-center justify-center p-2"
             title="刷新会话列表"
-            disabled={sessionLoadingAnim}
           >
-            <RefreshCw className={`w-4 h-4 ${sessionLoadingAnim ? 'animate-spin' : ''}`} />
+            <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={toggleThinking}
@@ -595,9 +454,7 @@ export const ChatView: React.FC = () => {
                 <div className="text-xs text-[#94a3b8] mb-2">加载历史会话</div>
                 <button
                   onClick={() => {
-                    void runWithSessionLoading(async () => {
-                      await loadHistoryWithOptions({ limit: 500 });
-                    }, { scanFromTop: true });
+                    void loadHistoryWithOptions({ limit: 500 });
                     setLoadHistoryOpen(false);
                   }}
                   className="w-full px-3 py-2 text-left text-sm text-[#e2e8f0] hover:bg-[#334155] rounded-lg transition-colors"
@@ -618,9 +475,7 @@ export const ChatView: React.FC = () => {
                       if (loadHistoryDate) {
                         const [y, m, d] = loadHistoryDate.split('-').map(Number);
                         const endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-                        void runWithSessionLoading(async () => {
-                          await loadHistoryWithOptions({ beforeTs: endOfDay, limit: 500 });
-                        }, { scanFromTop: true });
+                        void loadHistoryWithOptions({ beforeTs: endOfDay, limit: 500 });
                         setLoadHistoryOpen(false);
                         setLoadHistoryDate('');
                       }
@@ -703,43 +558,19 @@ export const ChatView: React.FC = () => {
       {/* chat-area - 与输入框同宽 */}
       <div
         ref={chatAreaRef}
-        className="chat-area relative"
+        className="chat-area"
         onScroll={handleChatAreaScroll}
       >
-        <div className="chat-area-inner relative">
-          {sessionLoadingAnim && (
-            <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
-              <motion.div
-                className="absolute left-0 right-0 h-10 bg-gradient-to-b from-[#60a5fa]/40 via-[#60a5fa]/15 to-transparent"
-                initial={{ y: -40, opacity: 0.9 }}
-                animate={{ y: ['0%', '100%'], opacity: [0.9, 0.5, 0] }}
-                transition={{ duration: 1.05, repeat: Infinity, ease: 'linear' }}
-              />
-            </div>
-          )}
+        <div className="chat-area-inner">
           {/* 本地会话消息（loadHistory 等）：一律用 MarkdownContent 直接显示，无打字机 */}
           {messages.length > 0 ? (
             messages.map((msg, i) => {
-              const rawContent = extractText(msg);
+              const content = extractText(msg);
               const images = extractImages(msg);
               const attachedFiles = (msg as RawMessage)._attachedFiles || [];
               const thinking = extractThinking(msg);
               const toolUse = extractToolUse(msg.content);
               const ts = fmtTime(msg.timestamp);
-
-              const textPaths = extractFilePathsFromText(rawContent || '');
-              const existingPaths = new Set(attachedFiles.map((f) => f.filePath).filter(Boolean) as string[]);
-              const inferredFiles: AttachedFileMeta[] = textPaths
-                .filter((p) => !existingPaths.has(p))
-                .map((p) => ({
-                  fileName: p.split(/[\\/]/).pop() || 'file',
-                  mimeType: 'application/octet-stream',
-                  fileSize: 0,
-                  preview: null,
-                  filePath: p,
-                }));
-              const allFiles = [...attachedFiles, ...inferredFiles];
-              const content = allFiles.length > 0 ? stripFilePathsFromText(rawContent || '') : rawContent;
 
               if (msg.role === 'system') {
                 return (
@@ -754,54 +585,31 @@ export const ChatView: React.FC = () => {
                   {files.map((file, fi) => {
                     const isImage = file.mimeType.startsWith('image/');
                     if (isImage && images.length > 0) return null;
-                    const canOpen = !!file.filePath;
-                    const openFile = async () => {
-                      if (!file.filePath) return;
-                      try {
-                        await invokeIpc('shell:openPath', file.filePath);
-                      } catch (e) {
-                        console.error('打开文件失败:', e);
-                      }
-                    };
                     if (isImage) {
-                      const previewSrc = file.preview || (file.filePath?.startsWith('/assets/') ? file.filePath : null);
-                      return previewSrc ? (
-                        <button
-                          type="button"
+                      return file.preview ? (
+                        <img
                           key={fi}
-                          onClick={() => setLightboxSrc(previewSrc)}
-                          className="rounded-lg overflow-hidden border border-[#334155]"
-                          title="点击放大"
-                        >
-                          <img
-                            src={previewSrc}
-                            alt={file.fileName}
-                            className="max-w-[200px] max-h-[200px] object-cover"
-                          />
-                        </button>
+                          src={file.preview}
+                          alt={file.fileName}
+                          className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-[#334155]"
+                        />
                       ) : (
-                        <button
-                          type="button"
+                        <div
                           key={fi}
-                          onClick={openFile}
                           className="w-24 h-24 rounded-lg border border-[#334155] bg-[#1e293b] flex items-center justify-center"
                         >
                           <File className="w-8 h-8 text-[#64748b]" />
-                        </button>
+                        </div>
                       );
                     }
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={fi}
-                        onClick={openFile}
-                        disabled={!canOpen}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-[#334155] bg-[#1e293b] text-sm text-[#e2e8f0] ${canOpen ? 'cursor-pointer hover:bg-[#334155]' : 'opacity-80'}`}
-                        title={file.filePath || file.fileName}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#334155] bg-[#1e293b] text-sm text-[#e2e8f0]"
                       >
                         <File className="w-4 h-4 text-[#64748b]" />
-                        <span className="truncate max-w-[220px] underline decoration-dotted underline-offset-2">{file.fileName}</span>
-                      </button>
+                        <span className="truncate max-w-[120px]">{file.fileName}</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -814,19 +622,12 @@ export const ChatView: React.FC = () => {
                       const src = imageSrc(img);
                       if (!src) return null;
                       return (
-                        <button
+                        <img
                           key={ii}
-                          type="button"
-                          onClick={() => setLightboxSrc(src)}
-                          className="rounded-lg overflow-hidden border border-[#334155]"
-                          title="点击放大"
-                        >
-                          <img
-                            src={src}
-                            alt=""
-                            className="max-w-[200px] max-h-[200px] object-cover"
-                          />
-                        </button>
+                          src={src}
+                          alt=""
+                          className="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-[#334155]"
+                        />
                       );
                     })}
                   </div>
@@ -845,21 +646,18 @@ export const ChatView: React.FC = () => {
                         <span className="msg-name">我</span>
                       </div>
                       {renderImages()}
-                      {allFiles.length > 0 && renderAttachments(allFiles)}
-                      {typeof content === 'string' && content.trim() && (
-                        <div className="msg-bubble">{content}</div>
-                      )}
+                      {attachedFiles.length > 0 && renderAttachments(attachedFiles)}
+                      <div className="msg-bubble">{content || (attachedFiles.length > 0 ? '(附件)' : '')}</div>
                     </div>
                   </div>
                 );
               }
 
               if (msg.role === 'assistant') {
-                const hasVisibleContent = !!((typeof content === 'string' ? content.trim() : content) || images.length > 0 || allFiles.length > 0);
+                const hasVisibleContent = !!((typeof content === 'string' ? content.trim() : content) || images.length > 0 || attachedFiles.length > 0);
                 const hasThinkingOrTool = !!(thinking || toolUse);
                 const wouldShowSomething = hasVisibleContent || (showThinking && hasThinkingOrTool);
                 if (!wouldShowSomething) return null;
-                const isLastAssistantDuringSend = sending && i === messages.length - 1;
 
                 return (
                   <div
@@ -878,29 +676,27 @@ export const ChatView: React.FC = () => {
                       {showThinking && thinking && (
                         <div className="msg-block-thinking">
                           <CollapsibleBlock
-                            icon={<Lightbulb className="w-3 h-3 text-blue-500" />}
+                            icon={<Lightbulb className="w-3 h-3" />}
                             label="Thinking"
                             defaultOpen
                           >
-                            <MarkdownContent content={thinking} />
+                            <span className="whitespace-pre-wrap">{thinking}</span>
                           </CollapsibleBlock>
                         </div>
                       )}
                       {/* 执行命令无气泡包裹，隐藏思考时一并隐藏 */}
                       {showThinking && toolUse && (
                         <div className="msg-block-tool">
-                          <CollapsibleBlock icon={<Wrench className="w-3 h-3 text-green-500" />} label={toolUse.label}>
-                            <MarkdownContent content={toolUse.detail} />
+                          <CollapsibleBlock icon={<Wrench className="w-3 h-3" />} label="Tool Use">
+                            {toolUse}
                           </CollapsibleBlock>
                         </div>
                       )}
-                      {allFiles.length > 0 && renderAttachments(allFiles)}
-                      {(content || images.length > 0) && (
+                      {(content || images.length > 0 || attachedFiles.length > 0) && (
                         <div className="msg-bubble">
-                          {content && (isLastAssistantDuringSend
-                            ? <TypewriterMarkdown content={content} animate isStreaming={sending} />
-                            : <MarkdownContent content={content} />)}
+                          {content && <MarkdownContent content={content} />}
                           {renderImages()}
+                          {attachedFiles.length > 0 && renderAttachments(attachedFiles)}
                         </div>
                       )}
                     </div>
@@ -955,7 +751,7 @@ export const ChatView: React.FC = () => {
                 </div>
                 {showThinking && streamingThinking && (
                   <div className="msg-block-thinking">
-                    <CollapsibleBlock icon={<Lightbulb className="w-3 h-3 text-blue-500" />} label="Thinking" defaultOpen>
+                    <CollapsibleBlock icon={<Lightbulb className="w-3 h-3" />} label="Thinking" defaultOpen>
                       {useTypewriterForThinking ? (
                         <TypewriterMarkdown
                           content={streamingThinking}
@@ -965,7 +761,7 @@ export const ChatView: React.FC = () => {
                           onComplete={() => setThinkingAnimDone(true)}
                         />
                       ) : (
-                        <MarkdownContent content={streamingThinking} />
+                        <span className="whitespace-pre-wrap">{streamingThinking}</span>
                       )}
                     </CollapsibleBlock>
                   </div>
@@ -987,32 +783,17 @@ export const ChatView: React.FC = () => {
         </div>
       </div>
 
-      {/* 回到底部 / 新消息提示 */}
-      {(showBackToBottom || showNewMessageHint) && (
+      {/* 回到底部 - 浮动在输入框上方，输入框横向正中 */}
+      {showBackToBottom && (
         <div className="chat-back-to-bottom-wrap">
-          {showNewMessageHint && (
-            <button
-              onClick={() => {
-                setShowNewMessageHint(false);
-                scrollToBottom();
-              }}
-              className="chat-back-to-bottom mb-2"
-              title="有新消息"
-            >
-              <span className="mr-1">🔔</span>
-              有新消息
-            </button>
-          )}
-          {showBackToBottom && (
-            <button
-              onClick={scrollToBottom}
-              className="chat-back-to-bottom"
-              title="回到底部"
-            >
-              <ChevronsDown className="w-5 h-5" />
-              回到底部
-            </button>
-          )}
+          <button
+            onClick={scrollToBottom}
+            className="chat-back-to-bottom"
+            title="回到底部"
+          >
+            <ChevronsDown className="w-5 h-5" />
+            回到底部
+          </button>
         </div>
       )}
 
@@ -1067,21 +848,6 @@ export const ChatView: React.FC = () => {
           {gatewayStatus.pid != null ? ` | pid: ${gatewayStatus.pid}` : ''}
         </span>
       </div>
-
-      {/* 图片放大预览 */}
-      {lightboxSrc && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-6"
-          onClick={() => setLightboxSrc(null)}
-        >
-          <img
-            src={lightboxSrc}
-            alt="preview"
-            className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
     </div>
   );
 };

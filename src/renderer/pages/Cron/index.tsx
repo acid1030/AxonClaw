@@ -1,5 +1,5 @@
 /**
- * AxonClaw - 定时调度 (AxonClawX 风格)
+ * AxonClaw - 定时调度 (ClawDeckX 风格)
  * 调度器概览 | 任务列表 | 历史记录
  */
 import { useEffect, useState, useCallback } from 'react';

@@ -1,5 +1,5 @@
 /**
- * 与 AxonClawX template-manager-v2 MultiAgentTemplate 对齐
+ * 与 ClawDeckX template-manager-v2 MultiAgentTemplate 对齐
  */
 
 export interface TemplateMetadata {

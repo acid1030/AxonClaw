@@ -32,20 +32,12 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   error,
   allowEmpty,
 }) => {
-  const EMPTY_SENTINEL = '__empty__';
-  const allOptions = allowEmpty ? [{ value: EMPTY_SENTINEL, label: '—' }, ...options] : options;
-  const displayValue = allowEmpty && (value ?? '') === '' ? EMPTY_SENTINEL : (value ?? '');
-  const handleValueChange = (next: string) => {
-    if (allowEmpty && next === EMPTY_SENTINEL) {
-      onChange('');
-      return;
-    }
-    onChange(next);
-  };
+  const allOptions = allowEmpty ? [{ value: '', label: '—' }, ...options] : options;
+  const displayValue = value ?? '';
 
   return (
     <ConfigField label={label} desc={desc} tooltip={tooltip} error={error}>
-      <Select value={displayValue} onValueChange={handleValueChange}>
+      <Select value={displayValue} onValueChange={onChange}>
         <SelectTrigger className="h-8 w-full md:w-64 font-mono text-sm">
           <SelectValue placeholder="选择" />
         </SelectTrigger>

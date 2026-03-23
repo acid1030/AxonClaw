@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Plugins View
- * 插件管理界面 - AxonClawX 风格，useSkillsStore 真实数据
+ * 插件管理界面 - ClawDeckX 风格，useSkillsStore 真实数据
  */
 
 import React, { useEffect } from 'react';

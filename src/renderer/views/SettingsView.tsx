@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 系统设置
- * AxonClawX 风格：账户安全 | 异常通知 | 配置备份 | 操作日志 | 软件更新 | 打赏支持 | 关于项目
+ * ClawDeckX 风格：账户安全 | 异常通知 | 配置备份 | 操作日志 | 软件更新 | 打赏支持 | 关于项目
  */
 
 import React, { useState, useEffect } from 'react';
@@ -228,7 +228,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-[#0f172a] overflow-hidden', embedded && 'flex-col')}>
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* 左侧导航 - AxonClawX 风格 */}
+        {/* 左侧导航 - ClawDeckX 风格 */}
         <aside className="w-[220px] shrink-0 flex flex-col border-r border-white/10 overflow-y-auto">
           {/* 顶部用户区 */}
           <div className="p-4 flex items-center gap-3 border-b border-white/5">
@@ -237,7 +237,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             </div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-white/90 truncate">{currentUser}</div>
-              <div className="text-xs text-white/40">AxonClawX</div>
+              <div className="text-xs text-white/40">ClawDeckX</div>
             </div>
           </div>
           <nav className="flex-1 py-2 px-2">
@@ -439,7 +439,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     </div>
                   </div>
                   <p className="text-xs text-white/40 mt-2">
-                    AxonClaw 为桌面客户端，修改 AxonClawX Web 控制台账户密码请前往对应 Web 界面。
+                    AxonClaw 为桌面客户端，修改 ClawDeckX Web 控制台账户密码请前往对应 Web 界面。
                   </p>
                 </div>
 
@@ -447,7 +447,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 <div>
                   <h2 className="text-lg font-semibold text-white/90 mb-1">访问安全</h2>
                   <p className="text-sm text-white/50 mb-4">
-                    配置 AxonClawX 的网络访问设置，修改后需重启服务才能生效
+                    配置 ClawDeckX 的网络访问设置，修改后需重启服务才能生效
                   </p>
                   <div className={cardClass}>
                     <div className="px-4 py-3">
@@ -743,9 +743,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
         </div>
       </div>
 
-      {/* 页脚 - AxonClawX OS */}
+      {/* 页脚 - ClawDeckX OS */}
       <footer className="shrink-0 px-4 py-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
-        <span>AxonClawX OS</span>
+        <span>ClawDeckX OS</span>
       </footer>
     </div>
   );

@@ -1,5 +1,5 @@
 // AxonClaw - Cron Builder Component
-// 参考 AxonClawX CronBuilder.tsx
+// 参考 ClawDeckX CronBuilder.tsx
 
 import { useState } from 'react';
 

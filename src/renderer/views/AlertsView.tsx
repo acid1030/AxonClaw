@@ -1,7 +1,7 @@
 /**
  * AxonClaw - Alerts View
  * 系统警报、错误通知、告警规则
- * AxonClawX 风格
+ * ClawDeckX 风格
  */
 
 import React, { useEffect, useState } from 'react';

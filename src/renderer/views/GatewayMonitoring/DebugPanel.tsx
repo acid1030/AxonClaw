@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 调试面板
- * 复刻自 AxonClawX DebugPanel.tsx
+ * 复刻自 ClawDeckX DebugPanel.tsx
  */
 
 import React from 'react';
