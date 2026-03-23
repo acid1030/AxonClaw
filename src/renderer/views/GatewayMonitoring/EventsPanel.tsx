@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 事件面板
- * 复刻自 ClawDeckX EventsPanel.tsx
+ * 复刻自 AxonClawX EventsPanel.tsx
  */
 
 import React, { useCallback, useMemo } from 'react';

@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Cron View
- * 定时任务界面 - ClawDeckX 风格，useCronStore 真实数据
+ * 定时任务界面 - AxonClawX 风格，useCronStore 真实数据
  */
 
 import React, { useEffect, useState, useCallback } from 'react';

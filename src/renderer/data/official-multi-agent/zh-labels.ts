@@ -1,4 +1,4 @@
-/** 与 ClawDeckX 界面一致的中文标题与描述（覆盖 metadata 英文） */
+/** 与 AxonClawX 界面一致的中文标题与描述（覆盖 metadata 英文） */
 export const MULTI_AGENT_TEMPLATE_ZH: Record<string, { name: string; description: string }> = {
   'content-factory': {
     name: '内容工厂',

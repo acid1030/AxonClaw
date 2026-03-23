@@ -34,13 +34,6 @@ import {
 } from '@/types/channel';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import telegramIcon from '@/assets/channels/telegram.svg';
-import discordIcon from '@/assets/channels/discord.svg';
-import whatsappIcon from '@/assets/channels/whatsapp.svg';
-import dingtalkIcon from '@/assets/channels/dingtalk.svg';
-import feishuIcon from '@/assets/channels/feishu.svg';
-import wecomIcon from '@/assets/channels/wecom.svg';
-import qqIcon from '@/assets/channels/qq.svg';
 
 interface ChannelConfigModalProps {
   initialSelectedType?: ChannelType | null;
@@ -52,10 +45,20 @@ interface ChannelConfigModalProps {
   onChannelSaved?: (channelType: ChannelType) => void | Promise<void>;
 }
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const inputClasses = 'h-[44px] rounded-xl font-mono text-[13px] bg-[#0f172a] border-border focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-[14px] text-foreground/80 font-bold';
-const outlineButtonClasses = 'h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
+const outlineButtonClasses = 'h-9 text-[13px] font-medium rounded-full px-4 border-border bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
 const primaryButtonClasses = 'h-9 text-[13px] font-medium rounded-full px-4 shadow-none';
+
+const channelColorClass: Record<ChannelType, string> = {
+  telegram: 'border-sky-500/50',
+  discord: 'border-indigo-500/50',
+  whatsapp: 'border-emerald-500/50',
+  dingtalk: 'border-blue-500/50',
+  feishu: 'border-blue-600/50',
+  wecom: 'border-green-600/50',
+  qq: 'border-cyan-500/50',
+};
 
 export function ChannelConfigModal({
   initialSelectedType = null,
@@ -67,6 +70,10 @@ export function ChannelConfigModal({
   onChannelSaved,
 }: ChannelConfigModalProps) {
   const { t } = useTranslation('channels');
+  const tr = (key: string, fallback: string) => {
+    const v = t(key);
+    return v === key ? fallback : v;
+  };
   const { channels, addChannel, fetchChannels } = useChannelsStore();
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -379,22 +386,22 @@ export function ChannelConfigModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <Card
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-card overflow-hidden"
+        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border border-slate-700 shadow-2xl bg-[#0f172a] text-slate-100 overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+            <CardTitle className="text-2xl font-serif font-normal tracking-tight text-foreground">
               {selectedType
                 ? isExistingConfig
-                  ? t('dialog.updateTitle', { name: CHANNEL_NAMES[selectedType] })
-                  : t('dialog.configureTitle', { name: CHANNEL_NAMES[selectedType] })
-                : t('dialog.addTitle')}
+                  ? tr('dialog.updateTitle', `更新 ${CHANNEL_NAMES[selectedType]} 配置`)
+                  : tr('dialog.configureTitle', `配置 ${CHANNEL_NAMES[selectedType]}`)
+                : tr('dialog.addTitle', '添加频道')}
             </CardTitle>
             <CardDescription className="text-[15px] mt-1 text-foreground/70">
               {selectedType && isExistingConfig
-                ? t('dialog.existingDesc')
-                : meta ? t(meta.description.replace('channels:', '')) : t('dialog.selectDesc')}
+                ? tr('dialog.existingDesc', '该频道已配置，修改后会覆盖原配置。')
+                : meta ? t(meta.description.replace('channels:', '')) : tr('dialog.selectDesc', '选择一个频道开始配置')}
             </CardDescription>
           </div>
           <Button
@@ -417,13 +424,14 @@ export function ChannelConfigModal({
                     key={type}
                     onClick={() => setSelectedType(type)}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-[#eeece3] dark:bg-muted shadow-sm',
+                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-[#0f172a] shadow-sm',
+                      channelColorClass[type],
                       isConfigured
-                        ? 'border-green-500/40 bg-green-500/5 dark:bg-green-500/10'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                        ? 'bg-green-500/5 dark:bg-green-500/10'
+                        : 'hover:bg-black/5 dark:hover:bg-white/5'
                     )}
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-border/60 rounded-full shadow-sm">
                       <ChannelLogo type={type} />
                     </div>
                     <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
@@ -434,7 +442,7 @@ export function ChannelConfigModal({
                             variant="secondary"
                             className="font-mono text-[10px] font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                           >
-                            {t('pluginBadge')}
+                            {tr('pluginBadge', '插件')}
                           </Badge>
                         )}
                       </div>
@@ -447,7 +455,7 @@ export function ChannelConfigModal({
                     </div>
                     {isConfigured && (
                       <Badge className="absolute top-3 right-3 text-[10px] font-medium rounded-full bg-green-600 hover:bg-green-600">
-                        {t('configuredBadge')}
+                        {tr('configuredBadge', '已配置')}
                       </Badge>
                     )}
                   </button>
@@ -456,11 +464,11 @@ export function ChannelConfigModal({
             </div>
           ) : qrCode ? (
             <div className="text-center space-y-6">
-              <div className="bg-[#eeece3] dark:bg-muted p-4 rounded-3xl inline-block shadow-sm border border-black/10 dark:border-white/10">
+              <div className="bg-[#0f172a] p-4 rounded-3xl inline-block shadow-sm border border-sky-500/40">
                 {qrCode.startsWith('data:image') ? (
                   <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain rounded-2xl" />
                 ) : (
-                  <div className="w-64 h-64 bg-white dark:bg-background rounded-2xl flex items-center justify-center">
+                  <div className="w-64 h-64 bg-[#0f172a] rounded-2xl flex items-center justify-center">
                     <QrCode className="h-32 w-32 text-gray-400" />
                   </div>
                 )}
@@ -482,9 +490,9 @@ export function ChannelConfigModal({
               </div>
             </div>
           ) : loadingConfig ? (
-            <div className="flex items-center justify-center py-10 rounded-2xl bg-[#eeece3] dark:bg-muted border border-black/10 dark:border-white/10">
+            <div className="flex items-center justify-center py-10 rounded-2xl bg-[#0f172a] border border-indigo-500/40">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-[14px] text-muted-foreground">{t('dialog.loadingConfig')}</span>
+              <span className="ml-2 text-[14px] text-muted-foreground">{tr('dialog.loadingConfig', '正在加载配置...')}</span>
             </div>
           ) : (
             <div className="space-y-6">
@@ -495,10 +503,10 @@ export function ChannelConfigModal({
                 </div>
               )}
 
-              <div className="bg-[#eeece3] dark:bg-muted p-4 rounded-2xl space-y-4 shadow-sm border border-black/10 dark:border-white/10">
+              <div className="bg-[#0f172a] p-4 rounded-2xl space-y-4 shadow-sm border border-cyan-500/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className={labelClasses}>{t('dialog.howToConnect')}</p>
+                    <p className={labelClasses}>{tr('dialog.howToConnect', '如何连接')}</p>
                     <p className="text-[13px] text-muted-foreground mt-1">
                       {meta ? t(meta.description.replace('channels:', '')) : ''}
                     </p>
@@ -509,7 +517,7 @@ export function ChannelConfigModal({
                     onClick={openDocs}
                   >
                     <BookOpen className="h-3 w-3 mr-1" />
-                    {t('dialog.viewDocs')}
+                    {tr('dialog.viewDocs', '查看文档')}
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
@@ -522,7 +530,7 @@ export function ChannelConfigModal({
 
               {showChannelName && (
                 <div className="space-y-2.5">
-                  <Label htmlFor="name" className={labelClasses}>{t('dialog.channelName')}</Label>
+                  <Label htmlFor="name" className={labelClasses}>{tr('dialog.channelName', '频道名称')}</Label>
                   <Input
                     ref={firstInputRef}
                     id="name"
@@ -609,12 +617,12 @@ export function ChannelConfigModal({
                       {validating ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {t('dialog.validating')}
+                          {tr('dialog.validating', '验证中...')}
                         </>
                       ) : (
                         <>
                           <ShieldCheck className="h-4 w-4 mr-2" />
-                          {t('dialog.validateConfig')}
+                          {tr('dialog.validateConfig', '验证配置')}
                         </>
                       )}
                     </Button>
@@ -659,21 +667,22 @@ interface ConfigFieldProps {
 }
 
 function ChannelLogo({ type }: { type: ChannelType }) {
+  const iconClass = 'w-[22px] h-[22px] dark:invert';
   switch (type) {
     case 'telegram':
-      return <img src={telegramIcon} alt="Telegram" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/telegram.svg" alt="Telegram" className={iconClass} />;
     case 'discord':
-      return <img src={discordIcon} alt="Discord" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/discord.svg" alt="Discord" className={iconClass} />;
     case 'whatsapp':
-      return <img src={whatsappIcon} alt="WhatsApp" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/whatsapp.svg" alt="WhatsApp" className={iconClass} />;
     case 'dingtalk':
-      return <img src={dingtalkIcon} alt="DingTalk" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/dingtalk.svg" alt="DingTalk" className={iconClass} />;
     case 'feishu':
-      return <img src={feishuIcon} alt="Feishu" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/feishu.svg" alt="Feishu" className={iconClass} />;
     case 'wecom':
-      return <img src={wecomIcon} alt="WeCom" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/wecom.svg" alt="WeCom" className={iconClass} />;
     case 'qqbot':
-      return <img src={qqIcon} alt="QQ" className="w-[22px] h-[22px] dark:invert" />;
+      return <img src="/assets/channels/qq.svg" alt="QQ" className={iconClass} />;
     default:
       return <span className="text-[22px]">{CHANNEL_ICONS[type] || '💬'}</span>;
   }
@@ -704,7 +713,7 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
             variant="outline"
             size="icon"
             onClick={onToggleSecret}
-            className="h-[44px] w-[44px] rounded-xl bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 text-muted-foreground hover:text-foreground shrink-0 shadow-sm"
+            className="h-[44px] w-[44px] rounded-xl bg-[#0f172a] border-border text-muted-foreground hover:text-foreground shrink-0 shadow-sm"
           >
             {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>

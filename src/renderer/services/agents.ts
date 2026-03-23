@@ -1,5 +1,5 @@
 // AxonClaw - Agents Service
-// 参考 ClawDeckX services/agents.ts
+// 参考 AxonClawX services/agents.ts
 
 import { BaseService } from './base';
 import { Agent } from '@/stores/agentsStore';

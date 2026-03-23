@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 通道面板
- * 复刻自 ClawDeckX ChannelsPanel.tsx
+ * 复刻自 AxonClawX ChannelsPanel.tsx
  */
 
 import React from 'react';

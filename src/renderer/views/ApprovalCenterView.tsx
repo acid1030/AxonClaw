@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 审批中心
- * ClawDeckX 风格：审批列表、详情、通过/拒绝
+ * AxonClawX 风格：审批列表、详情、通过/拒绝
  * 需 OpenClaw Gateway 支持 approvals 相关 RPC
  */
 
@@ -63,7 +63,7 @@ export const ApprovalCenterView: React.FC = () => {
       <div className="w-full flex flex-col h-full py-6">
         <PageHeader
           title="审批中心"
-          subtitle="ClawDeckX 风格：审批列表、详情、通过/拒绝。需 OpenClaw 支持 approvals API。"
+          subtitle="AxonClawX 风格：审批列表、详情、通过/拒绝。需 OpenClaw 支持 approvals API。"
           stats={[{ label: '待审批', value: items.filter((i) => i.status === 'pending').length }]}
           statsBorderColor="border-indigo-500/40"
         />

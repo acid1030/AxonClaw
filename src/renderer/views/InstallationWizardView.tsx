@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 安装向导
- * ClawDeckX 风格：完整 5 步安装引导 (欢迎 → 运行环境 → AI 模型 → 安装组件 → 完成)
+ * AxonClawX 风格：完整 5 步安装引导 (欢迎 → 运行环境 → AI 模型 → 安装组件 → 完成)
  * 复用 Setup 页的 SetupWizardContent
  */
 

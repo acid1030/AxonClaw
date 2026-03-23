@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 服务面板
- * 复刻自 ClawDeckX ServicePanel.tsx
+ * 复刻自 AxonClawX ServicePanel.tsx
  */
 
 import React from 'react';

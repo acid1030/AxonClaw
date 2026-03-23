@@ -1,7 +1,7 @@
 /**
- * Agents Store — 对齐 ClawDeckX gwApi 模式
+ * Agents Store — 对齐 AxonClawX gwApi 模式
  * 数据获取流程：
- *   1. rpc('agents.list')  — 获取代理列表（与 ClawDeckX gwApi.agents() 一致）
+ *   1. rpc('agents.list')  — 获取代理列表（与 AxonClawX gwApi.agents() 一致）
  *   2. rpc('config.get')   — 获取配置（model/workspace/bindings 解析）
  *   3. rpc('agent.identity.get') — 获取每个代理的身份信息
  */
@@ -124,7 +124,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   fetchAgents: async () => {
     set({ loading: true, error: null });
     try {
-      // 1) agents.list — 与 ClawDeckX gwApi.agents() 完全一致
+      // 1) agents.list — 与 AxonClawX gwApi.agents() 完全一致
       const data = await rpc<unknown>('agents.list');
       const result = Array.isArray(data) ? { agents: data, defaultId: null } : (data as Record<string, unknown>);
       const list: Array<Record<string, unknown>> = Array.isArray(result?.agents) ? (result.agents as Array<Record<string, unknown>>) : [];
@@ -135,7 +135,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
         (list[0]?.id as string) ??
         'main';
 
-      // 2) config.get — 与 ClawDeckX gwApi.configGet() 一致
+      // 2) config.get — 与 AxonClawX gwApi.configGet() 一致
       let config: AgentsConfig | null = null;
       try {
         config = await rpc<AgentsConfig>('config.get');
@@ -145,7 +145,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
       const snapshot = buildAgentsFromRpc(list, defaultId, config);
 
-      // 3) agent.identity.get — 与 ClawDeckX gwApi.agentIdentity() 一致
+      // 3) agent.identity.get — 与 AxonClawX gwApi.agentIdentity() 一致
       const identityBatch = await Promise.allSettled(
         list.map((ag) =>
           rpc<AgentIdentity>('agent.identity.get', { agentId: ag.id }).then((id) => ({

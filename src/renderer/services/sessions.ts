@@ -1,5 +1,5 @@
 // AxonClaw - Sessions Service
-// 参考 ClawDeckX services/sessions.ts
+// 参考 AxonClawX services/sessions.ts
 
 import { BaseService } from './base';
 

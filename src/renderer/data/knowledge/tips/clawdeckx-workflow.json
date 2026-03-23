@@ -3,16 +3,16 @@
   "type": "tip",
   "version": "1.2.0",
   "metadata": {
-    "name": "ClawDeckX 高效操作指南",
-    "description": "掌握 ClawDeckX 桌面操作、配置中心导航和健康中心的实用技巧",
+    "name": "AxonClawX 高效操作指南",
+    "description": "掌握 AxonClawX 桌面操作、配置中心导航和健康中心的实用技巧",
     "category": "productivity",
     "tags": ["clawdeckx", "workflow", "productivity", "navigation"],
     "difficulty": "easy",
     "featured": true,
     "i18n": {
       "en": {
-        "name": "ClawDeckX Workflow Guide",
-        "description": "Master ClawDeckX desktop operations, config center navigation and health center tips"
+        "name": "AxonClawX Workflow Guide",
+        "description": "Master AxonClawX desktop operations, config center navigation and health center tips"
       }
     }
   },

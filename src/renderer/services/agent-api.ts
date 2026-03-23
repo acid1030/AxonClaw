@@ -1,6 +1,6 @@
 /**
  * Agent API Service
- * ClawDeckX 风格：封装 Gateway RPC 调用
+ * AxonClawX 风格：封装 Gateway RPC 调用
  */
 import { useGatewayStore } from '@/stores/gateway';
 

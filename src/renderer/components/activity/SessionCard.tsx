@@ -1,5 +1,5 @@
 /**
- * Session Card - ClawDeckX style
+ * Session Card - AxonClawX style
  * 活动监控中的会话卡片
  */
 import React, { useState } from 'react';

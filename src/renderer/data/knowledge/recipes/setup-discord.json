@@ -4,14 +4,14 @@
   "version": "1.0.0",
   "metadata": {
     "name": "连接 Discord",
-    "description": "创建 Discord Bot 并通过 ClawDeckX 连接到 OpenClaw 网关",
+    "description": "创建 Discord Bot 并通过 AxonClawX 连接到 OpenClaw 网关",
     "category": "setup",
     "tags": ["discord", "channel", "bot", "setup"],
     "difficulty": "easy",
     "i18n": {
       "en": {
         "name": "Connect Discord",
-        "description": "Create a Discord Bot and connect it to OpenClaw gateway via ClawDeckX"
+        "description": "Create a Discord Bot and connect it to OpenClaw gateway via AxonClawX"
       }
     }
   },
@@ -31,7 +31,7 @@
         "description": "在左侧选择「OAuth2」→「URL Generator」→ 勾选 bot 和 applications.commands → 在 Bot Permissions 中勾选 Send Messages、Read Message History、Add Reactions → 复制生成的 URL 在浏览器中打开，选择你的服务器并授权。"
       },
       {
-        "title": "在 ClawDeckX 中配置",
+        "title": "在 AxonClawX 中配置",
         "description": "前往「配置中心 → 频道」→ 点击「添加频道」→ 选择 Discord。在 Token 字段中粘贴 Bot Token。如果你只想让 Bot 在特定服务器工作，可以填写 guildId。"
       },
       {

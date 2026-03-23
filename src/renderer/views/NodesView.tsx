@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 节点管理
- * ClawDeckX 风格完整复刻：节点列表、新增节点、详情、健康检查
+ * AxonClawX 风格完整复刻：节点列表、新增节点、详情、健康检查
  */
 
 import React, { useCallback, useEffect, useState } from 'react';

@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Sessions View
- * 会话管理界面 - ClawDeckX 风格内容复刻
+ * 会话管理界面 - AxonClawX 风格内容复刻
  * 使用真实 sessions 数据，点击打开跳转对话
  */
 
