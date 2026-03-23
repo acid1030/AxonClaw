@@ -58,9 +58,23 @@ const MainLayout: React.FC = () => {
   // Apply theme class to document root
   useEffect(() => {
     const root = document.documentElement;
-    const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    const isDark = theme === 'dark' || (theme === 'system' && systemDark);
-    root.classList.toggle('dark', isDark);
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+
+    const applyTheme = () => {
+      const systemDark = media?.matches ?? false;
+      const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+      root.classList.toggle('dark', isDark);
+    };
+
+    applyTheme();
+    if (!media) return;
+
+    const onSystemThemeChange = () => {
+      if (theme === 'system') applyTheme();
+    };
+
+    media.addEventListener?.('change', onSystemThemeChange);
+    return () => media.removeEventListener?.('change', onSystemThemeChange);
   }, [theme]);
 
   // Initialize gateway on mount
@@ -107,8 +121,10 @@ const MainLayout: React.FC = () => {
         return <AgentsView />;
       case 'skill-config':
         return <Skills onNavigateTo={(view) => setActiveNav(view)} />;
+      case 'knowledge':
+        return <KnowledgeView />;
       case 'cron':
-        return <Scheduler language="zh" />;
+        return <Scheduler language={language as any} />;
       case 'nodes':
         return <NodesView />;
       case 'system-monitor': {

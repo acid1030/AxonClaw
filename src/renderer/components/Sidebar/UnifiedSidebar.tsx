@@ -11,6 +11,7 @@ const menuItems = [
   { id: 'channel-config', icon: Icons.channel, label: '配置中心' },
   { id: 'agent-config', icon: Icons.agent, label: 'Agent配置' },
   { id: 'skill-config', icon: Icons.skill, label: '技能中心' },
+  { id: 'knowledge', icon: Icons.knowledge, label: '知识中心' },
   { id: 'cron', icon: Icons.cron, label: '定时任务' },
   { id: 'nodes', icon: Icons.nodes, label: '节点管理' },
   { id: 'system-monitor', icon: Icons.gatewayMonitor, label: '监控中心' },
