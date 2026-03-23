@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
 import { loadLocale } from '@/clawdeckx/locales';
 import { DashboardView } from '@/views/DashboardView';
@@ -16,11 +17,11 @@ import { WorkflowView } from '@/views/WorkflowView';
 import { Skills } from '@/pages/Skills';
 import { ModelsView } from '@/views/ModelsView';
 import Scheduler from '@/clawdeckx/windows/Scheduler';
+import Nodes from '@/clawdeckx/windows/Nodes';
 import { RunView } from '@/views/RunView';
 import { UsageView } from '@/views/UsageView';
 import { AlertsView } from '@/views/AlertsView';
 import { LogsView } from '@/views/LogsView';
-import { NodesView } from '@/views/NodesView';
 import { ExtensionsView } from '@/views/ExtensionsView';
 import { SystemView } from '@/views/SystemView';
 import { DiagnosticsView } from '@/views/DiagnosticsView';
@@ -41,6 +42,7 @@ const MainLayout: React.FC = () => {
   const [activeNav, setActiveNav] = useState('overview');
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [monitorTab, setMonitorTab] = useState<'network' | 'activity' | 'usage' | 'health'>('network');
+  const { t } = useTranslation();
 
   // Get connection status from gateway store
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -126,13 +128,13 @@ const MainLayout: React.FC = () => {
       case 'cron':
         return <Scheduler language={language as any} />;
       case 'nodes':
-        return <NodesView />;
+        return <Nodes language={language as any} />;
       case 'system-monitor': {
         const monitorTabs = [
-          { key: 'network', label: '网络监控' },
-          { key: 'activity', label: '活动监控' },
-          { key: 'usage', label: '用量统计' },
-          { key: 'health', label: '健康中心' },
+          { key: 'network', label: t('monitor.tabs.network') },
+          { key: 'activity', label: t('monitor.tabs.activity') },
+          { key: 'usage', label: t('monitor.tabs.usage') },
+          { key: 'health', label: t('monitor.tabs.health') },
         ] as const;
         return (
           <div className="h-full flex flex-col overflow-hidden">
@@ -200,7 +202,7 @@ const MainLayout: React.FC = () => {
           ${isConnected ? 'bg-green-400' : 'bg-red-400'}
           animate-pulse
         `}
-        title={isConnected ? 'Gateway 在线' : 'Gateway 离线'}
+        title={isConnected ? t('gateway.online') : t('gateway.offline')}
       />
     </div>
   );

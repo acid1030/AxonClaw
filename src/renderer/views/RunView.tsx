@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { SessionsView } from './SessionsView';
 import { LogsView } from './LogsView';
 import { ActivityView } from './ActivityView';
@@ -12,10 +13,10 @@ import { cn } from '@/lib/utils';
 
 type RunTab = 'session' | 'log' | 'activity';
 
-const tabs: { id: RunTab; label: string }[] = [
-  { id: 'session', label: '会话' },
-  { id: 'log', label: '日志' },
-  { id: 'activity', label: '活动' },
+const tabs: { id: RunTab; labelKey: string }[] = [
+  { id: 'session', labelKey: 'run.tabs.sessions' },
+  { id: 'log', labelKey: 'run.tabs.logs' },
+  { id: 'activity', labelKey: 'run.tabs.activity' },
 ];
 
 interface RunViewProps {
@@ -25,11 +26,12 @@ interface RunViewProps {
 const RunView: React.FC<RunViewProps> = ({ onNavigateTo }) => {
   const [activeTab, setActiveTab] = useState<RunTab>('session');
   const isOnline = useGatewayStore((s) => s.status.state === 'running');
+  const { t } = useTranslation();
 
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-4 pb-4">
-        <h1 className="text-base font-bold text-foreground mb-2">运行</h1>
+        <h1 className="text-base font-bold text-foreground mb-2">{t('run.title')}</h1>
         <div className={cn(
           'h-[3px] w-full transition-all duration-700 shrink-0 mb-3',
           isOnline ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'
@@ -47,7 +49,7 @@ const RunView: React.FC<RunViewProps> = ({ onNavigateTo }) => {
                 : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
             )}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>

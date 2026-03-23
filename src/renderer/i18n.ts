@@ -18,6 +18,7 @@ const resources = {
         targetChip: '发送给 {{agent}}',
         attachFiles: '附件',
         pickAgent: '选择 Agent',
+        newChatShort: '新对话',
         agentPickerTitle: '发送给 @{{currentAgent}} 以外的 Agent',
         gatewayDisconnectedPlaceholder: 'Gateway 未连接',
         send: '发送',
@@ -38,10 +39,10 @@ const resources = {
     },
     settings: {
       general: {
-        menu: '通用设置',
-        title: '通用设置',
+        menu: '通用',
+        title: '通用',
         desc: '语言、风格与版本信息',
-        language: '语言设置',
+        language: '语言',
         languageDesc: '切换界面显示语言',
         languageOptions: {
           zh: '简体中文',
@@ -50,12 +51,12 @@ const resources = {
           ja: '日本語',
           ko: '한국어',
         },
-        theme: '风格设置',
+        theme: '风格',
         themeDesc: '浅色 / 深色 / 跟随系统',
         themeLight: '浅色',
         themeDark: '深色',
         themeSystem: '系统',
-        version: '版本信息',
+        version: '版本',
         versionDesc: '当前应用与网关运行状态',
         gatewayOnline: 'Gateway 在线',
         gatewayOffline: 'Gateway 离线',
@@ -71,8 +72,8 @@ const resources = {
         installNow: '立即安装',
       },
       account: {
-        menu: '账户安全',
-        title: '账户安全',
+        menu: '账户',
+        title: '账户',
         passwordTitle: '修改密码',
         currentPassword: '当前密码',
         newPassword: '新密码',
@@ -94,8 +95,8 @@ const resources = {
         accessDesc: '配置 AxonClawX 的网络访问设置，修改后需重启服务才能生效',
       },
       notification: {
-        menu: '异常通知',
-        title: '异常通知',
+        menu: '通知',
+        title: '通知',
         desc: '配置系统异常时的通知方式与告警接收',
         channelsTitle: '通知方式',
         channelsDesc: '发生严重异常时如何接收提醒',
@@ -125,14 +126,14 @@ const resources = {
         advancedHint: '完整诊断与一键修复请前往「健康中心」。Webhook、邮件等高级通知方式可在配置中心扩展。',
       },
       backup: {
-        menu: '配置备份',
-        title: '配置备份',
+        menu: '备份',
+        title: '备份',
         desc: '导出或导入 OpenClaw 配置',
         note: '备份能力即将上线。当前可通过配置中心手动导出配置文件。',
       },
       logs: {
-        menu: '操作日志',
-        title: '操作日志',
+        menu: '日志',
+        title: '日志',
         desc: 'Gateway 日志与异常记录',
         logDir: '日志目录',
         logDirDesc: 'Gateway 日志输出路径',
@@ -140,21 +141,21 @@ const resources = {
         openInFinder: '在 Finder 中打开',
       },
       update: {
-        menu: '软件更新',
-        title: '软件更新',
+        menu: '更新',
+        title: '更新',
         desc: '检查并安装新版本',
         currentVersion: '当前版本',
         manualHint: '请通过应用商店或官网获取最新版本。',
       },
       donate: {
-        menu: '打赏支持',
-        title: '打赏支持',
+        menu: '支持',
+        title: '支持',
         desc: '感谢您对 OpenClaw 生态的支持',
         hint: '欢迎通过 OpenClaw 官网或 GitHub 项目页进行打赏支持。',
       },
       about: {
-        menu: '关于项目',
-        title: '关于项目',
+        menu: '关于',
+        title: '关于',
         desc: '版本信息与项目介绍',
         appSubtitle: '本地 AI Agent 平台 · 基于 OpenClaw',
         versionLabel: '版本',
@@ -167,6 +168,41 @@ const resources = {
     channels: {},
     cron: {},
     dashboard: {},
+    nav: {
+      overview: '概览',
+      chat: '对话',
+      config: '配置',
+      agents: 'Agents',
+      skills: '技能',
+      knowledge: '知识',
+      cron: '定时',
+      nodes: '节点',
+      monitor: '监控',
+      settings: '系统',
+    },
+    monitor: {
+      tabs: {
+        network: '网络',
+        activity: '活动',
+        usage: '用量',
+        health: '健康',
+      },
+    },
+    run: {
+      title: '运行',
+      tabs: {
+        sessions: '会话',
+        logs: '日志',
+        activity: '活动',
+      },
+    },
+    system: {
+      title: '系统',
+    },
+    gateway: {
+      online: 'Gateway 在线',
+      offline: 'Gateway 离线',
+    },
     setup: {
       steps: {
         welcome: { title: '欢迎', description: '开始配置 OpenClaw 桌面客户端' },
@@ -248,6 +284,7 @@ const resources = {
         targetChip: 'To {{agent}}',
         attachFiles: 'Attach',
         pickAgent: 'Pick Agent',
+        newChatShort: 'New Chat',
         agentPickerTitle: 'Send to Agent other than @{{currentAgent}}',
         gatewayDisconnectedPlaceholder: 'Gateway disconnected',
         send: 'Send',
@@ -269,7 +306,7 @@ const resources = {
     settings: {
       general: {
         menu: 'General',
-        title: 'General Settings',
+        title: 'General',
         desc: 'Language, appearance and version information',
         language: 'Language',
         languageDesc: 'Switch UI display language',
@@ -301,8 +338,8 @@ const resources = {
         installNow: 'Install Now',
       },
       account: {
-        menu: 'Account Security',
-        title: 'Account Security',
+        menu: 'Account',
+        title: 'Account',
         passwordTitle: 'Change Password',
         currentPassword: 'Current Password',
         newPassword: 'New Password',
@@ -370,8 +407,8 @@ const resources = {
         openInFinder: 'Open in Finder',
       },
       update: {
-        menu: 'Software Update',
-        title: 'Software Update',
+        menu: 'Update',
+        title: 'Update',
         desc: 'Check and install new versions',
         currentVersion: 'Current Version',
         manualHint: 'Get the latest version from the app store or official website.',
@@ -397,6 +434,41 @@ const resources = {
     channels: {},
     cron: {},
     dashboard: {},
+    nav: {
+      overview: 'Overview',
+      chat: 'Chat',
+      config: 'Config',
+      agents: 'Agents',
+      skills: 'Skills',
+      knowledge: 'Knowledge',
+      cron: 'Cron',
+      nodes: 'Nodes',
+      monitor: 'Monitor',
+      settings: 'System',
+    },
+    monitor: {
+      tabs: {
+        network: 'Network',
+        activity: 'Activity',
+        usage: 'Usage',
+        health: 'Health',
+      },
+    },
+    run: {
+      title: 'Run',
+      tabs: {
+        sessions: 'Sessions',
+        logs: 'Logs',
+        activity: 'Activity',
+      },
+    },
+    system: {
+      title: 'System',
+    },
+    gateway: {
+      online: 'Gateway Online',
+      offline: 'Gateway Offline',
+    },
     setup: {
       steps: {
         welcome: { title: 'Welcome', description: 'Configure OpenClaw desktop client' },
