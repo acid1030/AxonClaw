@@ -16,6 +16,10 @@ import {
   AlertTriangle,
   ExternalLink,
   RefreshCw,
+  SlidersHorizontal,
+  Languages,
+  Palette,
+  BadgeInfo,
 } from 'lucide-react';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
@@ -26,6 +30,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { cn } from '@/lib/utils';
 
 type SettingsSection =
+  | 'general'
   | 'account'
   | 'notification'
   | 'backup'
@@ -45,6 +50,7 @@ interface BindAddressState {
 }
 
 const SIDEBAR_ITEMS: { id: SettingsSection; name: string; icon: React.ElementType; iconColor?: string }[] = [
+  { id: 'general', name: '通用设置', icon: SlidersHorizontal, iconColor: 'text-cyan-400' },
   { id: 'account', name: '账户安全', icon: Shield, iconColor: 'text-blue-400' },
   { id: 'notification', name: '异常通知', icon: Bell, iconColor: 'text-amber-400' },
   { id: 'backup', name: '配置备份', icon: Cloud, iconColor: 'text-emerald-400' },
@@ -58,6 +64,14 @@ const BIND_OPTIONS: { value: BindAddressState['mode']; label: string }[] = [
   { value: '0.0.0.0', label: '所有网卡 (0.0.0.0)' },
   { value: '127.0.0.1', label: '仅本机 (127.0.0.1)' },
   { value: 'custom', label: '自定义' },
+];
+
+const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'zh', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
 ];
 
 interface AlertSummary {
@@ -97,6 +111,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
 
   const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
   const isOnline = useGatewayStore((s) => s.status.state === 'running');
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const language = useSettingsStore((s) => s.language);
+  const setLanguage = useSettingsStore((s) => s.setLanguage);
   const alertDesktopNotification = useSettingsStore((s) => s.alertDesktopNotification);
   const setAlertDesktopNotification = useSettingsStore((s) => s.setAlertDesktopNotification);
 
@@ -233,6 +251,91 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
         {/* 右侧内容 */}
         <div className="flex-1 min-w-0 overflow-y-auto p-6">
           <div className="max-w-[620px]">
+
+            {activeSection === 'general' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">通用设置</h2>
+                  <p className="text-sm text-white/50 mb-4">语言、风格与版本信息</p>
+                </div>
+
+                <div className={cardClass}>
+                  <div className={rowClass}>
+                    <div className="flex items-center gap-2">
+                      <Languages className="w-4 h-4 text-cyan-400" />
+                      <div>
+                        <div className="text-sm font-medium text-white/80">语言设置</div>
+                        <div className="text-xs text-white/40 mt-0.5">切换界面显示语言</div>
+                      </div>
+                    </div>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/90"
+                    >
+                      {LANGUAGE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={rowClass}>
+                    <div className="flex items-center gap-2">
+                      <Palette className="w-4 h-4 text-indigo-400" />
+                      <div>
+                        <div className="text-sm font-medium text-white/80">风格设置</div>
+                        <div className="text-xs text-white/40 mt-0.5">浅色 / 深色 / 跟随系统</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setTheme('light')}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                          theme === 'light' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
+                        )}
+                      >
+                        浅色
+                      </button>
+                      <button
+                        onClick={() => setTheme('dark')}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                          theme === 'dark' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
+                        )}
+                      >
+                        深色
+                      </button>
+                      <button
+                        onClick={() => setTheme('system')}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                          theme === 'system' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
+                        )}
+                      >
+                        系统
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={rowClass}>
+                    <div className="flex items-center gap-2">
+                      <BadgeInfo className="w-4 h-4 text-amber-400" />
+                      <div>
+                        <div className="text-sm font-medium text-white/80">版本信息</div>
+                        <div className="text-xs text-white/40 mt-0.5">当前应用与网关运行状态</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono text-sm text-white/80">v{currentVersion}</div>
+                      <div className={cn('text-xs mt-0.5', isOnline ? 'text-emerald-400' : 'text-amber-400')}>
+                        Gateway {isOnline ? '在线' : '离线'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {activeSection === 'account' && (
               <div className="space-y-6">
