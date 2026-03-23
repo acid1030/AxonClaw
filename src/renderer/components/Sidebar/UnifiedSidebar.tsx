@@ -4,7 +4,7 @@ import { Icons } from '../Icons/IconComponents';
 import { SidebarItem } from './SidebarItem';
 import { CollapseButton } from './CollapseButton';
 
-// 按 ClawDeckX 主菜单顺序：概览、知识、安装向导、配置中心、用量、使用向导、网关监控、审批中心、系统、AI会话、智能代理、节点、活动、调度、技能、健康
+// 按 AxonClawX 主菜单顺序：概览、知识、安装向导、配置中心、用量、使用向导、网关监控、审批中心、系统、AI会话、智能代理、节点、活动、调度、技能、健康
 const menuItems = [
   { id: 'dashboard', icon: Icons.dashboard, label: '概览仪表盘' },
   { id: 'knowledge', icon: Icons.knowledge, label: '知识中心' },

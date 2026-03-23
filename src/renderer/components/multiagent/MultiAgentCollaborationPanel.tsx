@@ -1,6 +1,6 @@
 /**
- * 多代理协作 — 布局与内容与 ClawDeckX MultiAgentCollaborationV2 对齐
- * 模板数据：official-multi-agent/*.json（与 ClawDeckX 同源）
+ * 多代理协作 — 布局与内容与 AxonClawX MultiAgentCollaborationV2 对齐
+ * 模板数据：official-multi-agent/*.json（与 AxonClawX 同源）
  */
 
 import React, { useCallback, useMemo, useState } from 'react';

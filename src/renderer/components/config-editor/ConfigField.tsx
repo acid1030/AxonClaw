@@ -1,6 +1,6 @@
 /**
  * 配置编辑器 - 通用字段行容器
- * ClawDeckX 风格表单式 UI
+ * AxonClawX 风格表单式 UI
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { Info } from 'lucide-react';

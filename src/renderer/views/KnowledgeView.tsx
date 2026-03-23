@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 知识中心 (KnowledgeCenter)
- * ClawDeckX 完整复刻：场景模板、多代理、代理预设、知识库、搜索
+ * AxonClawX 完整复刻：场景模板、多代理、代理预设、知识库、搜索
  * 原知识库+知识百科内容作为「知识库」Tab 子页面
  */
 
@@ -384,7 +384,7 @@ function ScenePreviewModal({
   );
 }
 
-/** 场景库 Tab - ClawDeckX 场景模板 */
+/** 场景库 Tab - AxonClawX 场景模板 */
 function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void }) {
   const [sceneCategory, setSceneCategory] = useState<SceneCategory>('all');
   const [sceneSearch, setSceneSearch] = useState('');
@@ -1317,7 +1317,7 @@ const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ on
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
-        {/* Header - ClawDeckX 风格 */}
+        {/* Header - AxonClawX 风格 */}
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-base font-bold text-foreground">知识中心</h2>

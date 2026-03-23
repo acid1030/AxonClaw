@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 用量统计
- * ClawDeckX 风格完整复刻：Token/费用/消息数/延迟、缓存命中率、预算、Tab 导航
+ * AxonClawX 风格完整复刻：Token/费用/消息数/延迟、缓存命中率、预算、Tab 导航
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -277,7 +277,7 @@ const UsageView: React.FC = () => {
         {/* Tab 内容区 - 按 activeTab 切换 */}
         {activeTab === 'overview' && (
           <>
-        {/* 4 个指标卡片 - ClawDeckX 风格 */}
+        {/* 4 个指标卡片 - AxonClawX 风格 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-2">

@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Activity Monitor View
- * ClawDeckX 风格：会话活动监控、KPI 仪表盘、批量操作
+ * AxonClawX 风格：会话活动监控、KPI 仪表盘、批量操作
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

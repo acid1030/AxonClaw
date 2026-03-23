@@ -1,5 +1,5 @@
 // AxonClaw - Skills Service
-// 参考 ClawDeckX services/skills.ts
+// 参考 AxonClawX services/skills.ts
 
 import { BaseService } from './base';
 

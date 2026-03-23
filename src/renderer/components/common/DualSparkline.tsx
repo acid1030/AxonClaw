@@ -1,5 +1,5 @@
 /**
- * 双线迷你图（ClawDeckX 风格：令牌 + 费用）
+ * 双线迷你图（AxonClawX 风格：令牌 + 费用）
  */
 import { useId } from 'react';
 import { cn } from '@/lib/utils';

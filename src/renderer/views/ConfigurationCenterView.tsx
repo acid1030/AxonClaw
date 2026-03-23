@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 配置中心
- * ClawDeckX 风格：表单式 UI + JSON 编辑器
+ * AxonClawX 风格：表单式 UI + JSON 编辑器
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -469,7 +469,7 @@ export const ConfigurationCenterView: React.FC = () => {
       {/* 底部提示 */}
       <div className="flex-shrink-0 px-4 py-2 border-t border-indigo-500/10 bg-[#0f172a]/50">
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">ClawDeckX 风格：</span>
+          <span className="font-medium text-foreground">AxonClawX 风格：</span>
           修改后点击「保存」，{isOnline ? 'Gateway 将自动热重载' : '配置写入 ~/.openclaw/openclaw.json，启动 Gateway 后生效'}。
           使用顶部搜索可快速定位配置项。
         </p>
@@ -496,7 +496,7 @@ function SectionEditor({
     live: isOnline
       ? '当前为 Gateway 实时配置，保存后将热重载生效。'
       : '离线模式下与完整 JSON 相同，请先启动 Gateway 使用实时配置。',
-    templates: '模板配置（若存在）。模板也可通过工作区或 ClawDeckX 模板系统管理。',
+    templates: '模板配置（若存在）。模板也可通过工作区或 AxonClawX 模板系统管理。',
     _raw: '编辑完整 openclaw 配置 JSON，保存后生效。',
   };
   const hint = hints[section];

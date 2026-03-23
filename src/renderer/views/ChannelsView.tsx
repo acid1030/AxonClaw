@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Channels View
- * Channel 配置界面 - ClawDeckX 风格，useChannelsStore 真实数据
+ * Channel 配置界面 - AxonClawX 风格，useChannelsStore 真实数据
  */
 
 import React, { useEffect, useCallback } from 'react';

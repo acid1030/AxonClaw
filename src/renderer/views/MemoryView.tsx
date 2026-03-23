@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Memory View
- * 记忆系统界面 - ClawDeckX 风格内容复刻
+ * 记忆系统界面 - AxonClawX 风格内容复刻
  * LanceDB 语义检索 · 记忆与 Chat 打通
  */
 

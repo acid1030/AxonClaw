@@ -1,6 +1,6 @@
 /**
  * 配置中心 API
- * ClawDeckX 风格：Gateway 在线用 RPC，离线用 hostApiFetch 读写 ~/.openclaw/openclaw.json
+ * AxonClawX 风格：Gateway 在线用 RPC，离线用 hostApiFetch 读写 ~/.openclaw/openclaw.json
  */
 import { useGatewayStore } from '@/stores/gateway';
 import { hostApiFetch } from '@/lib/host-api';

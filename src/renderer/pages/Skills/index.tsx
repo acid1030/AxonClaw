@@ -1118,7 +1118,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
 
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
-      {/* ClawDeckX 风格顶部 */}
+      {/* AxonClawX 风格顶部 */}
       <div className="shrink-0 pt-4 pb-4">
         <h1 className="text-base font-bold text-[var(--color-text)]">{t('title', { defaultValue: '⚡ 技能管理' })}</h1>
         <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{t('subtitle', { defaultValue: '浏览和管理 AI 能力扩展' })}</p>
@@ -1157,7 +1157,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
 
       <div className="w-full flex flex-col h-full py-4 flex-1 min-h-0 overflow-hidden">
 
-        {/* 技能 Tab: Search + Filter Badges (ClawDeckX) */}
+        {/* 技能 Tab: Search + Filter Badges (AxonClawX) */}
         {mainCategory === 'skills' && (
         <>
         {/* Row 1: Search + Filter Badges */}
@@ -1216,7 +1216,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           </div>
         </div>
 
-        {/* Row 2: Actions + Tools (ClawDeckX) */}
+        {/* Row 2: Actions + Tools (AxonClawX) */}
         <div className="flex items-center gap-2 shrink-0 mb-4 flex-wrap">
           <button
             onClick={() => bulkToggleVisible(true)}

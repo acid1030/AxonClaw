@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Templates View
- * 模板中心界面 - ClawDeckX 风格内容复刻
+ * 模板中心界面 - AxonClawX 风格内容复刻
  */
 
 import React from 'react';

@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Content View
- * 内容工厂界面 - ClawDeckX 风格内容复刻
+ * 内容工厂界面 - AxonClawX 风格内容复刻
  */
 
 import React, { useState } from 'react';

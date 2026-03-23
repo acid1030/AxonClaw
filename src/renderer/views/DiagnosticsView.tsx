@@ -1,5 +1,5 @@
 /**
- * AxonClaw - 健康中心（ClawDeckX Doctor 布局对齐）
+ * AxonClaw - 健康中心（AxonClawX Doctor 布局对齐）
  * standalone：侧栏「健康中心」全页；embedded：系统 → 健康中心 Tab
  */
 
@@ -552,7 +552,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
 
   const sourceTotal = sourceDistribution.reduce((s, d) => s + d.count, 0);
 
-  /** 建议动作（ClawDeckX）：根据扣分和问题动态生成 */
+  /** 建议动作（AxonClawX）：根据扣分和问题动态生成 */
   const suggestedActions = useMemo(() => {
     const actions: Array<{ label: string; risk: string; onClick?: () => void }> = [];
     if ((summary?.recentIssues?.length ?? 0) > 0) {
@@ -592,7 +592,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     return { buckets, max };
   }, [summary?.trend24h]);
 
-  /** ClawDeckX 风格：source × hour 二维热力图数据，行=来源，列=0-23时 */
+  /** AxonClawX 风格：source × hour 二维热力图数据，行=来源，列=0-23时 */
   const heatmapSourceHours = useMemo(() => {
     const issues = summary?.recentIssues ?? [];
     const grid = new Map<string, number[]>();
@@ -835,7 +835,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       )}
 
-      {/* 异常来源（ClawDeckX 环形图风格） */}
+      {/* 异常来源（AxonClawX 环形图风格） */}
       <div className="rounded-xl border border-white/10 bg-black/15 p-4">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <LayoutGrid className="w-3.5 h-3.5" />
@@ -888,7 +888,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       </div>
 
-      {/* 异常频率热力图（ClawDeckX 风格：source × hour 二维网格） */}
+      {/* 异常频率热力图（AxonClawX 风格：source × hour 二维网格） */}
       <div className="rounded-xl border border-white/10 bg-black/15 p-4">
         <div className="flex items-center justify-between gap-2 mb-3">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -1033,7 +1033,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       </div>
 
-      {/* 底部区域（ClawDeckX）：左侧问题时间线 + 右侧 2x2 指标 + 建议动作 */}
+      {/* 底部区域（AxonClawX）：左侧问题时间线 + 右侧 2x2 指标 + 建议动作 */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
         <div className="rounded-xl border border-white/10 bg-black/15 p-4">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
