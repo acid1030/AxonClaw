@@ -202,7 +202,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
 
   const handleSavePassword = async () => {
     if (passwordForm.new !== passwordForm.confirm) {
-      setPasswordError('两次输入的新密码不一致');
+      setPasswordError('两次输入的{t('settings.account.newPassword')}不一致');
       return;
     }
     setPasswordSaving(true);
@@ -413,58 +413,58 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
               <div className="space-y-6">
                 {/* 修改密码 */}
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">修改密码</h2>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.account.passwordTitle')}</h2>
                   <div className={cardClass}>
                     <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">当前密码</label>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">{t('settings.account.currentPassword')}</label>
                       <input
                         type="password"
                         value={passwordForm.current}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
-                        placeholder="请输入当前密码"
+                        placeholder="请输入{t('settings.account.currentPassword')}"
                         className={inputClass}
                       />
                     </div>
                     <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">新密码</label>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">{t('settings.account.newPassword')}</label>
                       <input
                         type="password"
                         value={passwordForm.new}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
-                        placeholder="请输入新密码"
+                        placeholder="请输入{t('settings.account.newPassword')}"
                         className={inputClass}
                       />
                     </div>
                     <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">确认密码</label>
+                      <label className="text-sm font-medium text-white/80 w-24 shrink-0">{t('settings.account.confirmPassword')}</label>
                       <input
                         type="password"
                         value={passwordForm.confirm}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
-                        placeholder="请再次输入新密码"
+                        placeholder="请再次输入{t('settings.account.newPassword')}"
                         className={inputClass}
                       />
                     </div>
                     <div className="px-4 py-3 flex justify-end">
                       <button onClick={handleSavePassword} disabled={passwordSaving} className={btnPrimary}>
-                        {passwordSaving ? '保存中…' : '保存'}
+                        {passwordSaving ? t('settings.account.saving') : t('settings.account.save')}
                       </button>
                     </div>
                   </div>
                   <p className="text-xs text-white/40 mt-2">
-                    AxonClaw 为桌面客户端，修改 AxonClawX Web 控制台账户密码请前往对应 Web 界面。
+                    {t('settings.account.desktopNote')}
                   </p>
                 </div>
 
                 {/* 访问安全 */}
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">访问安全</h2>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.account.accessTitle')}</h2>
                   <p className="text-sm text-white/50 mb-4">
-                    配置 AxonClawX 的网络访问设置，修改后需重启服务才能生效
+                    {t('settings.account.accessDesc')}
                   </p>
                   <div className={cardClass}>
                     <div className="px-4 py-3">
-                      <div className="text-sm font-medium text-white/80 mb-3">绑定地址</div>
+                      <div className="text-sm font-medium text-white/80 mb-3">{t('settings.account.bindAddress')}</div>
                       <div className="flex flex-wrap gap-2">
                         {BIND_OPTIONS.map((opt) => (
                           <button
@@ -487,14 +487,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                             type="text"
                             value={customBindHost}
                             onChange={(e) => setCustomBindHost(e.target.value)}
-                            placeholder="0.0.0.0"
+                            placeholder={t('settings.account.bindPlaceholder')}
                             className={cn(inputClass, 'w-full max-w-[200px]')}
                           />
                         </div>
                       )}
                       <div className="mt-3 flex items-center gap-2">
                         <button onClick={handleSaveBindAddress} disabled={bindSaving} className={btnPrimary}>
-                          {bindSaving ? '保存中…' : bindSaved ? '已保存' : '保存'}
+                          {bindSaving ? t('settings.account.saving') : bindSaved ? t('settings.account.saved') : t('settings.account.save')}
                         </button>
                       </div>
                     </div>
@@ -510,8 +510,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'notification' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">异常通知</h2>
-                  <p className="text-sm text-white/50 mb-4">配置系统异常时的通知方式与告警接收</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.notification.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.notification.desc')}</p>
                 </div>
 
                 {/* 通知方式 */}
@@ -654,12 +654,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'backup' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">配置备份</h2>
-                  <p className="text-sm text-white/50 mb-4">导出或导入 OpenClaw 配置</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.backup.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.backup.desc')}</p>
                 </div>
                 <div className={cardClass}>
                   <div className="p-4 text-sm text-white/60">
-                    请前往「配置中心」→「JSON 编辑器」进行配置的导出与导入。
+                    {t('settings.backup.note')}
                   </div>
                 </div>
               </div>
@@ -668,23 +668,23 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'logs' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">操作日志</h2>
-                  <p className="text-sm text-white/50 mb-4">Gateway 日志与异常记录</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.logs.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.logs.desc')}</p>
                 </div>
                 <div className={cardClass}>
                   <div className={rowClass}>
                     <div>
-                      <div className="text-sm font-medium text-white/80">日志目录</div>
-                      <div className="text-xs text-white/40 mt-0.5">Gateway 日志输出路径</div>
+                      <div className="text-sm font-medium text-white/80">{t('settings.logs.logDir')}</div>
+                      <div className="text-xs text-white/40 mt-0.5">{t('settings.logs.logDirDesc')}</div>
                     </div>
                     <span className="text-xs font-mono text-white/50">{storageInfo?.logDir ?? '/tmp/openclaw'}</span>
                   </div>
                   <div className={rowClass}>
                     <div>
-                      <div className="text-sm font-medium text-white/80">打开日志目录</div>
+                      <div className="text-sm font-medium text-white/80">{t('settings.logs.openLogDir')}</div>
                     </div>
                     <button onClick={handleOpenLogDir} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80 hover:bg-white/10 transition-colors">
-                      在 Finder 中打开
+                      {t('settings.logs.openInFinder')}
                     </button>
                   </div>
                 </div>
@@ -694,16 +694,16 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'update' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">软件更新</h2>
-                  <p className="text-sm text-white/50 mb-4">检查并安装新版本</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.update.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.update.desc')}</p>
                 </div>
                 <div className={cardClass}>
                   <div className={rowClass}>
-                    <span className="text-sm text-white/80">当前版本</span>
+                    <span className="text-sm text-white/80">{t('settings.update.currentVersion')}</span>
                     <span className="font-mono text-sm text-white/50">v{currentVersion}</span>
                   </div>
                   <div className="p-4 text-sm text-white/60">
-                    请通过应用商店或官网获取最新版本。
+                    {t('settings.update.manualHint')}
                   </div>
                 </div>
               </div>
@@ -712,12 +712,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'donate' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">打赏支持</h2>
-                  <p className="text-sm text-white/50 mb-4">感谢您对 OpenClaw 生态的支持</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.donate.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.donate.desc')}</p>
                 </div>
                 <div className={cardClass}>
                   <div className="p-4 text-sm text-white/60">
-                    欢迎通过 OpenClaw 官网或 GitHub 项目页进行打赏支持。
+                    {t('settings.donate.hint')}
                   </div>
                 </div>
               </div>
@@ -726,8 +726,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'about' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">关于项目</h2>
-                  <p className="text-sm text-white/50 mb-4">版本信息与项目介绍</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.about.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.about.desc')}</p>
                 </div>
                 <div className={cardClass}>
                   <div className="flex items-center gap-4 p-4 border-b border-white/5">
@@ -736,17 +736,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     </div>
                     <div>
                       <div className="text-base font-bold text-white/90">AxonClaw</div>
-                      <div className="text-xs text-white/50 mt-0.5">本地 AI Agent 平台 · 基于 OpenClaw</div>
+                      <div className="text-xs text-white/50 mt-0.5">{t('settings.about.appSubtitle')}</div>
                     </div>
                   </div>
                   <div className={rowClass}>
-                    <span className="text-sm text-white/50">版本</span>
+                    <span className="text-sm text-white/50">{t('settings.about.versionLabel')}</span>
                     <span className="font-mono text-sm text-white/80">v{currentVersion}</span>
                   </div>
                   <div className={rowClass}>
-                    <span className="text-sm text-white/50">Gateway</span>
+                    <span className="text-sm text-white/50">{t('settings.about.gatewayLabel')}</span>
                     <span className={cn('text-sm font-medium', isOnline ? 'text-emerald-400' : 'text-amber-400')}>
-                      {isOnline ? '在线' : '离线'}
+                      {isOnline ? t('settings.general.gatewayOnline') : t('settings.general.gatewayOffline')}
                     </span>
                   </div>
                 </div>
