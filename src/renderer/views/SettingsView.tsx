@@ -50,6 +50,17 @@ interface BindAddressState {
   customHost?: string;
 }
 
+const SETTINGS_LABEL_KEYS: Record<SettingsSection, string> = {
+  general: 'settings.general.menu',
+  account: 'settings.account.menu',
+  notification: 'settings.notification.menu',
+  backup: 'settings.backup.menu',
+  logs: 'settings.logs.menu',
+  update: 'settings.update.menu',
+  donate: 'settings.donate.menu',
+  about: 'settings.about.menu',
+};
+
 const SIDEBAR_ITEMS: { id: SettingsSection; name: string; icon: React.ElementType; iconColor?: string }[] = [
   { id: 'general', name: '通用设置', icon: SlidersHorizontal, iconColor: 'text-cyan-400' },
   { id: 'account', name: '账户安全', icon: Shield, iconColor: 'text-blue-400' },
@@ -255,7 +266,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 )}
               >
                 <item.icon className={cn('w-4 h-4 shrink-0', item.iconColor ?? 'text-white/60')} />
-                <span className="flex-1 text-left">{item.id === 'general' ? t('settings.general.menu') : item.name}</span>
+                <span className="flex-1 text-left">{t(SETTINGS_LABEL_KEYS[item.id], { defaultValue: item.name })}</span>
                 {activeSection === item.id && <ChevronRight className="w-3.5 h-3.5" />}
               </button>
             ))}
