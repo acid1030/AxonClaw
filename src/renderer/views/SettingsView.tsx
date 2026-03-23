@@ -28,6 +28,7 @@ import { useUpdateStore } from '@/stores/update';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 type SettingsSection =
   | 'general'
@@ -96,6 +97,7 @@ interface SettingsViewProps {
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) => {
+  const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>('account');
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [bindAddress, setBindAddress] = useState<BindAddressState>({ mode: '127.0.0.1' });
@@ -253,7 +255,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 )}
               >
                 <item.icon className={cn('w-4 h-4 shrink-0', item.iconColor ?? 'text-white/60')} />
-                <span className="flex-1 text-left">{item.name}</span>
+                <span className="flex-1 text-left">{item.id === 'general' ? t('settings.general.menu') : item.name}</span>
                 {activeSection === item.id && <ChevronRight className="w-3.5 h-3.5" />}
               </button>
             ))}
@@ -267,8 +269,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
             {activeSection === 'general' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">通用设置</h2>
-                  <p className="text-sm text-white/50 mb-4">语言、风格与版本信息</p>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.general.title')}</h2>
+                  <p className="text-sm text-white/50 mb-4">{t('settings.general.desc')}</p>
                 </div>
 
                 <div className={cardClass}>
@@ -276,8 +278,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     <div className="flex items-center gap-2">
                       <Languages className="w-4 h-4 text-cyan-400" />
                       <div>
-                        <div className="text-sm font-medium text-white/80">语言设置</div>
-                        <div className="text-xs text-white/40 mt-0.5">切换界面显示语言</div>
+                        <div className="text-sm font-medium text-white/80">{t('settings.general.language')}</div>
+                        <div className="text-xs text-white/40 mt-0.5">{t('settings.general.languageDesc')}</div>
                       </div>
                     </div>
                     <select
@@ -295,8 +297,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     <div className="flex items-center gap-2">
                       <Palette className="w-4 h-4 text-indigo-400" />
                       <div>
-                        <div className="text-sm font-medium text-white/80">风格设置</div>
-                        <div className="text-xs text-white/40 mt-0.5">浅色 / 深色 / 跟随系统</div>
+                        <div className="text-sm font-medium text-white/80">{t('settings.general.theme')}</div>
+                        <div className="text-xs text-white/40 mt-0.5">{t('settings.general.themeDesc')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -307,7 +309,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                           theme === 'light' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
                         )}
                       >
-                        浅色
+                        {t('settings.general.themeLight')}
                       </button>
                       <button
                         onClick={() => setTheme('dark')}
@@ -316,7 +318,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                           theme === 'dark' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
                         )}
                       >
-                        深色
+                        {t('settings.general.themeDark')}
                       </button>
                       <button
                         onClick={() => setTheme('system')}
@@ -325,7 +327,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                           theme === 'system' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-white/5 border-white/10 text-white/70 hover:text-white'
                         )}
                       >
-                        系统
+                        {t('settings.general.themeSystem')}
                       </button>
                     </div>
                   </div>
@@ -334,14 +336,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     <div className="flex items-center gap-2">
                       <BadgeInfo className="w-4 h-4 text-amber-400" />
                       <div>
-                        <div className="text-sm font-medium text-white/80">版本信息</div>
-                        <div className="text-xs text-white/40 mt-0.5">当前应用与网关运行状态</div>
+                        <div className="text-sm font-medium text-white/80">{t('settings.general.version')}</div>
+                        <div className="text-xs text-white/40 mt-0.5">{t('settings.general.versionDesc')}</div>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-mono text-sm text-white/80">v{currentVersion}</div>
                       <div className={cn('text-xs mt-0.5', isOnline ? 'text-emerald-400' : 'text-amber-400')}>
-                        Gateway {isOnline ? '在线' : '离线'}
+                        {isOnline ? t('settings.general.gatewayOnline') : t('settings.general.gatewayOffline')}
                       </div>
                     </div>
                   </div>
@@ -350,19 +352,19 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     <div className="flex items-center gap-2">
                       <Download className="w-4 h-4 text-blue-400" />
                       <div>
-                        <div className="text-sm font-medium text-white/80">更新</div>
+                        <div className="text-sm font-medium text-white/80">{t('settings.general.update')}</div>
                         <div className="text-xs text-white/40 mt-0.5">
                           {updateStatus === 'available'
-                            ? `发现新版本 v${updateInfo?.version ?? ''}`
+                            ? t('settings.general.updateAvailable', { version: updateInfo?.version ?? '' })
                             : updateStatus === 'downloading'
-                              ? `下载中 ${Math.round(updateProgress?.percent ?? 0)}%`
+                              ? t('settings.general.updateDownloading', { percent: Math.round(updateProgress?.percent ?? 0) })
                               : updateStatus === 'downloaded'
-                                ? '更新已下载，等待安装'
+                                ? t('settings.general.updateDownloaded')
                                 : updateStatus === 'checking'
-                                  ? '正在检查更新...'
+                                  ? t('settings.general.updateChecking')
                                   : updateStatus === 'error'
-                                    ? (updateError || '更新检查失败')
-                                    : '检查并安装新版本'}
+                                    ? (updateError || t('settings.general.updateError'))
+                                    : t('settings.general.updateDefault')}
                         </div>
                       </div>
                     </div>
@@ -372,14 +374,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                           onClick={() => void downloadUpdate()}
                           className="px-3 py-1.5 rounded-lg text-xs border bg-indigo-500/20 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30"
                         >
-                          下载更新
+                          {t('settings.general.downloadUpdate')}
                         </button>
                       ) : updateStatus === 'downloaded' ? (
                         <button
                           onClick={installUpdate}
                           className="px-3 py-1.5 rounded-lg text-xs border bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
                         >
-                          立即安装
+                          {t('settings.general.installNow')}
                         </button>
                       ) : (
                         <button
@@ -387,7 +389,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                           disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
                           className="px-3 py-1.5 rounded-lg text-xs border bg-white/5 border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-50"
                         >
-                          检查更新
+                          {t('settings.general.checkUpdate')}
                         </button>
                       )}
                     </div>
