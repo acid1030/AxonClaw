@@ -148,7 +148,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl border border-slate-700/60 bg-[#1f2937] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0 border-b border-white/10">
           <div>
             <h2 className="text-lg font-semibold text-white/90">{job ? '编辑任务' : '新建任务'}</h2>
@@ -241,7 +241,7 @@ function CronHistorySection({ isOnline, onRefresh }: { isOnline: boolean; onRefr
   }, [fetchHistory]);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-[#1e293b] mt-6 overflow-hidden">
+    <div className="rounded-xl border border-slate-700/60 bg-[#1f2937] mt-6 overflow-hidden">
       <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-sky-400" />
@@ -305,7 +305,7 @@ function TaskCard({ job, onToggle, onEdit, onDuplicate, onDelete, onTrigger }: T
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4 hover:border-white/15 transition-colors">
+    <div className="rounded-xl border border-slate-700/60 bg-[#1f2937] p-4 hover:border-slate-600/80 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -422,14 +422,14 @@ export function Cron() {
 
   if (loading && safeJobs.length === 0) {
     return (
-      <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] items-center justify-center">
+      <div className="flex flex-col w-full h-full min-h-0 bg-[#0b1220] items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+    <div className="flex flex-col w-full h-full min-h-0 bg-[#0b1220] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
@@ -452,25 +452,25 @@ export function Cron() {
           </div>
 
           {/* Scheduler Overview */}
-          <div className="rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden mb-6">
+          <div className="rounded-xl border border-slate-700/60 bg-[#1f2937] overflow-hidden mb-6">
             <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
               <Clock className="h-4 w-4 text-sky-400" />
               <span className="text-sm font-medium text-white/80">调度器</span>
             </div>
-            <div className="grid grid-cols-4 gap-px bg-white/5">
-              <div className="p-4 bg-[#0f172a]">
+            <div className="grid grid-cols-4 gap-px bg-border/40">
+              <div className="p-4 bg-[#0b1220]">
                 <div className="text-xs text-white/50">状态</div>
                 <div className="text-sm font-medium text-emerald-400 mt-0.5">{summary?.statusText ?? '已启用'}</div>
               </div>
-              <div className="p-4 bg-[#0f172a]">
+              <div className="p-4 bg-[#111827]">
                 <div className="text-xs text-white/50">任务数</div>
                 <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.taskCount ?? safeJobs.length}</div>
               </div>
-              <div className="p-4 bg-[#0f172a]">
+              <div className="p-4 bg-[#111827]">
                 <div className="text-xs text-white/50">下次唤醒</div>
                 <div className="text-sm font-medium text-sky-400 mt-0.5">{summary?.nextWakeup ?? '—'}</div>
               </div>
-              <div className="p-4 bg-[#0f172a]">
+              <div className="p-4 bg-[#111827]">
                 <div className="text-xs text-white/50">运行中</div>
                 <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.running ?? 0}</div>
               </div>
@@ -478,7 +478,7 @@ export function Cron() {
           </div>
 
           {/* Task List */}
-          <div className="rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden">
+          <div className="rounded-xl border border-slate-700/60 bg-[#1f2937] overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <List className="h-4 w-4 text-sky-400" />
