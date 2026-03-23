@@ -42,6 +42,7 @@ import {
   setResolvedGatewayPort,
   readGatewayPortFromConfig,
 } from '../gateway/port';
+import { GATEWAY_TOKEN } from '../gateway/constants';
 import {
   initDatabase,
   closeDatabase,
@@ -802,9 +803,21 @@ async function fetchAgentsFromClawDeckX(): Promise<{
 function getGatewayWsUrl(): string {
   return `ws://127.0.0.1:${getResolvedGatewayPort()}/ws`;
 }
-const GATEWAY_TOKEN = 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7'; // OpenClaw Gateway token
 // 保存 path 模块引用，避免在 hostapi:fetch handler 中被同名参数遮蔽
 const nodePath = path;
+
+function parseOpenclawConfigText(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    // 兼容含注释/尾逗号；仅去掉“整行注释”，避免误伤 file:// / https://
+    const cleaned = raw
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/,(\s*[}\]])/g, '$1');
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  }
+}
 
 ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) => {
   try {
@@ -1189,11 +1202,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         let config: Record<string, unknown> = {};
         if (fs.existsSync(openclawCfgPath)) {
           const raw = fs.readFileSync(openclawCfgPath, 'utf8');
-          const cleaned = raw
-            .replace(/\/\/[^\n]*/g, '')
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/,(\s*[}\]])/g, '$1');
-          config = JSON.parse(cleaned) as Record<string, unknown>;
+          config = parseOpenclawConfigText(raw);
         }
         const gw = (config?.gateway ?? {}) as Record<string, unknown>;
         const bind = String(gw.bind ?? 'loopback');
@@ -1234,11 +1243,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         let config: Record<string, unknown> = {};
         if (fs.existsSync(openclawCfgPath)) {
           const raw = fs.readFileSync(openclawCfgPath, 'utf8');
-          const cleaned = raw
-            .replace(/\/\/[^\n]*/g, '')
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/,(\s*[}\]])/g, '$1');
-          config = JSON.parse(cleaned) as Record<string, unknown>;
+          config = parseOpenclawConfigText(raw);
         }
         const gw = ((config.gateway as Record<string, unknown>) ?? {}) as Record<string, unknown>;
         if (mode === '0.0.0.0') {
@@ -2187,12 +2192,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       try {
         if (fs.existsSync(OPENCLAW_CONFIG_PATH)) {
           const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
-          // 支持 JSON5 注释：简单去除 // 和 /* */ 后解析
-          const cleaned = raw
-            .replace(/\/\/[^\n]*/g, '')
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/,(\s*[}\]])/g, '$1');
-          const json = JSON.parse(cleaned) as Record<string, unknown>;
+          const json = parseOpenclawConfigText(raw);
           return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
         }
         return { ok: true, data: { status: 200, json: {}, ok: true }, success: true, status: 200, json: {} };
@@ -2215,6 +2215,143 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     }
     if (path === '/api/config/path' && method === 'GET') {
       return { ok: true, data: { status: 200, json: { path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { path: OPENCLAW_CONFIG_PATH } };
+    }
+
+    // ── ClawDeckX 配置中心 API (/api/v1/*) 与 ClawDeckX 界面一致 ──
+    if (path === '/api/v1/config' && method === 'GET') {
+      try {
+        let data: { config?: Record<string, unknown>; path?: string; parsed?: boolean; hash?: string } = {};
+        try {
+          const r = await callGatewayRpc('config.get', {}, 8000);
+          if (r.ok && r.result != null) {
+            // 确保 result 是对象而不是字符串（Gateway 可能在配置不存在时返回 "Not Found" 字符串）
+            if (typeof r.result === 'object' && !Array.isArray(r.result)) {
+              const cfg = (r.result as Record<string, unknown>)?.config ?? r.result;
+              if (typeof cfg === 'object' && cfg !== null) {
+                data = { config: cfg as Record<string, unknown>, path: OPENCLAW_CONFIG_PATH, parsed: true };
+              }
+            }
+          }
+        } catch {
+          /* Gateway 离线，读本地文件 */
+        }
+        if (!data.config || typeof data.config !== 'object') {
+          if (fs.existsSync(OPENCLAW_CONFIG_PATH)) {
+            const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
+            const parsed = parseOpenclawConfigText(raw);
+            if (parsed && typeof parsed === 'object') {
+              data = { config: parsed, path: OPENCLAW_CONFIG_PATH, parsed: true };
+            }
+          }
+        }
+        if (!data.config || typeof data.config !== 'object') {
+          return {
+            ok: false,
+            data: { status: 404, json: { success: false, error_code: 'CONFIG_NOT_FOUND', message: 'Config file not found' }, ok: false },
+            success: false,
+            status: 404,
+            json: { success: false, error_code: 'CONFIG_NOT_FOUND', message: 'Config file not found' },
+          };
+        }
+        return { ok: true, data: { status: 200, json: data, ok: true }, success: true, status: 200, json: data };
+      } catch (err) {
+        console.error('[HostAPI] /api/v1/config GET error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { success: false, error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/v1/config' && method === 'PUT' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { config?: Record<string, unknown> });
+        const cfg = payload?.config ?? payload;
+        const dir = nodePath.dirname(OPENCLAW_CONFIG_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+        return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
+      } catch (err) {
+        console.error('[HostAPI] /api/v1/config PUT error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { success: false, error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/v1/config/generate-default' && method === 'POST') {
+      try {
+        const dir = nodePath.dirname(OPENCLAW_CONFIG_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const defaultConfig: Record<string, unknown> = {
+          gateway: { port: 18789, bind: 'loopback' },
+          agents: { list: [{ id: 'main', name: 'Main', default: true }], defaultId: 'main' },
+          bindings: [],
+          channels: {},
+          models: {},
+        };
+        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf8');
+        return { ok: true, data: { status: 200, json: { success: true, message: 'Default config generated', path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { success: true, message: 'Default config generated', path: OPENCLAW_CONFIG_PATH } };
+      } catch (err) {
+        console.error('[HostAPI] /api/v1/config/generate-default error:', err);
+        return {
+          ok: false,
+          data: { status: 500, json: { success: false, error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/v1/setup/scan' && method === 'GET') {
+      try {
+        const openclawInstalled = fs.existsSync(OPENCLAW_CONFIG_PATH) || (await callGatewayRpc('health', { probe: false }, 3000).then((r) => r.ok).catch(() => false));
+        const data = { openClawInstalled: !!openclawInstalled };
+        return { ok: true, data: { status: 200, json: { success: true, data }, ok: true }, success: true, status: 200, json: { success: true, data } };
+      } catch (err) {
+        return { ok: true, data: { status: 200, json: { success: true, data: { openClawInstalled: false } }, ok: true }, success: true, status: 200, json: { success: true, data: { openClawInstalled: false } } };
+      }
+    }
+    if (path === '/api/v1/gw/proxy' && method === 'POST') {
+      try {
+        const params = typeof body === 'string' ? JSON.parse(body) : (body as { method?: string; params?: Record<string, unknown> });
+        const rpcMethod = params?.method ?? '';
+        const rpcParams = params?.params ?? {};
+        const r = await callGatewayRpc(rpcMethod, rpcParams);
+        if (!r.ok) {
+          // Gateway RPC 失败，返回错误让前端能检测到
+          return {
+            ok: false,
+            data: { status: 502, json: { success: false, error: r.error || 'Gateway RPC failed' }, ok: false },
+            success: false,
+            status: 502,
+            json: { success: false, error: r.error || 'Gateway RPC failed' },
+          };
+        }
+        return { ok: true, data: { status: 200, json: r.result, ok: true }, success: true, status: 200, json: r.result };
+      } catch (err) {
+        console.error('[HostAPI] /api/v1/gw/proxy error:', err);
+        return {
+          ok: false,
+          data: { status: 502, json: { success: false, error: String(err) }, ok: false },
+          success: false,
+          status: 502,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+    if (path === '/api/v1/gw/status' && method === 'GET') {
+      try {
+        const r = await callGatewayRpc('health', { probe: false }, 3000);
+        return { ok: true, data: { status: 200, json: { ok: r.ok }, ok: true }, success: true, status: 200, json: { ok: r.ok } };
+      } catch {
+        return { ok: true, data: { status: 200, json: { ok: false }, ok: true }, success: true, status: 200, json: { ok: false } };
+      }
     }
 
     // 代理管理：/api/agents - 与 ClawDeckX 一致，使用 agents.list RPC
@@ -2686,8 +2823,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
           if (fs.existsSync(cfgPath)) {
             const raw = fs.readFileSync(cfgPath, 'utf8');
-            const cleaned = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/,(\s*[}\]])/g, '$1');
-            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const config = parseOpenclawConfigText(raw);
             const cron = config?.cron as Record<string, unknown> | undefined;
             cronEnabled = cron?.enabled !== false;
           }
@@ -2703,8 +2839,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
           if (fs.existsSync(cfgPath)) {
             const raw = fs.readFileSync(cfgPath, 'utf8');
-            const cleaned = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/,(\s*[}\]])/g, '$1');
-            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const config = parseOpenclawConfigText(raw);
             const cron = config?.cron as Record<string, unknown> | undefined;
             cronEnabled = cron?.enabled !== false;
             const tasks = (cron?.tasks ?? cron?.jobs) as Array<Record<string, unknown>> | undefined;
@@ -2789,11 +2924,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           const cfgPath = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
           if (fs.existsSync(cfgPath)) {
             const raw = fs.readFileSync(cfgPath, 'utf8');
-            const cleaned = raw
-              .replace(/\/\/[^\n]*/g, '')
-              .replace(/\/\*[\s\S]*?\*\//g, '')
-              .replace(/,(\s*[}\]])/g, '$1');
-            const config = JSON.parse(cleaned) as Record<string, unknown>;
+            const config = parseOpenclawConfigText(raw);
             const cron = config?.cron as Record<string, unknown> | undefined;
             const tasks = (cron?.tasks ?? cron?.jobs) as Array<Record<string, unknown>> | undefined;
             if (Array.isArray(tasks)) {

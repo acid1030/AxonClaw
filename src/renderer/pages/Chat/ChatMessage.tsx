@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
-import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp, stripFilePathsFromText } from './message-utils';
+import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp, stripFilePathsFromText, extractFilePathsFromText } from './message-utils';
 
 interface ChatMessageProps {
   message: RawMessage;
@@ -55,13 +55,41 @@ export const ChatMessage = memo(function ChatMessage({
   const visibleTools = tools;
 
   const attachedFiles = message._attachedFiles || [];
+
+  // If text contains file paths but upstream didn't attach them, synthesize clickable file cards
+  const textFileCards: AttachedFileMeta[] = (() => {
+    const paths = extractFilePathsFromText(text);
+    if (!paths.length) return [];
+    const existing = new Set((attachedFiles || []).map(f => f.filePath).filter(Boolean) as string[]);
+    const guessMime = (p: string) => {
+      const ext = (p.split('.').pop() || '').toLowerCase();
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext)) return `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+      if (['pdf'].includes(ext)) return 'application/pdf';
+      if (['md', 'txt', 'csv', 'json', 'xml', 'yaml', 'yml', 'log'].includes(ext)) return 'text/plain';
+      if (['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'].includes(ext)) return 'video/mp4';
+      if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(ext)) return 'audio/mpeg';
+      if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'application/zip';
+      return 'application/octet-stream';
+    };
+    return paths
+      .filter((p) => !existing.has(p))
+      .map((p) => ({
+        fileName: p.split(/[\\/]/).pop() || 'file',
+        mimeType: guessMime(p),
+        fileSize: 0,
+        preview: null,
+        filePath: p,
+      }));
+  })();
+
+  const allAttachedFiles = [...attachedFiles, ...textFileCards];
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
   const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
+  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && allAttachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
     <div
@@ -124,9 +152,9 @@ export const ChatMessage = memo(function ChatMessage({
         )}
 
         {/* File attachments — images above text for user, file cards below */}
-        {isUser && attachedFiles.length > 0 && (
+        {isUser && allAttachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {attachedFiles.map((file, i) => {
+            {allAttachedFiles.map((file, i) => {
               const isImage = file.mimeType.startsWith('image/');
               // Skip image attachments if we already have images from content blocks
               if (isImage && images.length > 0) return null;
@@ -158,7 +186,7 @@ export const ChatMessage = memo(function ChatMessage({
         {/* Main text bubble — strip file paths for assistant so they appear as FileCards below */}
         {hasText && (
           <MessageBubble
-            text={!isUser && attachedFiles.length > 0 ? stripFilePathsFromText(text) : text}
+            text={allAttachedFiles.length > 0 ? stripFilePathsFromText(text) : text}
             isUser={isUser}
             isStreaming={isStreaming}
           />
@@ -185,9 +213,9 @@ export const ChatMessage = memo(function ChatMessage({
         )}
 
         {/* File attachments — assistant messages (below text) */}
-        {!isUser && attachedFiles.length > 0 && (
+        {!isUser && allAttachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {attachedFiles.map((file, i) => {
+            {allAttachedFiles.map((file, i) => {
               const isImage = file.mimeType.startsWith('image/');
               if (isImage && images.length > 0) return null;
               if (isImage && file.preview) {
