@@ -8,6 +8,7 @@ import { Download, ListChecks, Search } from 'lucide-react';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
+import { useChatStore } from '@/stores/chat';
 import { KPIDashboard, type KPIDashboardProps } from '@/components/activity/KPIDashboard';
 import { SessionCard, type SessionCardProps } from '@/components/activity/SessionCard';
 import {
@@ -452,9 +453,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
 
   const handleNavigateToChat = useCallback(
     (key: string) => {
-      import('@/stores/chat').then(({ useChatStore }) => {
-        useChatStore.getState().switchSession(key);
-      });
+      useChatStore.getState().switchSession(key);
       onNavigateTo?.('chat');
     },
     [onNavigateTo]

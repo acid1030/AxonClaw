@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useSettingsStore } from '@/stores/settings';
+import { loadLocale } from '@/clawdeckx/locales';
 import { DashboardView } from '@/views/DashboardView';
 import { ChatView } from '@/components/chat/ChatView';
 import { AgentsView } from '@/views/AgentsView';
@@ -13,7 +15,7 @@ import { ContentView } from '@/views/ContentView';
 import { WorkflowView } from '@/views/WorkflowView';
 import { Skills } from '@/pages/Skills';
 import { ModelsView } from '@/views/ModelsView';
-import { Cron } from '@/pages/Cron';
+import Scheduler from '@/clawdeckx/windows/Scheduler';
 import { RunView } from '@/views/RunView';
 import { UsageView } from '@/views/UsageView';
 import { AlertsView } from '@/views/AlertsView';
@@ -36,18 +38,34 @@ import { PanelTrigger } from '@/components/Panel/PanelTrigger';
 import { useGatewayStore } from '@/stores/gateway';
 
 const MainLayout: React.FC = () => {
-  const [activeNav, setActiveNav] = useState('dashboard');
+  const [activeNav, setActiveNav] = useState('overview');
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [monitorTab, setMonitorTab] = useState<'network' | 'activity' | 'usage' | 'health'>('network');
 
   // Get connection status from gateway store
   const gatewayStatus = useGatewayStore((state) => state.status);
   const isConnected = gatewayStatus.state === 'running';
+
+  const language = useSettingsStore((s) => s.language);
 
   // Initialize gateway on mount
   useEffect(() => {
     const { init } = useGatewayStore.getState();
     init().catch(console.error);
   }, []);
+
+  // 预加载配置中心 locale，确保中文等非英文语言能正确显示
+  useEffect(() => {
+    if (language === 'en') return;
+    const lang = language?.toLowerCase?.() || '';
+    if (lang.startsWith('zh-tw')) {
+      loadLocale('zh-TW').catch(() => {});
+    } else if (lang.startsWith('zh')) {
+      loadLocale('zh').catch(() => {});
+    } else if (['ja', 'ko', 'es', 'pt-BR', 'de', 'fr', 'ru', 'ar', 'hi', 'id'].includes(lang)) {
+      loadLocale(lang as any).catch(() => {});
+    }
+  }, [language]);
 
   // Handle Cmd/Ctrl + K shortcut
   useEffect(() => {
@@ -64,56 +82,51 @@ const MainLayout: React.FC = () => {
 
   const renderContent = () => {
     switch (activeNav) {
-      case 'dashboard':
+      case 'overview':
         return <DashboardView onNavigateTo={(view) => setActiveNav(view)} />;
       case 'chat':
         return <ChatView />;
-      case 'agent':
+      case 'channel-config':
+        return <ConfigurationCenterView pendingSection="channels" />;
+      case 'agent-config':
         return <AgentsView />;
-      case 'channel':
-        return <ChannelsView />;
-      case 'memory':
-        return <MemoryView />;
-      case 'content':
-        return <ContentView />;
-      case 'workflow':
-        return <WorkflowView />;
-      case 'skill':
+      case 'skill-config':
         return <Skills onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'model':
-        return <ModelsView />;
       case 'cron':
-        return <Cron />;
-      case 'run':
-        return <RunView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'usage':
-        return <UsageView />;
-      case 'alerts':
-        return <AlertsView />;
-      case 'logs':
-        return <LogsView />;
+        return <Scheduler language="zh" />;
       case 'nodes':
         return <NodesView />;
-      case 'extensions':
-        return <ExtensionsView />;
-      case 'system':
+      case 'system-monitor': {
+        const monitorTabs = [
+          { key: 'network', label: '网络监控' },
+          { key: 'activity', label: '活动监控' },
+          { key: 'usage', label: '用量统计' },
+          { key: 'health', label: '健康中心' },
+        ] as const;
+        return (
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="px-4 pt-3 pb-2 border-b border-white/10 flex items-center gap-2 flex-wrap">
+              {monitorTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setMonitorTab(tab.key)}
+                  className={`px-3 py-1.5 rounded-md text-sm ${monitorTab === tab.key ? 'bg-white/15 text-white' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {monitorTab === 'network' && <GatewayMonitoringView />}
+              {monitorTab === 'activity' && <ActivityMonitorView onNavigateTo={(view) => setActiveNav(view)} />}
+              {monitorTab === 'usage' && <UsageView />}
+              {monitorTab === 'health' && <DiagnosticsView standalone onNavigateTo={(view) => setActiveNav(view)} />}
+            </div>
+          </div>
+        );
+      }
+      case 'system-config':
         return <SystemView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'health':
-        return <DiagnosticsView standalone onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'knowledge':
-        return <KnowledgeView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'activity':
-        return <ActivityMonitorView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'install':
-        return <InstallationWizardView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'config':
-        return <ConfigurationCenterView />;
-      case 'guide':
-        return <UsageWizardView onNavigateTo={(view) => setActiveNav(view)} />;
-      case 'gateway-monitor':
-        return <GatewayMonitoringView />;
-      case 'approval':
-        return <ApprovalCenterView />;
       default:
         return <DashboardView />;
     }

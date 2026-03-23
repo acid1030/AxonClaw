@@ -42,10 +42,11 @@ function attachedImageSrc(file: AttachedFileMeta): string | null {
   if (file.preview) return file.preview;
   const raw = file.filePath?.trim();
   if (!raw) return null;
-  if (raw.startsWith('file://') || raw.startsWith('data:') || raw.startsWith('blob:') || /^https?:\/\//i.test(raw)) {
+  if (raw.startsWith('data:') || raw.startsWith('blob:') || /^https?:\/\//i.test(raw)) {
     return raw;
   }
-  if (raw.startsWith('/')) return `file://${encodeURI(raw)}`;
+  // 仅允许应用静态资源路径；本地绝对路径不直接注入 <img src="file://...">（会被 Electron 拦截）
+  if (raw.startsWith('/assets/')) return raw;
   return null;
 }
 
