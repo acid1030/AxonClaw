@@ -421,7 +421,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         type="password"
                         value={passwordForm.current}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
-                        placeholder="请输入{t('settings.account.currentPassword')}"
+                        placeholder={t('settings.account.placeholderCurrent')}
                         className={inputClass}
                       />
                     </div>
@@ -431,7 +431,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         type="password"
                         value={passwordForm.new}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
-                        placeholder="请输入{t('settings.account.newPassword')}"
+                        placeholder={t('settings.account.placeholderNew')}
                         className={inputClass}
                       />
                     </div>
@@ -441,7 +441,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         type="password"
                         value={passwordForm.confirm}
                         onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
-                        placeholder="请再次输入{t('settings.account.newPassword')}"
+                        placeholder={t('settings.account.placeholderConfirm')}
                         className={inputClass}
                       />
                     </div>
