@@ -202,7 +202,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
 
   const handleSavePassword = async () => {
     if (passwordForm.new !== passwordForm.confirm) {
-      setPasswordError('两次输入的{t('settings.account.newPassword')}不一致');
+      setPasswordError(t('settings.account.mismatch'));
       return;
     }
     setPasswordSaving(true);
