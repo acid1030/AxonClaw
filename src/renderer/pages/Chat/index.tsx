@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -43,6 +43,49 @@ export function Chat() {
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
   const minLoading = useMinLoading(loading && messages.length > 0);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
+  const autoScrollRafRef = useRef<number | null>(null);
+
+  const animateScrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+
+    const startTop = el.scrollTop;
+    const targetTop = el.scrollHeight - el.clientHeight;
+    const distance = targetTop - startTop;
+
+    if (distance <= 1) {
+      el.scrollTop = targetTop;
+      return;
+    }
+
+    // Keep duration short and bounded; long histories still feel smooth.
+    const duration = Math.max(280, Math.min(900, Math.abs(distance) * 0.35));
+    const startTime = performance.now();
+
+    const easeInOutCubic = (t: number) => (t < 0.5
+      ? 4 * t * t * t
+      : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = easeInOutCubic(progress);
+      el.scrollTop = startTop + distance * eased;
+
+      if (progress < 1) {
+        autoScrollRafRef.current = requestAnimationFrame(step);
+      } else {
+        autoScrollRafRef.current = null;
+      }
+    };
+
+    autoScrollRafRef.current = requestAnimationFrame(step);
+  }, [scrollRef]);
 
   // Load data when gateway is running.
   // When the store already holds messages for this session (i.e. the user
@@ -70,6 +113,21 @@ export function Chat() {
       setStreamingTimestamp(0);
     }
   }, [sending, streamingTimestamp]);
+
+  useEffect(() => {
+    if (!loading) {
+      // Session switched / history loaded / refresh completed → animate from top to bottom
+      animateScrollToBottom();
+    }
+  }, [loading, currentSessionKey, messages.length, animateScrollToBottom]);
+
+  useEffect(() => {
+    return () => {
+      if (autoScrollRafRef.current != null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+      }
+    };
+  }, []);
 
   // Gateway not running block has been completely removed so the UI always renders.
 
