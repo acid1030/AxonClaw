@@ -61,29 +61,29 @@ const SETTINGS_LABEL_KEYS: Record<SettingsSection, string> = {
   about: 'settings.about.menu',
 };
 
-const SIDEBAR_ITEMS: { id: SettingsSection; name: string; icon: React.ElementType; iconColor?: string }[] = [
-  { id: 'general', name: '通用设置', icon: SlidersHorizontal, iconColor: 'text-cyan-400' },
-  { id: 'account', name: '账户安全', icon: Shield, iconColor: 'text-blue-400' },
-  { id: 'notification', name: '异常通知', icon: Bell, iconColor: 'text-amber-400' },
-  { id: 'backup', name: '配置备份', icon: Cloud, iconColor: 'text-emerald-400' },
-  { id: 'logs', name: '操作日志', icon: ClipboardList, iconColor: 'text-orange-400' },
-  { id: 'update', name: '软件更新', icon: Download, iconColor: 'text-blue-400' },
-  { id: 'donate', name: '打赏支持', icon: Heart, iconColor: 'text-pink-400' },
-  { id: 'about', name: '关于项目', icon: Info, iconColor: 'text-purple-400' },
+const SIDEBAR_ITEMS: { id: SettingsSection; icon: React.ElementType; iconColor?: string }[] = [
+  { id: 'general', icon: SlidersHorizontal, iconColor: 'text-cyan-400' },
+  { id: 'account', icon: Shield, iconColor: 'text-blue-400' },
+  { id: 'notification', icon: Bell, iconColor: 'text-amber-400' },
+  { id: 'backup', icon: Cloud, iconColor: 'text-emerald-400' },
+  { id: 'logs', icon: ClipboardList, iconColor: 'text-orange-400' },
+  { id: 'update', icon: Download, iconColor: 'text-blue-400' },
+  { id: 'donate', icon: Heart, iconColor: 'text-pink-400' },
+  { id: 'about', icon: Info, iconColor: 'text-purple-400' },
 ];
 
-const BIND_OPTIONS: { value: BindAddressState['mode']; label: string }[] = [
-  { value: '0.0.0.0', label: '所有网卡 (0.0.0.0)' },
-  { value: '127.0.0.1', label: '仅本机 (127.0.0.1)' },
-  { value: 'custom', label: '自定义' },
+const BIND_OPTIONS: { value: BindAddressState['mode']; labelKey: string }[] = [
+  { value: '0.0.0.0', labelKey: 'settings.account.bindAllNics' },
+  { value: '127.0.0.1', labelKey: 'settings.account.bindLocalOnly' },
+  { value: 'custom', labelKey: 'settings.account.bindCustom' },
 ];
 
-const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'zh', label: '简体中文' },
-  { value: 'zh-TW', label: '繁體中文' },
-  { value: 'en', label: 'English' },
-  { value: 'ja', label: '日本語' },
-  { value: 'ko', label: '한국어' },
+const LANGUAGE_OPTIONS: { value: string; labelKey: string; fallbackLabel: string }[] = [
+  { value: 'zh', labelKey: 'settings.general.languageOptions.zh', fallbackLabel: '简体中文' },
+  { value: 'zh-TW', labelKey: 'settings.general.languageOptions.zhTW', fallbackLabel: '繁體中文' },
+  { value: 'en', labelKey: 'settings.general.languageOptions.en', fallbackLabel: 'English' },
+  { value: 'ja', labelKey: 'settings.general.languageOptions.ja', fallbackLabel: '日本語' },
+  { value: 'ko', labelKey: 'settings.general.languageOptions.ko', fallbackLabel: '한국어' },
 ];
 
 interface AlertSummary {
@@ -108,7 +108,7 @@ interface SettingsViewProps {
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>('account');
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [bindAddress, setBindAddress] = useState<BindAddressState>({ mode: '127.0.0.1' });
@@ -266,7 +266,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 )}
               >
                 <item.icon className={cn('w-4 h-4 shrink-0', item.iconColor ?? 'text-white/60')} />
-                <span className="flex-1 text-left">{t(SETTINGS_LABEL_KEYS[item.id], { defaultValue: item.name })}</span>
+                <span className="flex-1 text-left">{t(SETTINGS_LABEL_KEYS[item.id])}</span>
                 {activeSection === item.id && <ChevronRight className="w-3.5 h-3.5" />}
               </button>
             ))}
@@ -299,7 +299,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                       className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/90"
                     >
                       {LANGUAGE_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        <option key={opt.value} value={opt.value}>{t(opt.labelKey, { defaultValue: opt.fallbackLabel })}</option>
                       ))}
                     </select>
                   </div>
@@ -477,7 +477,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                                 : 'bg-white/5 border-white/10 text-white/60 hover:text-white/80'
                             )}
                           >
-                            {opt.label}
+                            {t(opt.labelKey)}
                           </button>
                         ))}
                       </div>
@@ -517,13 +517,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 {/* 通知方式 */}
                 <div className={cardClass}>
                   <div className="px-4 py-3 border-b border-white/5">
-                    <div className="text-sm font-medium text-white/80">通知方式</div>
-                    <div className="text-xs text-white/40 mt-0.5">发生严重异常时如何接收提醒</div>
+                    <div className="text-sm font-medium text-white/80">{t('settings.notification.channelsTitle')}</div>
+                    <div className="text-xs text-white/40 mt-0.5">{t('settings.notification.channelsDesc')}</div>
                   </div>
                   <div className={rowClass}>
                     <div>
-                      <div className="text-sm font-medium text-white/80">桌面通知</div>
-                      <div className="text-xs text-white/40 mt-0.5">严重告警时弹出系统通知（需授权通知权限）</div>
+                      <div className="text-sm font-medium text-white/80">{t('settings.notification.desktopTitle')}</div>
+                      <div className="text-xs text-white/40 mt-0.5">{t('settings.notification.desktopDesc')}</div>
                     </div>
                     <Switch checked={alertDesktopNotification} onCheckedChange={setAlertDesktopNotification} />
                   </div>
@@ -533,14 +533,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 <div className={cardClass}>
                   <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-white/80">近期告警统计</div>
-                      <div className="text-xs text-white/40 mt-0.5">来自告警库与日志解析</div>
+                      <div className="text-sm font-medium text-white/80">{t('settings.notification.summaryTitle')}</div>
+                      <div className="text-xs text-white/40 mt-0.5">{t('settings.notification.summaryDesc')}</div>
                     </div>
                     <button
                       onClick={fetchAlertSummary}
                       disabled={alertLoading}
                       className="p-1.5 rounded-lg text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors disabled:opacity-50"
-                      title="刷新"
+                      title={t('settings.notification.refresh')}
                     >
                       <RefreshCw className={cn('w-4 h-4', alertLoading && 'animate-spin')} />
                     </button>
@@ -551,32 +551,32 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         <div className="flex flex-wrap gap-3">
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
                             <AlertTriangle className="w-4 h-4 text-red-400" />
-                            <span className="text-sm text-white/90">严重</span>
+                            <span className="text-sm text-white/90">{t('settings.notification.severe')}</span>
                             <span className="text-sm font-semibold text-red-400">{alertSummary.high}</span>
                           </div>
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                             <AlertTriangle className="w-4 h-4 text-amber-400" />
-                            <span className="text-sm text-white/90">警告</span>
+                            <span className="text-sm text-white/90">{t('settings.notification.warning')}</span>
                             <span className="text-sm font-semibold text-amber-400">{alertSummary.medium}</span>
                           </div>
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-                            <span className="text-xs text-white/50">1h / 24h</span>
+                            <span className="text-xs text-white/50">{t('settings.notification.healthWindow')}</span>
                             <span className="text-sm font-medium text-white/80">{alertSummary.count1h} / {alertSummary.count24h}</span>
                           </div>
                         </div>
                         <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                          <span className="text-xs text-white/50">健康评分</span>
+                          <span className="text-xs text-white/50">{t('settings.notification.healthScore')}</span>
                           <span className={cn(
                             'text-sm font-medium',
                             (alertSummary.healthScore ?? 100) >= 80 ? 'text-emerald-400' : (alertSummary.healthScore ?? 100) >= 60 ? 'text-amber-400' : 'text-red-400'
                           )}>
-                            {alertSummary.healthScore ?? 100} 分
+                            {t('settings.notification.scorePoints', { score: alertSummary.healthScore ?? 100 })}
                           </span>
                         </div>
                       </>
                     ) : (
                       <div className="py-4 text-center text-sm text-white/50">
-                        {alertLoading ? '加载中...' : '暂无告警数据'}
+                        {alertLoading ? t('settings.notification.loading') : t('settings.notification.noAlertData')}
                       </div>
                     )}
                   </div>
@@ -587,7 +587,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium hover:bg-amber-500/30 transition-colors"
                       >
                         <ExternalLink className="w-4 h-4" />
-                        查看全部告警
+                        {t('settings.notification.viewAllAlerts')}
                       </button>
                     </div>
                   )}
@@ -597,13 +597,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 <div className={cardClass}>
                   <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-white/80">近期告警</div>
-                      <div className="text-xs text-white/40 mt-0.5">最近 10 条告警记录</div>
+                      <div className="text-sm font-medium text-white/80">{t('settings.notification.recentAlertsTitle')}</div>
+                      <div className="text-xs text-white/40 mt-0.5">{t('settings.notification.recentAlertsDesc')}</div>
                     </div>
                   </div>
                   <div className="divide-y divide-white/5">
                     {alertList.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-sm text-white/50">暂无告警记录</div>
+                      <div className="px-4 py-6 text-center text-sm text-white/50">{t('settings.notification.noAlertRecords')}</div>
                     ) : (
                       alertList.map((a) => (
                         <div key={a.id} className="px-4 py-2.5 flex items-start gap-2">
@@ -612,9 +612,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                             a.level === 'critical' ? 'bg-red-500' : a.level === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
                           )} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-sm text-white/80">{a.title || '告警'}</div>
+                            <div className="text-sm text-white/80">{a.title || t('settings.notification.alertFallbackTitle')}</div>
                             {a.message && <div className="text-xs text-white/50 mt-0.5 line-clamp-2">{a.message}</div>}
-                            <div className="text-xs text-white/40 mt-1">{new Date(a.timestamp).toLocaleString('zh-CN')}</div>
+                            <div className="text-xs text-white/40 mt-1">{new Date(a.timestamp).toLocaleString(i18n.language === 'zh' ? 'zh-CN' : i18n.language === 'zh-TW' ? 'zh-TW' : i18n.language)}</div>
                           </div>
                         </div>
                       ))
@@ -626,7 +626,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                         onClick={() => onNavigateTo('alerts')}
                         className="text-xs text-amber-400 hover:text-amber-300"
                       >
-                        查看全部 →
+                        {t('settings.notification.viewAllShort')}
                       </button>
                     </div>
                   )}
@@ -635,18 +635,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 {/* 通知规则说明 */}
                 <div className={cardClass}>
                   <div className="px-4 py-3 border-b border-white/5">
-                    <div className="text-sm font-medium text-white/80">通知规则</div>
-                    <div className="text-xs text-white/40 mt-0.5">静默时间、告警级别阈值等</div>
+                    <div className="text-sm font-medium text-white/80">{t('settings.notification.rulesTitle')}</div>
+                    <div className="text-xs text-white/40 mt-0.5">{t('settings.notification.rulesDesc')}</div>
                   </div>
                   <div className="p-4 text-sm text-white/60 space-y-2">
-                    <p>• 桌面通知：严重级别以上告警时触发系统通知</p>
-                    <p>• 静默时段：可在配置中心配置免打扰时间段</p>
-                    <p>• Webhook / 邮件：需在配置中心扩展插件后配置</p>
+                    <p>{t('settings.notification.ruleDesktop')}</p>
+                    <p>{t('settings.notification.ruleQuietHours')}</p>
+                    <p>{t('settings.notification.ruleWebhookEmail')}</p>
                   </div>
                 </div>
 
                 <p className="text-xs text-white/40">
-                  完整诊断与一键修复请前往「健康中心」。Webhook、邮件等高级通知方式可在配置中心扩展。
+                  {t('settings.notification.advancedHint')}
                 </p>
               </div>
             )}
@@ -758,7 +758,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
 
       {/* 页脚 - AxonClawX OS */}
       <footer className="shrink-0 px-4 py-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
-        <span>AxonClawX OS</span>
+        <span>{t('settings.footer.os')}</span>
       </footer>
     </div>
   );
