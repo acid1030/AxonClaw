@@ -44,44 +44,8 @@ import type { MultiAgentTemplate, TemplateAgent } from '@/types/multi-agent-temp
 import { agentFileGet, agentFileSet } from '@/services/agent-api';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
+import { useTranslation } from 'react-i18next';
 
-const MA = {
-  title: '多代理协作',
-  subtitle: '部署多代理协作工作流，实现复杂任务自动化',
-  loading: '加载模板…',
-  agents: '代理角色',
-  selectTemplate: '选择模板以查看详情',
-  deployModeTitle: '选择部署方式',
-  deployModeEnhance: '增强现有代理',
-  deployModeEnhanceDesc: '将工作流能力添加到当前代理，让它学会调用子代理。适合快速体验、单代理场景。',
-  deployModeEnhanceRecommend: '推荐',
-  deployModeDeploy: '部署独立子代理',
-  deployModeDeployDesc: '创建多个独立的子代理，可被主代理调用。适合复杂任务、需要专业分工。',
-  deployModeDeployAdvanced: '高级',
-  runWorkflow: '运行工作流',
-  teamMembers: '团队成员',
-  workflow: '工作流程',
-  parallel: '并行',
-  useCases: '使用场景',
-  requirements: '前置要求',
-  collaborationTipTitle: '💡 多代理协作说明',
-  collaborationTipDesc:
-    '选择「增强现有代理」让主代理学会调用子代理，或选择「部署子代理」创建独立的专业代理。部署后，主代理会自动使用 sessions_spawn 工具调用合适的子代理完成任务。',
-  workflowSequential: '顺序',
-  workflowParallel: '并行',
-  workflowCollaborative: '协作',
-  workflowEventDriven: '事件驱动',
-  workflowRouting: '路由',
-  runTaskPlaceholder: '描述这个工作流要执行的初始任务…',
-  runSend: '发送到主代理',
-  noDefaultAgent: '未找到默认主代理，请先在列表中设置默认代理。',
-  quickOk: '已写入 SOUL.md / HEARTBEAT.md',
-  quickFail: '增强失败',
-  deployOk: '部署成功',
-  deployFail: '部署失败',
-  runOk: '已发送',
-  runFail: '发送失败',
-};
 
 const ICONS: Record<string, LucideIcon> = {
   factory: Factory,
@@ -115,10 +79,42 @@ function MaterialIcon({ name, className }: { name?: string; className?: string }
   return <Icon className={className} />;
 }
 
-function resolveZh(template: MultiAgentTemplate): { name: string; description: string } {
+function resolveTemplateDisplay(
+  template: MultiAgentTemplate,
+  isZh: boolean,
+): { name: string; description: string; workflowDescription?: string } {
   const zh = MULTI_AGENT_TEMPLATE_ZH[template.id];
-  if (zh) return zh;
-  return { name: template.metadata.name, description: template.metadata.description };
+  if (isZh && zh) {
+    return {
+      name: zh.name,
+      description: zh.description,
+      workflowDescription: zh.workflowDescription || template.content.workflow.description,
+    };
+  }
+  return {
+    name: template.metadata.name,
+    description: template.metadata.description,
+    workflowDescription: template.content.workflow.description,
+  };
+}
+
+function resolveAgentDisplay(templateId: string, agent: TemplateAgent, isZh: boolean): { name: string; role: string } {
+  if (!isZh) return { name: agent.name, role: agent.role };
+  const zh = MULTI_AGENT_TEMPLATE_ZH[templateId]?.agents?.[agent.id];
+  return {
+    name: zh?.name || agent.name,
+    role: zh?.role || agent.role,
+  };
+}
+
+function resolveWorkflowStepAction(templateId: string, index: number, fallback: string, isZh: boolean): string {
+  if (!isZh) return fallback;
+  return MULTI_AGENT_TEMPLATE_ZH[templateId]?.workflowSteps?.[index] || fallback;
+}
+
+function resolveExampleText(templateId: string, index: number, fallback: string, isZh: boolean): string {
+  if (!isZh) return fallback;
+  return MULTI_AGENT_TEMPLATE_ZH[templateId]?.examples?.[index] || fallback;
 }
 
 export interface MultiAgentCollaborationPanelProps {
@@ -134,6 +130,48 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
   onDeploy,
   isOnline,
 }) => {
+  const { t, i18n } = useTranslation('agents');
+  const isZh = /^(zh|cn)/i.test(i18n.language || '');
+  const MA = useMemo(
+    () => ({
+      title: t('view.multiAgent.title', { defaultValue: '多代理协作' }),
+      subtitle: t('view.multiAgent.subtitle', { defaultValue: '部署多代理工作流，自动处理复杂任务' }),
+      agents: t('view.multiAgent.agents', { defaultValue: 'Agent Roles' }),
+      selectTemplate: t('view.multiAgent.selectTemplate', { defaultValue: '选择一个模板查看详情' }),
+      deployModeTitle: t('view.multiAgent.deployModeTitle', { defaultValue: '选择部署模式' }),
+      deployModeEnhance: t('view.multiAgent.deployModeEnhance', { defaultValue: '增强现有代理' }),
+      deployModeEnhanceDesc: t('view.multiAgent.deployModeEnhanceDesc', { defaultValue: '为当前代理添加工作流能力，使其可以调用子代理。适合快速试用和单代理场景。' }),
+      deployModeEnhanceRecommend: t('view.multiAgent.deployModeEnhanceRecommend', { defaultValue: '推荐' }),
+      deployModeDeploy: t('view.multiAgent.deployModeDeploy', { defaultValue: '部署独立子代理' }),
+      deployModeDeployDesc: t('view.multiAgent.deployModeDeployDesc', { defaultValue: '创建多个独立子代理，由主代理按需调用。适合复杂任务与专业分工协作。' }),
+      deployModeDeployAdvanced: t('view.multiAgent.deployModeDeployAdvanced', { defaultValue: '高级' }),
+      runWorkflow: t('view.multiAgent.runWorkflow', { defaultValue: '运行工作流' }),
+      teamMembers: t('view.multiAgent.teamMembers', { defaultValue: '团队成员' }),
+      parallel: t('view.multiAgent.parallel', { defaultValue: '并行' }),
+      useCases: t('view.multiAgent.useCases', { defaultValue: '使用场景' }),
+      requirements: t('view.multiAgent.requirements', { defaultValue: '前置要求' }),
+      collaborationTipTitle: t('view.multiAgent.collaborationTipTitle', { defaultValue: '多代理协作提示' }),
+      collaborationTipDesc: t('view.multiAgent.collaborationTipDesc', { defaultValue: '可选择“增强现有代理”，让主代理调用子代理；或选择“部署独立子代理”，创建专职代理群。部署后，主代理可通过 sessions_spawn 自动委派任务。' }),
+      workflowSequential: t('view.multiAgent.workflowSequential', { defaultValue: '顺序' }),
+      workflowParallel: t('view.multiAgent.workflowParallel', { defaultValue: '并行' }),
+      workflowCollaborative: t('view.multiAgent.workflowCollaborative', { defaultValue: '协作' }),
+      workflowEventDriven: t('view.multiAgent.workflowEventDriven', { defaultValue: '事件驱动' }),
+      workflowRouting: t('view.multiAgent.workflowRouting', { defaultValue: '路由' }),
+      runTaskPlaceholder: t('view.multiAgent.runTaskPlaceholder', { defaultValue: '描述该工作流的初始任务...' }),
+      runSend: t('view.multiAgent.runSend', { defaultValue: '发送给主代理' }),
+      runSending: t('view.multiAgent.runSending', { defaultValue: '发送中…' }),
+      noDefaultAgent: t('view.multiAgent.noDefaultAgent', { defaultValue: '未找到默认主代理，请先设置默认代理。' }),
+      gatewayOffline: t('view.multiAgent.gatewayOffline', { defaultValue: 'Gateway 离线，无法读写代理文件。' }),
+      quickOk: t('view.multiAgent.quickOk', { defaultValue: 'SOUL.md / HEARTBEAT.md 已更新' }),
+      quickFail: t('view.multiAgent.quickFail', { defaultValue: '增强失败' }),
+      deployOk: t('view.multiAgent.deployOk', { defaultValue: '部署成功' }),
+      deployFail: t('view.multiAgent.deployFail', { defaultValue: '部署失败' }),
+      runOk: t('view.multiAgent.runOk', { defaultValue: '已发送' }),
+      runFail: t('view.multiAgent.runFail', { defaultValue: '发送失败' }),
+      workflowPrefix: t('view.multiAgent.workflowPrefix', { defaultValue: '[工作流]' }),
+    }),
+    [t],
+  );
   const templates = OFFICIAL_MULTI_AGENT_TEMPLATES;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deploying, setDeploying] = useState<string | null>(null);
@@ -155,7 +193,7 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
       routing: MA.workflowRouting,
     };
     return labels[type] || type;
-  }, []);
+  }, [MA]);
 
   const getWorkflowTypeColor = useCallback((type: string) => {
     const colors: Record<string, string> = {
@@ -175,7 +213,7 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
         return;
       }
       if (!isOnline) {
-        toast.error('Gateway 离线，无法读写代理文件');
+        toast.error(MA.gatewayOffline);
         return;
       }
       setEnhancing(true);
@@ -183,7 +221,7 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
         const workflowId = template.id;
         const blockStart = `<!-- workflow:${workflowId} -->`;
         const blockEnd = `<!-- /workflow:${workflowId} -->`;
-        const zh = resolveZh(template);
+        const display = resolveTemplateDisplay(template, isZh);
         const agentIds = template.content.agents.map((a) => a.id);
         const agentList = template.content.agents
           .map((agent) => `- **${agent.id}**: ${agent.name} - ${agent.role}`)
@@ -194,9 +232,9 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
 
         const soulBlock = `
 ${blockStart}
-## ${zh.name}
+## ${display.name}
 
-${zh.description}
+${display.description}
 
 ### Available Subagents
 
@@ -225,7 +263,7 @@ ${blockEnd}
 
         const heartbeatBlock = `
 ${blockStart}
-## ${zh.name} Workflow
+## ${display.name} Workflow
 
 ${template.content.workflow.steps
   .map((step, idx) => `- [ ] Step ${idx + 1} (${step.agent || (step.agents || []).join(', ')}): ${step.action}`)
@@ -238,7 +276,11 @@ ${blockEnd}
           const cur = (res?.file?.content as string) || '';
           const block = file === 'SOUL.md' ? soulBlock : heartbeatBlock;
           if (cur.includes(blockStart)) {
-            toast.message(`「${zh.name}」在 ${file} 中已存在，已跳过重复块`);
+            toast.message(t('view.multiAgent.duplicateSkipped', {
+              name: display.name,
+              file,
+              defaultValue: '{{name}} 已存在于 {{file}}，已跳过重复写入。',
+            }));
             continue;
           }
           await agentFileSet(defaultAgentId, file, cur + block);
@@ -251,19 +293,19 @@ ${blockEnd}
         setEnhancing(false);
       }
     },
-    [defaultAgentId, isOnline, onDeploy],
+    [defaultAgentId, isOnline, onDeploy, MA, isZh],
   );
 
   const handleFullDeploy = useCallback(
     async (template: MultiAgentTemplate) => {
       setDeploying(template.id);
       try {
-        const zh = resolveZh(template);
+        const display = resolveTemplateDisplay(template, isZh);
         const deployRequest = {
           template: {
             id: template.id,
-            name: zh.name,
-            description: zh.description,
+            name: display.name,
+            description: display.description,
             agents: template.content.agents.map((agent) => ({
               id: agent.id,
               name: agent.name,
@@ -301,7 +343,7 @@ ${blockEnd}
         setDeploying(null);
       }
     },
-    [onDeploy],
+    [onDeploy, MA, isZh],
   );
 
   const handleRunWorkflow = useCallback(async () => {
@@ -311,7 +353,7 @@ ${blockEnd}
       const rpc = useGatewayStore.getState().rpc;
       await rpc('chat.send', {
         sessionKey: `${defaultAgentId}:main`,
-        message: `[工作流] ${runTask.trim()}`,
+        message: `${MA.workflowPrefix} ${runTask.trim()}`,
         idempotencyKey: `ma-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       });
       toast.success(MA.runOk);
@@ -321,7 +363,7 @@ ${blockEnd}
     } finally {
       setRunBusy(false);
     }
-  }, [defaultAgentId, runTask]);
+  }, [defaultAgentId, runTask, MA]);
 
   return (
     <div className="space-y-4 max-w-6xl">
@@ -333,7 +375,7 @@ ${blockEnd}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1 space-y-2">
           {templates.map((template) => {
-            const zh = resolveZh(template);
+            const display = resolveTemplateDisplay(template, isZh);
             const metaIcon = template.metadata.icon;
             const color = template.metadata.color || 'from-purple-500 to-pink-500';
             return (
@@ -358,8 +400,8 @@ ${blockEnd}
                     <MaterialIcon name={metaIcon} className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-[12px] font-bold text-foreground truncate">{zh.name}</h4>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{zh.description}</p>
+                    <h4 className="text-[12px] font-bold text-foreground truncate">{display.name}</h4>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{display.description}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-[9px] text-muted-foreground/80">
                         {template.content.agents.length} {MA.agents}
@@ -394,9 +436,9 @@ ${blockEnd}
                     <MaterialIcon name={selectedTemplate.metadata.icon} className="w-6 h-6" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-bold text-foreground">{resolveZh(selectedTemplate).name}</h3>
+                    <h3 className="text-sm font-bold text-foreground">{resolveTemplateDisplay(selectedTemplate, isZh).name}</h3>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {resolveZh(selectedTemplate).description}
+                      {resolveTemplateDisplay(selectedTemplate, isZh).description}
                     </p>
                   </div>
                 </div>
@@ -459,7 +501,7 @@ ${blockEnd}
                     {runBusy ? (
                       <>
                         <RefreshCw className="w-4 h-4 mr-2 inline animate-spin" />
-                        发送中…
+                        {MA.runSending}
                       </>
                     ) : (
                       <>
@@ -484,8 +526,8 @@ ${blockEnd}
                       >
                         <MaterialIcon name={agent.icon} className="w-5 h-5" />
                       </div>
-                      <p className="text-[11px] font-bold text-foreground/90">{agent.name}</p>
-                      <p className="text-[9px] text-muted-foreground mt-0.5 line-clamp-2">{agent.role}</p>
+                      <p className="text-[11px] font-bold text-foreground/90">{resolveAgentDisplay(selectedTemplate.id, agent, isZh).name}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5 line-clamp-2">{resolveAgentDisplay(selectedTemplate.id, agent, isZh).role}</p>
                     </div>
                   ))}
                 </div>
@@ -501,7 +543,7 @@ ${blockEnd}
                   >
                     {getWorkflowTypeLabel(selectedTemplate.content.workflow.type)}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">{selectedTemplate.content.workflow.description}</span>
+                  <span className="text-[10px] text-muted-foreground">{resolveTemplateDisplay(selectedTemplate, isZh).workflowDescription}</span>
                 </div>
                 <div className="relative">
                   <div className="absolute start-4 top-0 bottom-0 w-0.5 bg-white/10" />
@@ -525,7 +567,7 @@ ${blockEnd}
                                     ag.color || 'bg-slate-500',
                                   )}
                                 >
-                                  {ag.name}
+                                  {resolveAgentDisplay(selectedTemplate.id, ag, isZh).name}
                                 </span>
                               ))}
                               {step.parallel && (
@@ -539,7 +581,7 @@ ${blockEnd}
                                 </span>
                               )}
                             </div>
-                            <p className="text-[10px] text-muted-foreground">{step.action}</p>
+                            <p className="text-[10px] text-muted-foreground">{resolveWorkflowStepAction(selectedTemplate.id, idx, step.action, isZh)}</p>
                           </div>
                         </div>
                       );
@@ -555,7 +597,7 @@ ${blockEnd}
                     {selectedTemplate.content.examples.map((ex, idx) => (
                       <div key={idx} className="flex items-start gap-2 text-[10px]">
                         <span className="text-indigo-400 shrink-0">•</span>
-                        <span className="text-muted-foreground">{ex}</span>
+                        <span className="text-muted-foreground">{resolveExampleText(selectedTemplate.id, idx, ex, isZh)}</span>
                       </div>
                     ))}
                   </div>

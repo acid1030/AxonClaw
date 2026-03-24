@@ -12,25 +12,26 @@ import {
   ArrayField,
 } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
+import i18n from '@/i18n';
 
 const LOG_LEVEL_OPTIONS = [
-  { value: 'silent', label: '静默' },
-  { value: 'fatal', label: '致命' },
-  { value: 'error', label: '错误' },
-  { value: 'warn', label: '警告' },
-  { value: 'info', label: '信息' },
-  { value: 'debug', label: '调试' },
-  { value: 'trace', label: '追踪' },
+  { value: 'silent', label: i18n.t('configCenter.logging.level.silent') },
+  { value: 'fatal', label: i18n.t('configCenter.logging.level.fatal') },
+  { value: 'error', label: i18n.t('configCenter.logging.level.error') },
+  { value: 'warn', label: i18n.t('configCenter.logging.level.warn') },
+  { value: 'info', label: i18n.t('configCenter.logging.level.info') },
+  { value: 'debug', label: i18n.t('configCenter.logging.level.debug') },
+  { value: 'trace', label: i18n.t('configCenter.logging.level.trace') },
 ];
 const CONSOLE_STYLE_OPTIONS = [
-  { value: 'pretty', label: '美化' },
-  { value: 'compact', label: '紧凑' },
+  { value: 'pretty', label: i18n.t('configCenter.logging.consoleStyle.pretty') },
+  { value: 'compact', label: i18n.t('configCenter.logging.consoleStyle.compact') },
   { value: 'json', label: 'JSON' },
 ];
 const REDACT_OPTIONS = [
-  { value: '', label: '关闭' },
-  { value: 'off', label: '关闭' },
-  { value: 'tools', label: '工具' },
+  { value: '', label: i18n.t('configCenter.logging.redact.off') },
+  { value: 'off', label: i18n.t('configCenter.logging.redact.off') },
+  { value: 'tools', label: i18n.t('configCenter.logging.redact.tools') },
 ];
 const OTEL_PROTOCOL_OPTIONS = [
   { value: 'http/protobuf', label: 'HTTP/Protobuf' },
@@ -42,65 +43,65 @@ export const LoggingSection: React.FC<SectionProps> = ({ setField, getField }) =
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="日志配置" icon={FileText} iconColor="text-yellow-500">
+      <ConfigSection title={i18n.t('configCenter.logging.title')} icon={FileText} iconColor="text-yellow-500">
         <SelectField
-          label="日志级别"
+          label={i18n.t('configCenter.logging.fields.logLevel')}
           value={String(g(['logging', 'level']) ?? 'info')}
           onChange={(v) => setField(['logging', 'level'], v)}
           options={LOG_LEVEL_OPTIONS}
         />
         <TextField
-          label="日志文件"
+          label={i18n.t('configCenter.logging.fields.logFile')}
           value={String(g(['logging', 'file']) ?? '')}
           onChange={(v) => setField(['logging', 'file'], v)}
           placeholder="gateway.log"
         />
         <NumberField
-          label="最大文件字节"
+          label={i18n.t('configCenter.logging.fields.maxFileBytes')}
           value={g(['logging', 'maxFileBytes']) as number | undefined}
           onChange={(v) => setField(['logging', 'maxFileBytes'], v)}
           min={0}
         />
         <SelectField
-          label="控制台级别"
+          label={i18n.t('configCenter.logging.fields.consoleLevel')}
           value={String(g(['logging', 'consoleLevel']) ?? 'info')}
           onChange={(v) => setField(['logging', 'consoleLevel'], v)}
           options={LOG_LEVEL_OPTIONS}
         />
         <SelectField
-          label="控制台样式"
+          label={i18n.t('configCenter.logging.fields.consoleStyle')}
           value={String(g(['logging', 'consoleStyle']) ?? 'pretty')}
           onChange={(v) => setField(['logging', 'consoleStyle'], v)}
           options={CONSOLE_STYLE_OPTIONS}
         />
         <SelectField
-          label="敏感信息脱敏"
+          label={i18n.t('configCenter.logging.fields.redactSensitive')}
           value={String(g(['logging', 'redactSensitive']) ?? '')}
           onChange={(v) => setField(['logging', 'redactSensitive'], v)}
           options={REDACT_OPTIONS}
         />
         <ArrayField
-          label="脱敏正则"
+          label={i18n.t('configCenter.logging.fields.redactPatterns')}
           value={(g(['logging', 'redactPatterns']) as string[]) ?? []}
           onChange={(v) => setField(['logging', 'redactPatterns'], v)}
           placeholder="regex-pattern"
         />
       </ConfigSection>
 
-      <ConfigSection title="诊断" icon={Bug} iconColor="text-yellow-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.logging.diagnostics.title')} icon={Bug} iconColor="text-yellow-500" defaultOpen={false}>
         <SwitchField
-          label="启用诊断"
+          label={i18n.t('configCenter.logging.diagnostics.enabled')}
           value={g(['diagnostics', 'enabled']) === true}
           onChange={(v) => setField(['diagnostics', 'enabled'], v)}
         />
         <ArrayField
-          label="诊断标志"
+          label={i18n.t('configCenter.logging.diagnostics.flags')}
           value={(g(['diagnostics', 'flags']) as string[]) ?? []}
           onChange={(v) => setField(['diagnostics', 'flags'], v)}
           placeholder="flag-name"
         />
         <NumberField
-          label="卡顿会话警告毫秒"
+          label={i18n.t('configCenter.logging.diagnostics.stuckWarnMs')}
           value={g(['diagnostics', 'stuckSessionWarnMs']) as number | undefined}
           onChange={(v) => setField(['diagnostics', 'stuckSessionWarnMs'], v)}
           min={0}
@@ -110,45 +111,45 @@ export const LoggingSection: React.FC<SectionProps> = ({ setField, getField }) =
 
       <ConfigSection title="OpenTelemetry" icon={BarChart3} iconColor="text-indigo-500" defaultOpen={false}>
         <SwitchField
-          label="启用"
+          label={i18n.t('configCenter.logging.fields.enabled')}
           value={g(['diagnostics', 'otel', 'enabled']) === true}
           onChange={(v) => setField(['diagnostics', 'otel', 'enabled'], v)}
         />
         <TextField
-          label="端点"
+          label={i18n.t('configCenter.logging.fields.endpoint')}
           value={String(g(['diagnostics', 'otel', 'endpoint']) ?? '')}
           onChange={(v) => setField(['diagnostics', 'otel', 'endpoint'], v)}
           placeholder="http://localhost:4318"
         />
         <SelectField
-          label="协议"
+          label={i18n.t('configCenter.logging.fields.protocol')}
           value={String(g(['diagnostics', 'otel', 'protocol']) ?? 'http/protobuf')}
           onChange={(v) => setField(['diagnostics', 'otel', 'protocol'], v)}
           options={OTEL_PROTOCOL_OPTIONS}
         />
         <TextField
-          label="服务名"
+          label={i18n.t('configCenter.logging.fields.serviceName')}
           value={String(g(['diagnostics', 'otel', 'serviceName']) ?? '')}
           onChange={(v) => setField(['diagnostics', 'otel', 'serviceName'], v)}
           placeholder="openclaw-gateway"
         />
         <SwitchField
-          label="追踪"
+          label={i18n.t('configCenter.logging.fields.traces')}
           value={g(['diagnostics', 'otel', 'traces']) !== false}
           onChange={(v) => setField(['diagnostics', 'otel', 'traces'], v)}
         />
         <SwitchField
-          label="指标"
+          label={i18n.t('configCenter.logging.fields.metrics')}
           value={g(['diagnostics', 'otel', 'metrics']) !== false}
           onChange={(v) => setField(['diagnostics', 'otel', 'metrics'], v)}
         />
         <SwitchField
-          label="日志"
+          label={i18n.t('configCenter.logging.fields.logs')}
           value={g(['diagnostics', 'otel', 'logs']) !== false}
           onChange={(v) => setField(['diagnostics', 'otel', 'logs'], v)}
         />
         <NumberField
-          label="采样率"
+          label={i18n.t('configCenter.logging.fields.sampleRate')}
           value={g(['diagnostics', 'otel', 'sampleRate']) as number | undefined}
           onChange={(v) => setField(['diagnostics', 'otel', 'sampleRate'], v)}
           min={0}
@@ -156,7 +157,7 @@ export const LoggingSection: React.FC<SectionProps> = ({ setField, getField }) =
           step={0.1}
         />
         <NumberField
-          label="刷新间隔(ms)"
+          label={i18n.t('configCenter.logging.fields.flushIntervalMs')}
           value={g(['diagnostics', 'otel', 'flushIntervalMs']) as number | undefined}
           onChange={(v) => setField(['diagnostics', 'otel', 'flushIntervalMs'], v)}
           min={0}
@@ -164,29 +165,29 @@ export const LoggingSection: React.FC<SectionProps> = ({ setField, getField }) =
         />
       </ConfigSection>
 
-      <ConfigSection title="缓存追踪" icon={TrendingUp} iconColor="text-amber-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.logging.cacheTrace.title')} icon={TrendingUp} iconColor="text-amber-500" defaultOpen={false}>
         <SwitchField
-          label="启用"
+          label={i18n.t('configCenter.logging.fields.enabled')}
           value={g(['diagnostics', 'cacheTrace', 'enabled']) === true}
           onChange={(v) => setField(['diagnostics', 'cacheTrace', 'enabled'], v)}
         />
         <TextField
-          label="文件路径"
+          label={i18n.t('configCenter.logging.cacheTrace.filePath')}
           value={String(g(['diagnostics', 'cacheTrace', 'filePath']) ?? '')}
           onChange={(v) => setField(['diagnostics', 'cacheTrace', 'filePath'], v)}
         />
         <SwitchField
-          label="包含消息"
+          label={i18n.t('configCenter.logging.cacheTrace.includeMessages')}
           value={g(['diagnostics', 'cacheTrace', 'includeMessages']) === true}
           onChange={(v) => setField(['diagnostics', 'cacheTrace', 'includeMessages'], v)}
         />
         <SwitchField
-          label="包含提示"
+          label={i18n.t('configCenter.logging.cacheTrace.includePrompt')}
           value={g(['diagnostics', 'cacheTrace', 'includePrompt']) === true}
           onChange={(v) => setField(['diagnostics', 'cacheTrace', 'includePrompt'], v)}
         />
         <SwitchField
-          label="包含系统"
+          label={i18n.t('configCenter.logging.cacheTrace.includeSystem')}
           value={g(['diagnostics', 'cacheTrace', 'includeSystem']) === true}
           onChange={(v) => setField(['diagnostics', 'cacheTrace', 'includeSystem'], v)}
         />

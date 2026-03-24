@@ -464,9 +464,9 @@ export function Settings() {
         body: JSON.stringify({ dbPath: dbPathDraft.trim() || undefined }),
         headers: { 'Content-Type': 'application/json' },
       });
-      toast.success(t('developer.dbPathSaved') || '数据库路径已保存，重启应用后生效');
+      toast.success(t('developer.dbPathSaved') || 'Database path saved. Restart app to apply.');
     } catch (error) {
-      toast.error(`${t('developer.dbPathSaveFailed') || '保存失败'}: ${toUserMessage(error)}`);
+      toast.error(`${t('developer.dbPathSaveFailed') || 'Save failed'}: ${toUserMessage(error)}`);
     } finally {
       setDbPathSaving(false);
     }
@@ -775,9 +775,9 @@ export function Settings() {
                     )}
                   </div>
                   <div className="space-y-4">
-                    <Label className="text-[14px] font-medium text-foreground/80">{t('developer.database') || '数据库'}</Label>
+                    <Label className="text-[14px] font-medium text-foreground/80">{t('developer.database') || 'Database'}</Label>
                     <p className="text-[13px] text-muted-foreground">
-                      {t('developer.databaseDesc') || 'SQLite 数据库路径，修改后需重启应用生效。留空使用默认路径。'}
+                      {t('developer.databaseDesc') || 'SQLite database path. Restart app after changes. Leave empty to use default path.'}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Input

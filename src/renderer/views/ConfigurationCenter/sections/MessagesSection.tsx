@@ -12,23 +12,24 @@ import {
   ArrayField,
 } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
+import i18n from '@/i18n';
 
 const ACK_SCOPE_OPTIONS = [
-  { value: 'group-mentions', label: '群组提及' },
-  { value: 'group-all', label: '群组全部' },
-  { value: 'direct', label: '私聊' },
-  { value: 'all', label: '全部' },
+  { value: 'group-mentions', label: i18n.t('configCenter.messages.ackScope.groupMentions') },
+  { value: 'group-all', label: i18n.t('configCenter.messages.ackScope.groupAll') },
+  { value: 'direct', label: i18n.t('configCenter.messages.ackScope.direct') },
+  { value: 'all', label: i18n.t('configCenter.messages.ackScope.all') },
 ];
 const QUEUE_OPTIONS = [
   { value: 'fifo', label: 'FIFO' },
-  { value: 'debounce', label: '防抖' },
-  { value: 'off', label: '关闭' },
+  { value: 'debounce', label: i18n.t('configCenter.messages.queueMode.debounce') },
+  { value: 'off', label: i18n.t('configCenter.messages.queueMode.off') },
 ];
 const TYPING_OPTIONS = [
-  { value: 'never', label: '从不' },
-  { value: 'instant', label: '即时' },
-  { value: 'thinking', label: '思考中' },
-  { value: 'message', label: '消息' },
+  { value: 'never', label: i18n.t('configCenter.messages.typingMode.never') },
+  { value: 'instant', label: i18n.t('configCenter.messages.typingMode.instant') },
+  { value: 'thinking', label: i18n.t('configCenter.messages.typingMode.thinking') },
+  { value: 'message', label: i18n.t('configCenter.messages.typingMode.message') },
 ];
 
 export const MessagesSection: React.FC<SectionProps> = ({ setField, getField }) => {
@@ -41,102 +42,102 @@ export const MessagesSection: React.FC<SectionProps> = ({ setField, getField }) 
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="前缀" icon={Quote} iconColor="text-cyan-500">
+      <ConfigSection title={i18n.t('configCenter.messages.title.prefix')} icon={Quote} iconColor="text-cyan-500">
         <TextField
-          label="消息前缀"
+          label={i18n.t('configCenter.messages.fields.messagePrefix')}
           value={String(g(['messagePrefix']) ?? '')}
           onChange={(v) => s(['messagePrefix'], v)}
-          placeholder="用户:"
+          placeholder={i18n.t('configCenter.messages.placeholders.userPrefix')}
           mono={false}
         />
         <TextField
-          label="回复前缀"
+          label={i18n.t('configCenter.messages.fields.responsePrefix')}
           value={String(g(['responsePrefix']) ?? '')}
           onChange={(v) => s(['responsePrefix'], v)}
-          placeholder="助手:"
+          placeholder={i18n.t('configCenter.messages.placeholders.assistantPrefix')}
           mono={false}
         />
       </ConfigSection>
 
-      <ConfigSection title="确认反应" icon={ThumbsUp} iconColor="text-amber-500">
+      <ConfigSection title={i18n.t('configCenter.messages.title.ackReaction')} icon={ThumbsUp} iconColor="text-amber-500">
         <TextField
-          label="确认 Emoji"
+          label={i18n.t('configCenter.messages.fields.ackEmoji')}
           value={String(g(['ackReaction']) ?? '')}
           onChange={(v) => s(['ackReaction'], v)}
           placeholder="👍"
           mono={false}
         />
         <SelectField
-          label="确认范围"
+          label={i18n.t('configCenter.messages.fields.ackScope')}
           value={String(g(['ackReactionScope']) ?? 'group-mentions')}
           onChange={(v) => s(['ackReactionScope'], v)}
           options={ACK_SCOPE_OPTIONS}
         />
         <SwitchField
-          label="回复后移除"
+          label={i18n.t('configCenter.messages.fields.removeAckAfterReply')}
           value={g(['removeAckAfterReply']) === true}
           onChange={(v) => s(['removeAckAfterReply'], v)}
         />
       </ConfigSection>
 
-      <ConfigSection title="群聊" icon={Users} iconColor="text-green-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.messages.title.groupChat')} icon={Users} iconColor="text-green-500" defaultOpen={false}>
         <ArrayField
-          label="提及模式"
+          label={i18n.t('configCenter.messages.fields.mentionPatterns')}
           value={(g(['groupChat', 'mentionPatterns']) as string[]) ?? []}
           onChange={(v) => s(['groupChat', 'mentionPatterns'], v)}
           placeholder="@username"
         />
         <NumberField
-          label="历史限制"
+          label={i18n.t('configCenter.messages.fields.historyLimit')}
           value={g(['groupChat', 'historyLimit']) as number | undefined}
           onChange={(v) => s(['groupChat', 'historyLimit'], v)}
           min={0}
         />
       </ConfigSection>
 
-      <ConfigSection title="消息队列" icon={Inbox} iconColor="text-indigo-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.messages.title.queue')} icon={Inbox} iconColor="text-indigo-500" defaultOpen={false}>
         <SelectField
-          label="模式"
+          label={i18n.t('configCenter.messages.fields.mode')}
           value={String(g(['queue', 'mode']) ?? 'debounce')}
           onChange={(v) => s(['queue', 'mode'], v)}
           options={QUEUE_OPTIONS}
         />
         <NumberField
-          label="防抖(ms)"
+          label={i18n.t('configCenter.messages.fields.debounceMs')}
           value={g(['queue', 'debounceMs']) as number | undefined}
           onChange={(v) => s(['queue', 'debounceMs'], v)}
           min={0}
           step={100}
         />
         <NumberField
-          label="队列容量"
+          label={i18n.t('configCenter.messages.fields.queueCap')}
           value={g(['queue', 'cap']) as number | undefined}
           onChange={(v) => s(['queue', 'cap'], v)}
           min={1}
         />
         <SwitchField
-          label="满时丢弃"
+          label={i18n.t('configCenter.messages.fields.dropWhenFull')}
           value={g(['queue', 'drop']) === true}
           onChange={(v) => s(['queue', 'drop'], v)}
         />
       </ConfigSection>
 
-      <ConfigSection title="打字模式" icon={Edit3} iconColor="text-purple-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.messages.title.typing')} icon={Edit3} iconColor="text-purple-500" defaultOpen={false}>
         <SelectField
-          label="模式"
+          label={i18n.t('configCenter.messages.fields.mode')}
           value={String(sg(['typingMode']) ?? 'never')}
           onChange={(v) => ss(['typingMode'], v)}
           options={TYPING_OPTIONS}
         />
         <NumberField
-          label="打字间隔(秒)"
+          label={i18n.t('configCenter.messages.fields.typingIntervalSeconds')}
           value={sg(['typingIntervalSeconds']) as number | undefined}
           onChange={(v) => ss(['typingIntervalSeconds'], v)}
           min={1}
         />
       </ConfigSection>
 
-      <ConfigSection title="TTS 配置" icon={Mic} iconColor="text-fuchsia-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.messages.title.tts')} icon={Mic} iconColor="text-fuchsia-500" defaultOpen={false}>
         <SelectField
           label="TTS Provider"
           value={String(g(['tts', 'provider']) ?? '')}
@@ -149,7 +150,7 @@ export const MessagesSection: React.FC<SectionProps> = ({ setField, getField }) 
           ]}
         />
         <SwitchField
-          label="自动 TTS"
+          label={i18n.t('configCenter.messages.fields.autoTts')}
           value={g(['tts', 'auto']) === true}
           onChange={(v) => s(['tts', 'auto'], v)}
         />
@@ -160,14 +161,14 @@ export const MessagesSection: React.FC<SectionProps> = ({ setField, getField }) 
         />
       </ConfigSection>
 
-      <ConfigSection title="消息工具" icon={Inbox} iconColor="text-cyan-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.messages.title.messageTools')} icon={Inbox} iconColor="text-cyan-500" defaultOpen={false}>
         <SwitchField
-          label="跨上下文发送"
+          label={i18n.t('configCenter.messages.fields.crossContextSend')}
           value={tg(['crossContext']) === true}
           onChange={(v) => ts(['crossContext'], v)}
         />
         <SwitchField
-          label="广播"
+          label={i18n.t('configCenter.messages.fields.broadcast')}
           value={tg(['broadcast']) === true}
           onChange={(v) => ts(['broadcast'], v)}
         />

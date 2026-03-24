@@ -3,6 +3,7 @@
  */
 import React from 'react';
 import { SortAsc, Key, Timer } from 'lucide-react';
+import i18n from '@/i18n';
 import {
   ConfigSection,
   ConfigCard,
@@ -15,9 +16,9 @@ import {
 import type { SectionProps } from '../sectionTypes';
 
 const AUTH_MODE_OPTIONS = [
-  { value: 'api-key', label: 'API Key' },
+  { value: 'api-key', label: i18n.t('configCenter.auth.options.mode.apiKey') },
   { value: 'oauth', label: 'OAuth' },
-  { value: 'token', label: 'Token' },
+  { value: 'token', label: i18n.t('configCenter.auth.options.mode.token') },
 ];
 
 export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
@@ -28,10 +29,10 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="认证顺序" icon={SortAsc} iconColor="text-red-500">
+      <ConfigSection title={i18n.t('configCenter.auth.title.order')} icon={SortAsc} iconColor="text-red-500">
         <ArrayField
-          label="Provider 顺序"
-          desc="认证提供方顺序"
+          label={i18n.t('configCenter.auth.fields.providerOrder')}
+          desc={i18n.t('configCenter.auth.fields.providerOrderDesc')}
           value={order}
           onChange={(v) => setField(['auth', 'order'], v)}
           placeholder="provider-name"
@@ -39,18 +40,18 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
       </ConfigSection>
 
       <ConfigSection
-        title="认证配置"
+        title={i18n.t('configCenter.auth.title.profiles')}
         icon={Key}
         iconColor="text-red-500"
-        desc={`${profiles.length} 个配置`}
+        desc={i18n.t('configCenter.auth.profileCount', { count: profiles.length })}
       >
         {profiles.length === 0 ? (
-          <EmptyState message="暂无认证配置" icon={Key} />
+          <EmptyState message={i18n.t('configCenter.auth.emptyProfiles')} icon={Key} />
         ) : (
           profiles.map((p: Record<string, unknown>, i: number) => (
             <ConfigCard
               key={i}
-              title={String(p.provider || `配置 ${i + 1}`)}
+              title={String(p.provider || i18n.t('configCenter.auth.profileTitle', { index: i + 1 }))}
               icon={Key}
               onDelete={() => {
                 const next = profiles.filter((_, j) => j !== i);
@@ -58,7 +59,7 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
               }}
             >
               <TextField
-                label="Provider"
+                label={i18n.t('configCenter.auth.fields.provider')}
                 value={String(p.provider ?? '')}
                 onChange={(v) => {
                   const next = [...profiles];
@@ -67,7 +68,7 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
                 }}
               />
               <SelectField
-                label="模式"
+                label={i18n.t('configCenter.auth.fields.mode')}
                 value={AUTH_MODE_OPTIONS.some((o) => o.value === String(p.mode ?? 'api-key')) ? String(p.mode ?? 'api-key') : 'api-key'}
                 onChange={(v) => {
                   const next = [...profiles];
@@ -77,7 +78,7 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
                 options={AUTH_MODE_OPTIONS}
               />
               <TextField
-                label="邮箱"
+                label={i18n.t('configCenter.auth.fields.email')}
                 value={String(p.email ?? '')}
                 onChange={(v) => {
                   const next = [...profiles];
@@ -90,15 +91,15 @@ export const AuthSection: React.FC<SectionProps> = ({ setField, getField }) => {
           ))
         )}
         <AddButton
-          label="添加认证配置"
+          label={i18n.t('configCenter.auth.addProfile')}
           onClick={() => setField(['auth', 'profiles'], [...profiles, { provider: '', mode: 'api-key' }])}
         />
       </ConfigSection>
 
-      <ConfigSection title="冷却配置" icon={Timer} iconColor="text-red-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.auth.title.cooldowns')} icon={Timer} iconColor="text-red-500" defaultOpen={false}>
         <TextField
-          label="冷却配置 JSON"
-          desc="冷却时间等配置"
+          label={i18n.t('configCenter.auth.fields.cooldownsJson')}
+          desc={i18n.t('configCenter.auth.fields.cooldownsJsonDesc')}
           value={JSON.stringify(getField(['auth', 'cooldowns']) || {}, null, 2)}
           onChange={(v) => {
             try {

@@ -1,34 +1,36 @@
 /**
  * AxonClaw - Workflow View
- * 工作流界面 - AxonClawX 风格内容复刻
+ * Workflow界面 - AxonClawX 风格内容复刻
  */
 
 import React from 'react';
 import { Plus, GitBranch, Play, Pause } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 const workflows = [
-  { id: '1', name: '日报生成', status: 'active' as const, trigger: '每天 08:00', steps: 3 },
-  { id: '2', name: '内容发布', status: 'inactive' as const, trigger: '手动', steps: 5 },
+  { id: '1', name: 'Daily report generation', status: 'active' as const, trigger: 'Daily 08:00', steps: 3 },
+  { id: '2', name: 'Content publishing', status: 'inactive' as const, trigger: 'Manual', steps: 5 },
 ];
 
 const WorkflowView: React.FC = () => {
+  const { t } = useTranslation('views');
   return (
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
-          title="工作流"
-          subtitle="创建和管理自动化工作流"
+          title="Workflow"
+          subtitle="Create and manage automated workflows"
           stats={[
-            { label: '总数', value: workflows.length },
-            { label: '运行中', value: workflows.filter((w) => w.status === 'active').length },
+            { label: 'Total', value: workflows.length },
+            { label: 'Running', value: workflows.filter((w) => w.status === 'active').length },
           ]}
           statsBorderColor="border-teal-500/40"
           actions={
             <button className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors">
               <Plus className="w-4 h-4" />
-              新建工作流
+              {t('workflow.new')}
             </button>
           }
         />
@@ -58,7 +60,7 @@ const WorkflowView: React.FC = () => {
                     {wf.name}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    触发: {wf.trigger} · {wf.steps} 步骤
+                    {t('workflow.trigger')}: {wf.trigger} · {wf.steps} {t('workflow.steps')}
                   </div>
                 </div>
               </div>
@@ -71,7 +73,7 @@ const WorkflowView: React.FC = () => {
                       : 'bg-black/5 dark:bg-white/5 text-muted-foreground'
                   )}
                 >
-                  {wf.status === 'active' ? '运行中' : '已停止'}
+                  {wf.status === 'active' ? 'Running' : 'Stopped'}
                 </span>
                 <button className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   {wf.status === 'active' ? (

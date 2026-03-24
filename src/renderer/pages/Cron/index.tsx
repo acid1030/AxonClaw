@@ -1,6 +1,6 @@
 /**
- * AxonClaw - 定时调度 (AxonClawX 风格)
- * 调度器概览 | 任务列表 | 历史记录
+ * AxonClaw - 定时Schedule (AxonClawX 风格)
+ * Schedule器概览 | Task列表 | 历史记录
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -46,29 +46,29 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
 
 function getScheduleShort(schedule: unknown): string {
   if (typeof schedule === 'string') {
-    if (schedule === '* * * * *') return '每隔 1 分钟';
-    if (schedule === '*/5 * * * *') return '每隔 5 分钟';
-    if (schedule === '*/15 * * * *') return '每隔 15 分钟';
-    if (schedule === '0 * * * *') return '每隔 1h';
-    if (schedule === '0 9 * * *') return '每天 9:00';
-    if (schedule === '0 18 * * *') return '每天 18:00';
+    if (schedule === '* * * * *') return 'Every 1 min';
+    if (schedule === '*/5 * * * *') return 'Every 5 min';
+    if (schedule === '*/15 * * * *') return 'Every 15 min';
+    if (schedule === '0 * * * *') return 'Every 1h';
+    if (schedule === '0 9 * * *') return 'Daily 9:00';
+    if (schedule === '0 18 * * *') return 'Daily 18:00';
     const parts = schedule.split(' ');
     if (parts[0]?.startsWith('*/') && parts[1] === '*') {
       const m = parseInt(parts[0].slice(2), 10);
-      if (m < 60) return `每隔 ${m} 分钟`;
+      if (m < 60) return `Every ${m} min`;
     }
     if (parts[0] === '0' && parts[1] !== '*' && parts[2] === '*') {
-      return `每天 ${parts[1]}:00`;
+      return `Daily ${parts[1]}:00`;
     }
   }
   if (schedule && typeof schedule === 'object') {
     const s = schedule as { kind?: string; expr?: string; everyMs?: number };
     if (s.kind === 'every' && typeof s.everyMs === 'number') {
       const ms = s.everyMs;
-      if (ms < 60_000) return `每隔 ${Math.round(ms / 1000)} 秒`;
-      if (ms < 3_600_000) return `每隔 ${Math.round(ms / 60_000)} 分钟`;
-      if (ms < 86_400_000) return `每隔 ${Math.round(ms / 3_600_000)}h`;
-      return `每隔 ${Math.round(ms / 86_400_000)} 天`;
+      if (ms < 60_000) return `Every ${Math.round(ms / 1000)} sec`;
+      if (ms < 3_600_000) return `Every ${Math.round(ms / 60_000)} min`;
+      if (ms < 86_400_000) return `Every ${Math.round(ms / 3_600_000)}h`;
+      return `Every ${Math.round(ms / 86_400_000)} day(s)`;
     }
     if (s.kind === 'cron' && s.expr) return getScheduleShort(s.expr);
   }
@@ -130,15 +130,15 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast.error('请输入任务名称'); return; }
-    if (!message.trim()) { toast.error('请输入提示词'); return; }
+    if (!name.trim()) { toast.error('Please enter a task name'); return; }
+    if (!message.trim()) { toast.error('Please enter a prompt'); return; }
     const finalSchedule = useCustom ? customSchedule : schedule;
-    if (!finalSchedule.trim()) { toast.error('请选择或输入调度'); return; }
+    if (!finalSchedule.trim()) { toast.error('Please select or input a schedule'); return; }
     setSaving(true);
     try {
       await onSave({ name: name.trim(), message: message.trim(), schedule: finalSchedule, enabled });
       onClose();
-      toast.success(job ? '已更新' : '已创建');
+      toast.success(job ? 'Updated' : 'Created');
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -151,8 +151,8 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl border border-slate-700/60 bg-[#1f2937] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0 border-b border-white/10">
           <div>
-            <h2 className="text-lg font-semibold text-white/90">{job ? '编辑任务' : '新建任务'}</h2>
-            <p className="text-sm text-white/50 mt-0.5">支持周期性、定时和 Cron 表达式</p>
+            <h2 className="text-lg font-semibold text-white/90">{job ? 'Edit Task' : 'New Task'}</h2>
+            <p className="text-sm text-white/50 mt-0.5">Supports periodic, scheduled, and cron expressions</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="rounded-lg h-8 w-8 text-white/60 hover:text-white">
             <X className="h-4 w-4" />
@@ -160,15 +160,15 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
         </CardHeader>
         <CardContent className="space-y-4 pt-4 overflow-y-auto flex-1 p-4">
           <div>
-            <Label className="text-sm font-medium text-white/80">任务名称</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：记忆同步" className="mt-1.5 h-9 bg-white/5 border-white/10 text-white" />
+            <Label className="text-sm font-medium text-white/80">Task Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Memory sync" className="mt-1.5 h-9 bg-white/5 border-white/10 text-white" />
           </div>
           <div>
-            <Label className="text-sm font-medium text-white/80">提示词 / 命令</Label>
-            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="要发送给 AI 的提示词" rows={3} className="mt-1.5 bg-white/5 border-white/10 text-white resize-none" />
+            <Label className="text-sm font-medium text-white/80">Prompt / Command</Label>
+            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Prompt to send to AI" rows={3} className="mt-1.5 bg-white/5 border-white/10 text-white resize-none" />
           </div>
           <div>
-            <Label className="text-sm font-medium text-white/80">调度</Label>
+            <Label className="text-sm font-medium text-white/80">Schedule</Label>
             {!useCustom ? (
               <div className="grid grid-cols-2 gap-2 mt-1.5">
                 {schedulePresets.map((p) => (
@@ -181,18 +181,18 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               <Input value={customSchedule} onChange={(e) => setCustomSchedule(e.target.value)} placeholder="0 9 * * *" className="mt-1.5 h-9 bg-white/5 border-white/10 text-white font-mono" />
             )}
             <button type="button" onClick={() => setUseCustom(!useCustom)} className="text-xs text-white/50 hover:text-white/80 mt-1.5">
-              {useCustom ? '使用预设' : '自定义 Cron'}
+              {useCustom ? 'Use presets' : 'Custom cron'}
             </button>
           </div>
           <div className="flex items-center justify-between pt-2">
-            <Label className="text-sm font-medium text-white/80">创建后启用</Label>
+            <Label className="text-sm font-medium text-white/80">Enable after creation</Label>
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="rounded" />
           </div>
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={onClose} className="border-white/10 text-white/80">取消</Button>
+            <Button variant="outline" onClick={onClose} className="border-white/10 text-white/80">Cancel</Button>
             <Button onClick={handleSubmit} disabled={saving} className="bg-indigo-500 hover:bg-indigo-600 text-white">
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              {job ? '保存' : '创建'}
+              {job ? 'Save' : 'Create'}
             </Button>
           </div>
         </CardContent>
@@ -245,7 +245,7 @@ function CronHistorySection({ isOnline, onRefresh }: { isOnline: boolean; onRefr
       <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-sky-400" />
-          <span className="text-sm font-medium text-white/80">运行历史</span>
+          <span className="text-sm font-medium text-white/80">Run History</span>
         </div>
         <Button variant="ghost" size="sm" onClick={() => { fetchHistory(); onRefresh(); }} disabled={!isOnline || loading} className="h-7 px-2 text-white/50 hover:text-white/80">
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
@@ -253,18 +253,18 @@ function CronHistorySection({ isOnline, onRefresh }: { isOnline: boolean; onRefr
       </div>
       <div className="p-4">
         {!isOnline ? (
-          <div className="py-8 text-center text-white/40 text-sm">请先启动 Gateway 以查看执行历史</div>
+          <div className="py-8 text-center text-white/40 text-sm">Start Gateway first to view execution history</div>
         ) : entries.length === 0 ? (
-          <div className="py-8 text-center text-white/40 text-sm">{loading ? '加载中...' : '暂无执行记录'}</div>
+          <div className="py-8 text-center text-white/40 text-sm">{loading ? 'Loading...' : 'No execution history'}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-white/50 border-b border-white/10">
-                  <th className="pb-2 pr-4 font-medium">任务</th>
-                  <th className="pb-2 pr-4 font-medium">执行时间</th>
-                  <th className="pb-2 pr-4 font-medium">状态</th>
-                  <th className="pb-2 font-medium">备注</th>
+                  <th className="pb-2 pr-4 font-medium">Task</th>
+                  <th className="pb-2 pr-4 font-medium">Execution Time</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,7 +274,7 @@ function CronHistorySection({ isOnline, onRefresh }: { isOnline: boolean; onRefr
                     <td className="py-2 pr-4 text-white/60">{formatRelativeTimeZh(e.time)}</td>
                     <td className="py-2 pr-4">
                       <span className={e.success ? 'text-emerald-400' : 'text-red-400'}>
-                        {e.success ? <><CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />成功</> : <><XCircle className="h-3.5 w-3.5 inline mr-1" />失败</>}
+                        {e.success ? <><CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />Success</> : <><XCircle className="h-3.5 w-3.5 inline mr-1" />Failed</>}
                       </span>
                     </td>
                     <td className="py-2 text-white/40 text-xs max-w-[200px] truncate" title={e.error}>{e.error || '—'}</td>
@@ -311,7 +311,7 @@ function TaskCard({ job, onToggle, onEdit, onDuplicate, onDelete, onTrigger }: T
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-semibold text-white/90">{job.name}</h3>
             <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', job.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/50')}>
-              {job.enabled ? '已启用' : '已禁用'}
+              {job.enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
           <p className="text-sm text-white/50 mt-1">{getScheduleShort(job.schedule)}</p>
@@ -324,35 +324,35 @@ function TaskCard({ job, onToggle, onEdit, onDuplicate, onDelete, onTrigger }: T
         </div>
         <div className="shrink-0 text-right">
           <div className="text-xs text-white/50">
-            <span className={job.lastRun?.success !== false ? 'text-emerald-400' : 'text-red-400'}>状态: {job.lastRun?.success !== false ? 'ok' : 'error'}</span>
+            <span className={job.lastRun?.success !== false ? 'text-emerald-400' : 'text-red-400'}>Status: {job.lastRun?.success !== false ? 'ok' : 'error'}</span>
           </div>
           {nextRun && job.enabled && (
-            <div className="text-xs text-sky-400 mt-0.5">下次执行: {formatRelativeTimeZh(nextRun)}</div>
+            <div className="text-xs text-sky-400 mt-0.5">Next run: {formatRelativeTimeZh(nextRun)}</div>
           )}
           {lastRun && (
-            <div className="text-xs text-white/40 mt-0.5">上次: {formatRelativeTimeZh(lastRun)}</div>
+            <div className="text-xs text-white/40 mt-0.5">Last: {formatRelativeTimeZh(lastRun)}</div>
           )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-white/5">
         <Button variant="ghost" size="sm" onClick={onEdit} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
           <Pencil className="h-3.5 w-3.5 mr-1" />
-          编辑
+          Edit
         </Button>
         <Button variant="ghost" size="sm" onClick={onDuplicate} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
           <Copy className="h-3.5 w-3.5 mr-1" />
-          复制
+          Duplicate
         </Button>
         <Button variant="ghost" size="sm" onClick={() => onToggle(!job.enabled)} className="h-8 px-2 text-white/60 hover:text-white hover:bg-white/5">
-          {job.enabled ? '禁用' : '启用'}
+          {job.enabled ? 'Disable' : 'Enable'}
         </Button>
         <Button variant="ghost" size="sm" onClick={handleRun} disabled={triggering} className="h-8 px-2 text-sky-400 hover:text-sky-300 hover:bg-sky-500/10">
           {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
-          运行
+          Run
         </Button>
         <Button variant="ghost" size="sm" onClick={onDelete} className="h-8 px-2 text-red-400 hover:text-red-300 hover:bg-red-500/10">
           <Trash2 className="h-3.5 w-3.5 mr-1" />
-          删除
+          Delete
         </Button>
       </div>
     </div>
@@ -379,7 +379,7 @@ export function Cron() {
         const s = await hostApiFetch<SchedulerSummary>('/api/scheduler/summary');
         setSummary(s);
       } catch {
-        setSummary({ status: 'enabled', statusText: '已启用', taskCount: 0, nextWakeup: '—', running: 0 });
+        setSummary({ status: 'enabled', statusText: 'Enabled', taskCount: 0, nextWakeup: '—', running: 0 });
       }
     }
   }, [isOnline, fetchJobs]);
@@ -407,17 +407,17 @@ export function Cron() {
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     await toggleJob(id, enabled);
-    toast.success(enabled ? '已启用' : '已禁用');
+    toast.success(enabled ? 'Enabled' : 'Disabled');
   }, [toggleJob]);
 
   const handleDuplicate = useCallback((job: CronJob) => {
     const input: CronJobCreateInput = {
-      name: `${job.name} (副本)`,
+      name: `${job.name} (Copy)`,
       message: job.message,
       schedule: typeof job.schedule === 'string' ? job.schedule : (job.schedule && typeof job.schedule === 'object' && 'expr' in job.schedule ? (job.schedule as { expr: string }).expr : '0 9 * * *'),
       enabled: job.enabled,
     };
-    createJob(input).then(() => toast.success('已复制')).catch((e) => toast.error(String(e)));
+    createJob(input).then(() => toast.success('Duplicated')).catch((e) => toast.error(String(e)));
   }, [createJob]);
 
   if (loading && safeJobs.length === 0) {
@@ -435,9 +435,9 @@ export function Cron() {
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-xl font-bold text-white/90">定时调度</h1>
+              <h1 className="text-xl font-bold text-white/90">定时Schedule</h1>
               <p className="text-sm text-white/50 mt-1">
-                定时调度用于配置 AI 代理的自动执行任务，支持周期性、定时和 Cron 表达式三种调度方式
+                定时Schedule用于配置 AI 代理的自动执行Task，Supports periodic, scheduled, and cron expressions三种Schedule方式
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -446,7 +446,7 @@ export function Cron() {
               </Button>
               <Button onClick={() => { setEditingJob(undefined); setShowDialog(true); }} disabled={!isOnline} className="bg-indigo-500 hover:bg-indigo-600 text-white">
                 <Plus className="h-4 w-4 mr-2" />
-                新建任务
+                New Task
               </Button>
             </div>
           </div>
@@ -455,23 +455,23 @@ export function Cron() {
           <div className="rounded-xl border border-slate-700/60 bg-[#1f2937] overflow-hidden mb-6">
             <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
               <Clock className="h-4 w-4 text-sky-400" />
-              <span className="text-sm font-medium text-white/80">调度器</span>
+              <span className="text-sm font-medium text-white/80">Schedule器</span>
             </div>
             <div className="grid grid-cols-4 gap-px bg-border/40">
               <div className="p-4 bg-[#0b1220]">
-                <div className="text-xs text-white/50">状态</div>
-                <div className="text-sm font-medium text-emerald-400 mt-0.5">{summary?.statusText ?? '已启用'}</div>
+                <div className="text-xs text-white/50">Status</div>
+                <div className="text-sm font-medium text-emerald-400 mt-0.5">{summary?.statusText ?? 'Enabled'}</div>
               </div>
               <div className="p-4 bg-[#111827]">
-                <div className="text-xs text-white/50">任务数</div>
+                <div className="text-xs text-white/50">Task数</div>
                 <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.taskCount ?? safeJobs.length}</div>
               </div>
               <div className="p-4 bg-[#111827]">
-                <div className="text-xs text-white/50">下次唤醒</div>
+                <div className="text-xs text-white/50">Next wake-up</div>
                 <div className="text-sm font-medium text-sky-400 mt-0.5">{summary?.nextWakeup ?? '—'}</div>
               </div>
               <div className="p-4 bg-[#111827]">
-                <div className="text-xs text-white/50">运行中</div>
+                <div className="text-xs text-white/50">Run中</div>
                 <div className="text-sm font-medium text-white/90 mt-0.5">{summary?.running ?? 0}</div>
               </div>
             </div>
@@ -482,21 +482,21 @@ export function Cron() {
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <List className="h-4 w-4 text-sky-400" />
-                <span className="text-sm font-medium text-white/80">任务数 ({sorted.length})</span>
+                <span className="text-sm font-medium text-white/80">Task数 ({sorted.length})</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
-                  <Input placeholder="搜索任务..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 w-48 bg-white/5 border-white/10 text-sm" />
+                  <Input placeholder="Search tasks..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 w-48 bg-white/5 border-white/10 text-sm" />
                 </div>
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as 'all' | 'enabled' | 'disabled')} className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80">
-                  <option value="all">全部</option>
-                  <option value="enabled">已启用</option>
-                  <option value="disabled">已禁用</option>
+                  <option value="all">All</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
                 </select>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'next' | 'name')} className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white/80">
-                  <option value="next">下次执行 ↑</option>
-                  <option value="name">按名称</option>
+                  <option value="next">Next run ↑</option>
+                  <option value="name">By name</option>
                 </select>
               </div>
             </div>
@@ -506,12 +506,12 @@ export function Cron() {
               )}
               {!isOnline && (
                 <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm text-center">
-                  请先启动 Gateway 以加载定时任务
+                  请先Start Gateway 以加载定时Task
                 </div>
               )}
               {isOnline && sorted.length === 0 && (
                 <div className="py-12 text-center text-white/50 text-sm">
-                  {search.trim() ? '无匹配任务' : '暂无定时任务'}
+                  {search.trim() ? 'No matching tasks' : 'No scheduled tasks'}
                 </div>
               )}
               {sorted.map((job) => (
@@ -539,16 +539,16 @@ export function Cron() {
 
       <ConfirmDialog
         open={!!jobToDelete}
-        title="确认删除"
-        message={`确定删除任务「${jobToDelete?.name}」？`}
-        confirmLabel="删除"
-        cancelLabel="取消"
+        title="Confirm deletion"
+        message={`确定DeleteTask「${jobToDelete?.name}"?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
         variant="destructive"
         onConfirm={async () => {
           if (jobToDelete) {
             await deleteJob(jobToDelete.id);
             setJobToDelete(null);
-            toast.success('已删除');
+            toast.success('Deleted');
             refresh();
           }
         }}

@@ -17,6 +17,7 @@ import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 function formatSchedule(schedule: unknown): string {
   if (typeof schedule === 'string') return schedule;
@@ -25,26 +26,26 @@ function formatSchedule(schedule: unknown): string {
     if (s.kind === 'cron' && s.expr) return s.expr;
     if (s.kind === 'every' && s.everyMs) {
       const ms = s.everyMs;
-      if (ms < 60_000) return `每 ${Math.round(ms / 1000)} 秒`;
-      if (ms < 3_600_000) return `每 ${Math.round(ms / 60_000)} 分钟`;
-      if (ms < 86_400_000) return `每 ${Math.round(ms / 3_600_000)} 小时`;
-      return `每 ${Math.round(ms / 86_400_000)} 天`;
+      if (ms < 60_000) return i18n.t('views.cron.schedule.everySeconds', { count: Math.round(ms / 1000) });
+      if (ms < 3_600_000) return i18n.t('views.cron.schedule.everyMinutes', { count: Math.round(ms / 60_000) });
+      if (ms < 86_400_000) return i18n.t('views.cron.schedule.everyHours', { count: Math.round(ms / 3_600_000) });
+      return i18n.t('views.cron.schedule.everyDays', { count: Math.round(ms / 86_400_000) });
     }
     if (s.kind === 'at' && s.at) return s.at;
   }
-  return String(schedule ?? '—');
+  return String(schedule ?? i18n.t('views.cron.common.emptyMark'));
 }
 
 function formatLastRun(lastRun?: { time?: string; success?: boolean }): string {
-  if (!lastRun?.time) return '—';
+  if (!lastRun?.time) return i18n.t('views.cron.common.emptyMark');
   try {
     const d = new Date(lastRun.time);
     const now = new Date();
     const diff = now.getTime() - d.getTime();
-    if (diff < 60_000) return '刚刚';
-    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-    return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (diff < 60_000) return i18n.t('views.cron.lastRun.justNow');
+    if (diff < 3_600_000) return i18n.t('views.cron.lastRun.minutesAgo', { count: Math.floor(diff / 60_000) });
+    if (diff < 86_400_000) return i18n.t('views.cron.lastRun.hoursAgo', { count: Math.floor(diff / 3_600_000) });
+    return d.toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch {
     return lastRun.time;
   }
@@ -91,7 +92,7 @@ const CronView: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除此定时任务？')) return;
+    if (!confirm(i18n.t('views.cron.confirmDelete'))) return;
     setDeletingId(id);
     try {
       await deleteJob(id);
@@ -109,11 +110,11 @@ const CronView: React.FC = () => {
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0b1220] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
-          title="定时任务"
-          subtitle="自动化工作流 · Cron 调度"
+          title={i18n.t('views.cron.title')}
+          subtitle={i18n.t('views.cron.subtitle')}
           stats={[
-            { label: '运行中', value: `${enabledCount}/${safeJobs.length}` },
-            { label: 'Gateway', value: isOnline ? '在线' : '离线' },
+            { label: i18n.t('views.cron.stats.running'), value: `${enabledCount}/${safeJobs.length}` },
+            { label: i18n.t('views.cron.stats.gateway'), value: isOnline ? i18n.t('views.cron.gateway.online') : i18n.t('views.cron.gateway.offline') },
           ]}
           onRefresh={refresh}
           refreshing={loading}
@@ -128,13 +129,13 @@ const CronView: React.FC = () => {
 
         {!isOnline ? (
           <div className="rounded-xl border-2 border-slate-700/60 bg-[#1f2937] p-8 text-center">
-            <p className="text-muted-foreground text-sm">请先启动 Gateway 以加载定时任务</p>
-            <p className="text-muted-foreground/70 text-xs mt-1">点击上方「启动 Gateway」按钮</p>
+            <p className="text-muted-foreground text-sm">{i18n.t('views.cron.gatewayRequired')}</p>
+            <p className="text-muted-foreground/70 text-xs mt-1">{i18n.t('views.cron.clickStartGateway')}</p>
           </div>
         ) : safeJobs.length === 0 ? (
           <div className="rounded-xl border-2 border-slate-700/60 bg-[#1f2937] p-8 flex flex-col items-center justify-center">
             <Clock className="w-10 h-10 text-muted-foreground/50 mb-3" />
-            <p className="text-muted-foreground text-sm">暂无定时任务</p>
+            <p className="text-muted-foreground text-sm">{i18n.t('views.cron.empty')}</p>
           </div>
         ) : (
           <div className="space-y-3 max-w-3xl">
@@ -169,7 +170,7 @@ const CronView: React.FC = () => {
 
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right">
-                    <div className="text-xs text-muted-foreground">上次运行</div>
+                    <div className="text-xs text-muted-foreground">{i18n.t('views.cron.lastRun.label')}</div>
                     <div className="text-xs text-foreground/80">
                       {formatLastRun(job.lastRun)}
                     </div>
@@ -182,12 +183,12 @@ const CronView: React.FC = () => {
                         : 'bg-black/5 dark:bg-white/5 text-muted-foreground'
                     )}
                   >
-                    {job.enabled ? '运行中' : '已暂停'}
+                    {job.enabled ? i18n.t('views.cron.badges.running') : i18n.t('views.cron.badges.paused')}
                   </span>
                   <button
                     onClick={() => handleToggle(job.id, !job.enabled)}
                     className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    title={job.enabled ? '暂停' : '启用'}
+                    title={job.enabled ? i18n.t('views.cron.actions.pause') : i18n.t('views.cron.actions.enable')}
                   >
                     {job.enabled ? (
                       <Pause className="w-4 h-4 text-slate-500" />
@@ -198,7 +199,7 @@ const CronView: React.FC = () => {
                   <button
                     onClick={() => handleTrigger(job.id)}
                     className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    title="立即运行"
+                    title={i18n.t('views.cron.actions.runNow')}
                   >
                     <Play className="w-4 h-4 text-primary" />
                   </button>
@@ -206,7 +207,7 @@ const CronView: React.FC = () => {
                     onClick={() => handleDelete(job.id)}
                     disabled={deletingId === job.id}
                     className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-50"
-                    title="删除"
+                    title={i18n.t('views.cron.actions.delete')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

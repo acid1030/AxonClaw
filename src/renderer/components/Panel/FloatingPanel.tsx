@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Icons } from '../Icons/IconComponents';
 
 interface FloatingPanelProps {
@@ -9,6 +10,8 @@ interface FloatingPanelProps {
 }
 
 export function FloatingPanel({ isOpen, onClose, children }: FloatingPanelProps) {
+  const { t } = useTranslation('panel');
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -51,7 +54,7 @@ export function FloatingPanel({ isOpen, onClose, children }: FloatingPanelProps)
           >
             {/* Header */}
             <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-white/5">
-              <h2 className="text-white font-semibold text-sm">运行概览</h2>
+              <h2 className="text-white font-semibold text-sm">{t('overviewTitle')}</h2>
               <button
                 onClick={onClose}
                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"

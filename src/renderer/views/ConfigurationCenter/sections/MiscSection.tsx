@@ -13,16 +13,17 @@ import {
   KeyValueField,
 } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
+import i18n from '@/i18n';
 
 const UPDATE_CHANNEL_OPTIONS = [
-  { value: 'stable', label: '稳定版' },
-  { value: 'beta', label: 'Beta' },
-  { value: 'dev', label: '开发版' },
+  { value: 'stable', label: i18n.t('configCenter.misc.options.updateChannel.stable') },
+  { value: 'beta', label: i18n.t('configCenter.misc.options.updateChannel.beta') },
+  { value: 'dev', label: i18n.t('configCenter.misc.options.updateChannel.dev') },
 ];
 const TAGLINE_OPTIONS = [
-  { value: 'random', label: '随机' },
-  { value: 'default', label: '默认' },
-  { value: 'off', label: '关闭' },
+  { value: 'random', label: i18n.t('configCenter.misc.options.taglineMode.random') },
+  { value: 'default', label: i18n.t('configCenter.misc.options.taglineMode.default') },
+  { value: 'off', label: i18n.t('configCenter.misc.options.taglineMode.off') },
 ];
 
 export const MiscSection: React.FC<SectionProps> = ({ setField, getField }) => {
@@ -31,34 +32,34 @@ export const MiscSection: React.FC<SectionProps> = ({ setField, getField }) => {
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="CLI" icon={Terminal} iconColor="text-emerald-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.misc.title.cli')} icon={Terminal} iconColor="text-emerald-500" defaultOpen={false}>
         <SelectField
-          label="标语模式"
+          label={i18n.t('configCenter.misc.fields.taglineMode')}
           value={String(getField(['cli', 'banner', 'taglineMode']) ?? 'random')}
           onChange={(v) => setField(['cli', 'banner', 'taglineMode'], v)}
           options={TAGLINE_OPTIONS}
         />
       </ConfigSection>
 
-      <ConfigSection title="更新配置" icon={Download} iconColor="text-blue-500">
+      <ConfigSection title={i18n.t('configCenter.misc.title.update')} icon={Download} iconColor="text-blue-500">
         <SelectField
-          label="更新渠道"
+          label={i18n.t('configCenter.misc.fields.updateChannel')}
           value={String(getField(['update', 'channel']) ?? 'stable')}
           onChange={(v) => setField(['update', 'channel'], v)}
           options={UPDATE_CHANNEL_OPTIONS}
         />
         <SwitchField
-          label="启动时检查"
+          label={i18n.t('configCenter.misc.fields.checkOnStart')}
           value={getField(['update', 'checkOnStart']) !== false}
           onChange={(v) => setField(['update', 'checkOnStart'], v)}
         />
         <SwitchField
-          label="自动更新"
+          label={i18n.t('configCenter.misc.fields.autoUpdate')}
           value={getField(['update', 'auto', 'enabled']) === true}
           onChange={(v) => setField(['update', 'auto', 'enabled'], v)}
         />
         <NumberField
-          label="稳定版延迟(小时)"
+          label={i18n.t('configCenter.misc.fields.stableDelayHours')}
           value={getField(['update', 'auto', 'stableDelayHours']) as number | undefined}
           onChange={(v) => setField(['update', 'auto', 'stableDelayHours'], v)}
           min={0}
@@ -66,63 +67,63 @@ export const MiscSection: React.FC<SectionProps> = ({ setField, getField }) => {
         />
       </ConfigSection>
 
-      <ConfigSection title="UI 配置" icon={Palette} iconColor="text-pink-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.misc.title.ui')} icon={Palette} iconColor="text-pink-500" defaultOpen={false}>
         <TextField
-          label="接缝颜色"
+          label={i18n.t('configCenter.misc.fields.seamColor')}
           value={String(getField(['ui', 'seamColor']) ?? '')}
           onChange={(v) => setField(['ui', 'seamColor'], v)}
           placeholder="#hex"
         />
         <TextField
-          label="助手名称"
+          label={i18n.t('configCenter.misc.fields.assistantName')}
           value={String(getField(['ui', 'assistant', 'name']) ?? '')}
           onChange={(v) => setField(['ui', 'assistant', 'name'], v)}
-          placeholder="助手"
+          placeholder={i18n.t('configCenter.misc.placeholders.assistantName')}
           mono={false}
         />
         <TextField
-          label="助手头像"
+          label={i18n.t('configCenter.misc.fields.assistantAvatar')}
           value={String(getField(['ui', 'assistant', 'avatar']) ?? '')}
           onChange={(v) => setField(['ui', 'assistant', 'avatar'], v)}
           placeholder="https://..."
         />
       </ConfigSection>
 
-      <ConfigSection title="控制 UI" icon={LayoutDashboard} iconColor="text-indigo-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.misc.title.controlUi')} icon={LayoutDashboard} iconColor="text-indigo-500" defaultOpen={false}>
         <SwitchField
-          label="启用"
+          label={i18n.t('configCenter.misc.fields.enabled')}
           value={gg(['controlUi', 'enabled']) !== false}
           onChange={(v) => gs(['controlUi', 'enabled'], v)}
         />
         <TextField
-          label="Base Path"
+          label={i18n.t('configCenter.misc.fields.basePath')}
           value={String(gg(['controlUi', 'basePath']) ?? '')}
           onChange={(v) => gs(['controlUi', 'basePath'], v)}
           placeholder="/"
         />
         <ArrayField
-          label="允许来源"
+          label={i18n.t('configCenter.misc.fields.allowedOrigins')}
           value={(gg(['controlUi', 'allowedOrigins']) as string[]) ?? []}
           onChange={(v) => gs(['controlUi', 'allowedOrigins'], v)}
           placeholder="https://..."
         />
       </ConfigSection>
 
-      <ConfigSection title="环境变量" icon={Cpu} iconColor="text-slate-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.misc.title.env')} icon={Cpu} iconColor="text-slate-500" defaultOpen={false}>
         <SwitchField
-          label="Shell 环境"
+          label={i18n.t('configCenter.misc.fields.shellEnv')}
           value={getField(['env', 'shellEnv', 'enabled']) === true}
           onChange={(v) => setField(['env', 'shellEnv', 'enabled'], v)}
         />
         <NumberField
-          label="Shell 超时(ms)"
+          label={i18n.t('configCenter.misc.fields.shellTimeoutMs')}
           value={getField(['env', 'shellEnv', 'timeoutMs']) as number | undefined}
           onChange={(v) => setField(['env', 'shellEnv', 'timeoutMs'], v)}
           min={0}
           step={1000}
         />
         <KeyValueField
-          label="变量"
+          label={i18n.t('configCenter.misc.fields.envVars')}
           value={(getField(['env', 'vars']) as Record<string, string>) || {}}
           onChange={(v) => setField(['env', 'vars'], v)}
         />

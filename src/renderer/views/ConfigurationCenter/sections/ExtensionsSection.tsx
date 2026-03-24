@@ -3,6 +3,7 @@
  */
 import React from 'react';
 import { Puzzle, Package, Zap } from 'lucide-react';
+import i18n from '@/i18n';
 import { ConfigSection, SwitchField, ArrayField, TextField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 
@@ -21,9 +22,9 @@ export const ExtensionsSection: React.FC<SectionProps> = ({ setField, getField }
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="扩展总开关" icon={Puzzle} iconColor="text-purple-500">
+      <ConfigSection title={i18n.t('configCenter.extensions.title.main')} icon={Puzzle} iconColor="text-purple-500">
         <SwitchField
-          label="启用扩展"
+          label={i18n.t('configCenter.extensions.fields.extensionsEnabled')}
           value={extensionsEnabled}
           onChange={(v) => {
             s(['extensions', 'enabled'], v);
@@ -31,15 +32,15 @@ export const ExtensionsSection: React.FC<SectionProps> = ({ setField, getField }
           }}
         />
         <SwitchField
-          label="启用技能 (Skills)"
+          label={i18n.t('configCenter.extensions.fields.skillsEnabled')}
           value={skillsEnabled}
           onChange={(v) => s(['skills', 'enabled'], v)}
         />
       </ConfigSection>
 
-      <ConfigSection title="插件列表" icon={Package} iconColor="text-indigo-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.extensions.title.plugins')} icon={Package} iconColor="text-indigo-500" defaultOpen={false}>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-          插件配置通常由 extensions.entries 或 plugins.entries 管理，详细配置请使用完整 JSON 编辑。
+          {i18n.t('configCenter.extensions.pluginNote')}
         </p>
         {pluginIds.length > 0 && (
           <div className="space-y-1">
@@ -60,9 +61,9 @@ export const ExtensionsSection: React.FC<SectionProps> = ({ setField, getField }
         )}
       </ConfigSection>
 
-      <ConfigSection title="技能路径" icon={Zap} iconColor="text-amber-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.extensions.title.skillsPath')} icon={Zap} iconColor="text-amber-500" defaultOpen={false}>
         <TextField
-          label="技能目录"
+          label={i18n.t('configCenter.extensions.fields.skillsDir')}
           value={String(g(['skills', 'path']) ?? g(['skills', 'dir']) ?? '')}
           onChange={(v) => {
             s(['skills', 'path'], v);
@@ -71,7 +72,7 @@ export const ExtensionsSection: React.FC<SectionProps> = ({ setField, getField }
           placeholder="~/.openclaw/skills"
         />
         <ArrayField
-          label="预加载技能"
+          label={i18n.t('configCenter.extensions.fields.preloadSkills')}
           value={Array.isArray(g(['skills', 'preload'])) ? (g(['skills', 'preload']) as string[]) : []}
           onChange={(v) => s(['skills', 'preload'], v)}
           placeholder="skill_id"

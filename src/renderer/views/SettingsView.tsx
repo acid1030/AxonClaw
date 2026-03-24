@@ -1,5 +1,5 @@
 /**
- * AxonClaw - 系统设置
+ * AxonClaw - 系统Settings
  * AxonClawX 风格：账户安全 | 异常通知 | 配置备份 | 操作日志 | 软件更新 | 打赏支持 | 关于项目
  */
 
@@ -50,15 +50,15 @@ interface BindAddressState {
   customHost?: string;
 }
 
-const SETTINGS_LABEL_KEYS: Record<SettingsSection, string> = {
-  general: 'settings.general.menu',
-  account: 'settings.account.menu',
-  notification: 'settings.notification.menu',
-  backup: 'settings.backup.menu',
-  logs: 'settings.logs.menu',
-  update: 'settings.update.menu',
-  donate: 'settings.donate.menu',
-  about: 'settings.about.menu',
+const SETTINGS_LABELS: Record<SettingsSection, { key: string; fallback: string }> = {
+  general: { key: 'general.menu', fallback: 'General' },
+  account: { key: 'account.menu', fallback: 'Account' },
+  notification: { key: 'notification.menu', fallback: 'Notifications' },
+  backup: { key: 'backup.menu', fallback: 'Backup' },
+  logs: { key: 'logs.menu', fallback: 'Logs' },
+  update: { key: 'update.menu', fallback: 'Update' },
+  donate: { key: 'donate.menu', fallback: 'Support' },
+  about: { key: 'about.menu', fallback: 'About' },
 };
 
 const SIDEBAR_ITEMS: { id: SettingsSection; icon: React.ElementType; iconColor?: string }[] = [
@@ -79,10 +79,10 @@ const BIND_OPTIONS: { value: BindAddressState['mode']; labelKey: string }[] = [
 ];
 
 const LANGUAGE_OPTIONS: { value: string; labelKey: string; fallbackLabel: string }[] = [
-  { value: 'zh', labelKey: 'settings.general.languageOptions.zh', fallbackLabel: '简体中文' },
-  { value: 'zh-TW', labelKey: 'settings.general.languageOptions.zhTW', fallbackLabel: '繁體中文' },
+  { value: 'zh', labelKey: 'settings.general.languageOptions.zh', fallbackLabel: 'Simplified Chinese' },
+  { value: 'zh-TW', labelKey: 'settings.general.languageOptions.zhTW', fallbackLabel: 'Traditional Chinese' },
   { value: 'en', labelKey: 'settings.general.languageOptions.en', fallbackLabel: 'English' },
-  { value: 'ja', labelKey: 'settings.general.languageOptions.ja', fallbackLabel: '日本語' },
+  { value: 'ja', labelKey: 'settings.general.languageOptions.ja', fallbackLabel: 'Japanese' },
   { value: 'ko', labelKey: 'settings.general.languageOptions.ko', fallbackLabel: '한국어' },
 ];
 
@@ -266,7 +266,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                 )}
               >
                 <item.icon className={cn('w-4 h-4 shrink-0', item.iconColor ?? 'text-white/60')} />
-                <span className="flex-1 text-left">{t(SETTINGS_LABEL_KEYS[item.id])}</span>
+                <span className="flex-1 text-left">
+                  {t(SETTINGS_LABELS[item.id].key, { ns: 'settings', defaultValue: SETTINGS_LABELS[item.id].fallback })}
+                </span>
                 {activeSection === item.id && <ChevronRight className="w-3.5 h-3.5" />}
               </button>
             ))}

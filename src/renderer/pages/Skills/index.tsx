@@ -57,19 +57,19 @@ interface SkillDetailDialogProps {
 function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   const source = (skill.source || '').trim().toLowerCase();
   if (!source) {
-    if (skill.isBundled) return t('source.badge.bundled', { defaultValue: 'Bundled' });
-    return t('source.badge.unknown', { defaultValue: 'Unknown source' });
+    if (skill.isBundled) return t('source.badge.bundled', { defaultValue: '内置' });
+    return t('source.badge.unknown', { defaultValue: '未知来源' });
   }
-  if (source === 'openclaw-bundled') return t('source.badge.bundled', { defaultValue: 'Bundled' });
-  if (source === 'openclaw-managed') return t('source.badge.managed', { defaultValue: 'Managed' });
-  if (source === 'openclaw-workspace') return t('source.badge.workspace', { defaultValue: 'Workspace' });
-  if (source === 'openclaw-extra') return t('source.badge.extra', { defaultValue: 'Extra dirs' });
-  if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
-  if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: 'Project .agents' });
+  if (source === 'openclaw-bundled') return t('source.badge.bundled', { defaultValue: '内置' });
+  if (source === 'openclaw-managed') return t('source.badge.managed', { defaultValue: '托管' });
+  if (source === 'openclaw-workspace') return t('source.badge.workspace', { defaultValue: '工作区' });
+  if (source === 'openclaw-extra') return t('source.badge.extra', { defaultValue: '额外目录' });
+  if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: '个人 .agents' });
+  if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: '项目 .agents' });
   return source;
 }
 
-/** 根据技能来源返回边框颜色类名 */
+/** 根据Skills来源返回边框颜色类名 */
 function getSkillBorderClass(skill: Skill): string {
   const source = (skill.source || '').trim().toLowerCase();
   if (!source && skill.isBundled) return 'border-violet-500/60 dark:border-violet-400/50';
@@ -82,48 +82,48 @@ function getSkillBorderClass(skill: Skill): string {
   return 'border-slate-400/50 dark:border-slate-500/50';
 }
 
-/** Agent 工具目录 - 工具 Tab 内容 */
+/** Agent Tools目录 - Tools Tab 内容 */
 const TOOL_SECTIONS: { label: string; tools: { id: string; desc: string }[] }[] = [
-  { label: 'Files', tools: [
+  { label: '文件', tools: [
     { id: 'read', desc: '读取文件内容' },
     { id: 'write', desc: '写入文件' },
     { id: 'edit', desc: '编辑文件' },
     { id: 'apply_patch', desc: '应用补丁' },
   ]},
-  { label: 'Runtime', tools: [
+  { label: '运行时', tools: [
     { id: 'exec', desc: '执行命令' },
     { id: 'process', desc: '进程管理' },
   ]},
-  { label: 'Web', tools: [
+  { label: '网络', tools: [
     { id: 'web_search', desc: '网络搜索' },
     { id: 'web_fetch', desc: '网页抓取' },
   ]},
-  { label: 'Memory', tools: [
-    { id: 'memory_search', desc: '记忆搜索' },
-    { id: 'memory_get', desc: '获取记忆' },
+  { label: '记忆', tools: [
+    { id: 'memory_search', desc: '记忆检索' },
+    { id: 'memory_get', desc: '读取记忆' },
   ]},
-  { label: 'Sessions', tools: [
+  { label: '会话', tools: [
     { id: 'sessions_list', desc: '会话列表' },
     { id: 'sessions_history', desc: '会话历史' },
     { id: 'sessions_send', desc: '发送消息' },
     { id: 'sessions_spawn', desc: '创建会话' },
     { id: 'session_status', desc: '会话状态' },
   ]},
-  { label: 'UI', tools: [
+  { label: '界面', tools: [
     { id: 'browser', desc: '浏览器自动化' },
     { id: 'canvas', desc: '画布' },
   ]},
-  { label: 'Messaging', tools: [
+  { label: '消息', tools: [
     { id: 'message', desc: '消息发送' },
   ]},
-  { label: 'Automation', tools: [
+  { label: '自动化', tools: [
     { id: 'cron', desc: '定时任务' },
-    { id: 'gateway', desc: '网关' },
+    { id: 'gateway', desc: 'Gateway' },
   ]},
-  { label: 'Agents', tools: [
+  { label: '代理', tools: [
     { id: 'agents_list', desc: '代理列表' },
   ]},
-  { label: 'Media', tools: [
+  { label: '媒体', tools: [
     { id: 'image', desc: '图像生成' },
   ]},
 ];
@@ -136,7 +136,7 @@ function ToolsTabContent({ isOnline, onNavigateConfig, t }: {
   return (
     <div className="flex-1 overflow-y-auto min-h-0">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-[var(--color-text-secondary)]">{t('tabs.toolsDesc', { defaultValue: 'AI 代理可调用的工具目录，在配置中心设置权限' })}</p>
+        <p className="text-sm text-[var(--color-text-secondary)]">{t('tabs.toolsDesc', { defaultValue: '代理可调用的工具目录；权限请在配置中心设置' })}</p>
         <div className="flex items-center gap-2">
           {onNavigateConfig && (
             <Button variant="outline" size="sm" className="rounded-lg border-[var(--color-border)] text-[var(--color-text-secondary)]" onClick={onNavigateConfig}>
@@ -175,7 +175,7 @@ function ToolsTabContent({ isOnline, onNavigateConfig, t }: {
   );
 }
 
-/** 插件 Tab 内容 - 完整复刻 PluginsView */
+/** Plugins Tab 内容 - 完整复刻 PluginsView */
 function PluginsTabContent({
   skills,
   loading,
@@ -200,32 +200,36 @@ function PluginsTabContent({
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       <div className="flex items-center justify-between shrink-0 mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-sm text-[var(--color-text-secondary)]">已启用 {enabledCount}/{skills.length}</span>
+          <span className="text-sm text-[var(--color-text-secondary)]">
+            {t('stats.enabled', { count: enabledCount, total: skills.length, defaultValue: '已启用 {{count}}/{{total}}' })}
+          </span>
           <span className={cn('text-xs px-2 py-0.5 rounded', isOnline ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400')}>
-            {isOnline ? 'Gateway 在线' : 'Gateway 离线'}
+            {isOnline ? t('gateway.online', { defaultValue: 'Gateway 在线' }) : t('gateway.offline', { defaultValue: 'Gateway 离线' })}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => fetchSkills()} disabled={loading}>
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', loading && 'animate-spin')} />
-            刷新
+            {t('common.refresh', { defaultValue: '刷新' })}
           </Button>
           <Button size="sm" className="h-8 rounded-lg bg-sky-500 hover:bg-sky-600" onClick={() => setInstallSheetOpen(true)}>
             <Package className="h-3.5 w-3.5 mr-1.5" />
-            从市场安装
+            {t('marketplace.installFromMarketplace', { defaultValue: '从市场安装' })}
           </Button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         {!isOnline ? (
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-8 text-center text-[var(--color-text-secondary)]">
-            <p className="text-sm">请先启动 Gateway 以加载插件</p>
+            <p className="text-sm">{t('gateway.startFirstForPlugins', { defaultValue: '请先启动 Gateway 以加载插件' })}</p>
           </div>
         ) : skills.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-[var(--color-text-muted)]">
             <Plug className="h-12 w-12 mb-4 opacity-50" />
-            <p>暂无插件</p>
-            <Button size="sm" className="mt-4 rounded-lg" onClick={() => setInstallSheetOpen(true)}>从市场安装</Button>
+            <p>{t('plugins.empty', { defaultValue: '暂无插件' })}</p>
+            <Button size="sm" className="mt-4 rounded-lg" onClick={() => setInstallSheetOpen(true)}>
+              {t('marketplace.installFromMarketplace', { defaultValue: '从市场安装' })}
+            </Button>
           </div>
         ) : (
           <div className="space-y-3 max-w-2xl">
@@ -250,7 +254,7 @@ function PluginsTabContent({
                     'px-2 py-1 rounded-lg text-xs font-medium',
                     (skill.enabled || skill.isCore) ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'
                   )}>
-                    {(skill.enabled || skill.isCore) ? '已启用' : '已禁用'}
+                    {(skill.enabled || skill.isCore) ? t('available', { defaultValue: '已启用' }) : t('unavailable', { defaultValue: '已禁用' })}
                   </span>
                   {!skill.isCore && (
                     <Switch
@@ -272,7 +276,7 @@ function PluginsTabContent({
   );
 }
 
-/** ClawHub Tab 内容 - 内嵌完整市场 */
+/** ClawHub Tab 内容 - 内嵌完整Marketplace */
 function ClawHubTabContent({
   installQuery,
   setInstallQuery,
@@ -374,7 +378,7 @@ function ClawHubTabContent({
                       </Button>
                     ) : (
                       <Button size="sm" className="h-8 rounded-full bg-sky-500 hover:bg-sky-600" onClick={() => handleInstall(skill.slug)} disabled={isInstallLoading}>
-                        {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', 'Install')}
+                        {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', '安装')}
                       </Button>
                     )}
                   </div>
@@ -397,7 +401,7 @@ function ClawHubTabContent({
   );
 }
 
-/** SkillHub Tab 内容 - 同类市场 */
+/** SkillHub Tab 内容 - 同类Marketplace */
 function SkillHubTabContent({
   installQuery,
   setInstallQuery,
@@ -497,7 +501,7 @@ function SkillHubTabContent({
                       </Button>
                     ) : (
                       <Button size="sm" className="h-8 rounded-full bg-sky-500 hover:bg-sky-600" onClick={() => handleInstall(skill.slug)} disabled={isInstallLoading}>
-                        {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', 'Install')}
+                        {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', '安装')}
                       </Button>
                     )}
                   </div>
@@ -509,7 +513,7 @@ function SkillHubTabContent({
         {!searching && searchResults.length === 0 && !searchError && (
           <div className="flex flex-col items-center justify-center py-20 text-[var(--color-text-muted)]">
             <Package className="h-12 w-12 mb-4 opacity-50" />
-            <p>{installQuery.trim() ? t('marketplace.noResults') : t('tabs.skillhubEmpty', { defaultValue: '搜索 SkillHub 技能或访问网站' })}</p>
+            <p>{installQuery.trim() ? t('marketplace.noResults') : t('tabs.skillhubEmpty', { defaultValue: '搜索 SkillHub 技能或访问官网' })}</p>
             <Button size="sm" className="mt-4 rounded-lg" onClick={() => invokeIpc('shell:openExternal', 'https://clawhub.ai')}>
               <ExternalLink className="h-4 w-4 mr-2" />
               {t('tabs.visitSkillHub', { defaultValue: '访问 SkillHub' })}
@@ -932,7 +936,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
     } else if (selectedTab === 'unavailable') {
       matchesTab = !skill.enabled && !skill.isCore;
     } else if (selectedTab === 'market') {
-      matchesTab = false; // 市场在单独面板，此处不显示技能卡片
+      matchesTab = false; // Marketplace在单独面板，此处不显示Skills卡片
     }
 
     return matchesSearch && matchesSource && matchesTab;
@@ -1025,7 +1029,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
       const dirPath = result.filePaths[0];
       setLoadingFromDir(true);
       await loadSkillsFromDir(dirPath);
-      toast.success(t('toast.loadedFromDir', { count: 1, defaultValue: '已加载工作目录下的技能' }));
+      toast.success(t('toast.loadedFromDir', { count: 1, defaultValue: '已从工作区目录加载技能' }));
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -1101,11 +1105,11 @@ export function Skills({ onNavigateTo }: SkillsProps) {
   }, [uninstallSkill, t]);
 
   const mainTabs: { id: MainCategory; label: string; count?: number }[] = [
-    { id: 'skills', label: t('tabs.skills', { defaultValue: '技能' }), count: safeSkills.length },
-    { id: 'tools', label: t('tabs.tools', { defaultValue: '工具' }) },
-    { id: 'plugins', label: t('tabs.plugins', { defaultValue: '插件' }) },
-    { id: 'clawhub', label: 'ClawHub' },
-    { id: 'skillhub', label: 'SkillHub' },
+    { id: 'skills', label: t('tabs.skills'), count: safeSkills.length },
+    { id: 'tools', label: t('tabs.tools') },
+    { id: 'plugins', label: t('tabs.plugins') },
+    { id: 'clawhub', label: t('tabs.clawhub') },
+    { id: 'skillhub', label: t('tabs.skillhub') },
   ];
 
   if (loading) {
@@ -1121,7 +1125,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
       {/* AxonClawX 风格顶部 */}
       <div className="shrink-0 pt-4 pb-4">
         <h1 className="text-base font-bold text-[var(--color-text)]">{t('title', { defaultValue: '⚡ 技能管理' })}</h1>
-        <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{t('subtitle', { defaultValue: '浏览和管理 AI 能力扩展' })}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{t('subtitle', { defaultValue: '浏览并管理 AI 能力扩展' })}</p>
       </div>
 
       {/* 主分类 Tab 栏 - 胶囊式 */}
@@ -1157,7 +1161,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
 
       <div className="w-full flex flex-col h-full py-4 flex-1 min-h-0 overflow-hidden">
 
-        {/* 技能 Tab: Search + Filter Badges (AxonClawX) */}
+        {/* Skills Tab: Search + Filter Badges (AxonClawX) */}
         {mainCategory === 'skills' && (
         <>
         {/* Row 1: Search + Filter Badges */}
@@ -1165,7 +1169,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           <div className="relative flex-1 min-w-[280px] flex items-center rounded-xl border border-[var(--color-border)] bg-[#1e293b] px-3 py-2.5">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
-              placeholder={t('searchPlaceholder', { defaultValue: '🔍 搜索技能...' })}
+              placeholder={t('searchSkills')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="ml-3 bg-transparent outline-none flex-1 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] min-w-0"
@@ -1184,7 +1188,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                 selectedTab === 'all' ? 'bg-sky-500/15 text-sky-400' : 'bg-[var(--color-surface-sunken)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-raised)]'
               )}
             >
-              {t('filter.all', { count: sourceStats.all, defaultValue: '全部' })} ({sourceStats.all})
+              {t('filter.all')} ({sourceStats.all})
             </button>
             <button
               onClick={() => setSelectedTab('available')}
@@ -1193,7 +1197,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                 selectedTab === 'available' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-[var(--color-surface-sunken)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-raised)]'
               )}
             >
-              {t('available', { defaultValue: '启用' })} ({availableCount})
+              {t('available')} ({availableCount})
             </button>
             <button
               onClick={() => setSelectedTab('unavailable')}
@@ -1202,7 +1206,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                 selectedTab === 'unavailable' ? 'bg-amber-500/15 text-amber-400' : 'bg-[var(--color-surface-sunken)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-raised)]'
               )}
             >
-              {t('unavailable', { defaultValue: '未启用' })} ({unavailableCount})
+              {t('unavailable')} ({unavailableCount})
             </button>
             <button
               onClick={() => { setSelectedTab('market'); setInstallSheetOpen(true); }}
@@ -1211,7 +1215,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                 selectedTab === 'market' ? 'bg-sky-500/15 text-sky-400' : 'bg-[var(--color-surface-sunken)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-raised)]'
               )}
             >
-              {t('marketplace.sourceClawHub', { defaultValue: '市场' })}
+              {t('marketplace.sourceLabel')} {t('marketplace.sourceClawHub')}
             </button>
           </div>
         </div>
@@ -1222,19 +1226,19 @@ export function Skills({ onNavigateTo }: SkillsProps) {
             onClick={() => bulkToggleVisible(true)}
             className="h-8 px-3 rounded-lg text-xs font-bold bg-[var(--color-surface-sunken)] hover:bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)]"
           >
-            {t('actions.batchEnable', { defaultValue: '批量启用' })}
+            {t('actions.batchEnable')}
           </button>
           <button
             onClick={() => bulkToggleVisible(false)}
             className="h-8 px-3 rounded-lg text-xs font-bold bg-[var(--color-surface-sunken)] hover:bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)]"
           >
-            {t('actions.batchDisable', { defaultValue: '批量禁用' })}
+            {t('actions.batchDisable')}
           </button>
           <button
             onClick={() => { setInstallQuery(''); setInstallSheetOpen(true); }}
             className="h-8 px-3 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-600 text-white border border-sky-500/50"
           >
-            {t('actions.installFromClawHub', { defaultValue: '从 ClawHub 安装' })}
+            {t('actions.installFromClawHub')}
           </button>
           <div className="flex items-center gap-1.5 ml-2 border-l border-[var(--color-border)] pl-2">
             <button
@@ -1325,7 +1329,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                             "text-[11px] font-medium px-2 py-0.5 rounded-full",
                             isAvailable ? "bg-green-500/20 text-green-600 dark:text-green-400" : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
                           )}>
-                            {isAvailable ? (t('available', { defaultValue: 'Available' })) : (t('unavailable', { defaultValue: 'Unavailable' }))}
+                            {isAvailable ? t('available') : t('unavailable')}
                           </span>
                           {!skill.isCore && (
                             <Switch
@@ -1349,7 +1353,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                     <div className="px-4 pb-3 flex items-center gap-2" onClick={e => e.stopPropagation()}>
                       <Button variant="outline" size="sm" className="h-8 text-[12px] rounded-lg shrink-0" onClick={() => setSelectedSkill(skill)}>
                         <Settings className="h-3 w-3 mr-1.5" />
-                        {t('detail.configure', { defaultValue: 'Configure' })}
+                        {t('detail.configure')}
                       </Button>
                     </div>
                   </div>
@@ -1362,19 +1366,19 @@ export function Skills({ onNavigateTo }: SkillsProps) {
         {/* Bottom Status Bar */}
         <div className="flex items-center justify-between shrink-0 pt-3 border-t border-[var(--color-border)] text-[12px] text-[var(--color-text-secondary)]">
           <div className="flex items-center gap-4">
-            <span className="font-medium text-[var(--color-text)]">{sourceStats.all} SKILLS</span>
-            <span className="text-emerald-400">{availableCount} READY</span>
-            <span className="text-amber-400">{unavailableCount} MISSING</span>
+            <span className="font-medium text-[var(--color-text)]">{sourceStats.all} {t('statusBar.skills', { defaultValue: '技能' })}</span>
+            <span className="text-emerald-400">{availableCount} {t('statusBar.ready', { defaultValue: '可用' })}</span>
+            <span className="text-amber-400">{unavailableCount} {t('statusBar.missing', { defaultValue: '缺失' })}</span>
           </div>
           <div className="flex items-center gap-2">
             <Shield className="h-3.5 w-3.5" />
-            <span>BUNDLED: {bundledCount}</span>
+            <span>{t('statusBar.bundled', { defaultValue: '内置' })}: {bundledCount}</span>
           </div>
         </div>
         </>
         )}
 
-        {/* 工具 Tab - Agent 工具目录 */}
+        {/* Tools Tab - Agent Tools目录 */}
         {mainCategory === 'tools' && (
           <ToolsTabContent
             isOnline={isGatewayRunning}
@@ -1383,7 +1387,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           />
         )}
 
-        {/* 插件 Tab - 完整插件管理 (PluginsView 功能) */}
+        {/* Plugins Tab - 完整Plugins管理 (PluginsView 功能) */}
         {mainCategory === 'plugins' && (
           <PluginsTabContent
             skills={safeSkills}
@@ -1397,7 +1401,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           />
         )}
 
-        {/* ClawHub Tab - 内嵌完整市场 */}
+        {/* ClawHub Tab - 内嵌完整Marketplace */}
         {mainCategory === 'clawhub' && (
           <ClawHubTabContent
             installQuery={installQuery}
@@ -1416,7 +1420,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           />
         )}
 
-        {/* SkillHub Tab - 同类市场功能 */}
+        {/* SkillHub Tab - 同类Marketplace功能 */}
         {mainCategory === 'skillhub' && (
           <SkillHubTabContent
             installQuery={installQuery}
@@ -1544,7 +1548,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
                             disabled={isInstallLoading}
                             className="h-8 px-4 rounded-full shadow-none font-medium text-xs"
                           >
-                            {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', 'Install')}
+                            {isInstallLoading ? <LoadingSpinner size="sm" /> : t('marketplace.install', '安装')}
                           </Button>
                         )}
                       </div>

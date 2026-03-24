@@ -630,7 +630,7 @@ function ImageLightbox({
               size="icon"
               className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
               onClick={handleShowInFolder}
-              title="在文件夹中显示"
+              title="Show in folder"
             >
               <FolderOpen className="h-4 w-4" />
             </Button>
@@ -640,7 +640,7 @@ function ImageLightbox({
             size="icon"
             className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
             onClick={onClose}
-            title="关闭"
+            title="Close"
           >
             <X className="h-4 w-4" />
           </Button>

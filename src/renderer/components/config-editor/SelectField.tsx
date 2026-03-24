@@ -1,5 +1,5 @@
 /**
- * 配置编辑器 - 下拉选择
+ * 配置编辑器 - 下拉Select
  */
 import React from 'react';
 import { ConfigField } from './ConfigField';
@@ -47,7 +47,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
     <ConfigField label={label} desc={desc} tooltip={tooltip} error={error}>
       <Select value={displayValue} onValueChange={handleValueChange}>
         <SelectTrigger className="h-8 w-full md:w-64 font-mono text-sm">
-          <SelectValue placeholder="选择" />
+          <SelectValue placeholder="Select" />
         </SelectTrigger>
         <SelectContent>
           {allOptions.map((opt) => (

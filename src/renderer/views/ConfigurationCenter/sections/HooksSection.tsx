@@ -14,6 +14,7 @@ import {
   EmptyState,
 } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
+import i18n from '@/i18n';
 
 export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => {
   const g = (p: string[]) => getField(['hooks', ...p]);
@@ -23,31 +24,31 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="基本设置" icon={Settings} iconColor="text-pink-500">
+      <ConfigSection title={i18n.t('configCenter.hooks.title.basic')} icon={Settings} iconColor="text-pink-500">
         <SwitchField
-          label="启用 Hooks"
+          label={i18n.t('configCenter.hooks.fields.enabled')}
           value={g(['enabled']) === true}
           onChange={(v) => s(['enabled'], v)}
         />
         <TextField
-          label="Webhook 路径"
+          label={i18n.t('configCenter.hooks.fields.path')}
           value={String(g(['path']) ?? '')}
           onChange={(v) => s(['path'], v)}
           placeholder="/webhook"
         />
         <TextField
-          label="Webhook Token"
+          label={i18n.t('configCenter.hooks.fields.token')}
           value={String(g(['token']) ?? '')}
           onChange={(v) => s(['token'], v)}
         />
         <NumberField
-          label="最大 Body 字节"
+          label={i18n.t('configCenter.hooks.fields.maxBodyBytes')}
           value={g(['maxBodyBytes']) as number | undefined}
           onChange={(v) => s(['maxBodyBytes'], v)}
           min={0}
         />
         <ArrayField
-          label="预设"
+          label={i18n.t('configCenter.hooks.fields.presets')}
           value={(g(['presets']) as string[]) ?? []}
           onChange={(v) => s(['presets'], v)}
           placeholder="preset-name"
@@ -55,19 +56,19 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
       </ConfigSection>
 
       <ConfigSection
-        title="Hook 映射"
+        title={i18n.t('configCenter.hooks.title.mappings')}
         icon={Route}
         iconColor="text-pink-500"
-        desc={`${mappings.length} 条规则`}
+        desc={i18n.t('configCenter.hooks.mappingCount', { count: mappings.length })}
         defaultOpen={false}
       >
         {mappings.length === 0 ? (
-          <EmptyState message="暂无映射" icon={Route} />
+          <EmptyState message={i18n.t('configCenter.hooks.emptyMappings')} icon={Route} />
         ) : (
           mappings.map((m: Record<string, unknown>, i: number) => (
             <ConfigCard
               key={i}
-              title={String(m.match || m.action || `映射 ${i + 1}`)}
+              title={String(m.match || m.action || i18n.t('configCenter.hooks.mappingTitle', { index: i + 1 }))}
               icon={Route}
               onDelete={() => {
                 const next = mappings.filter((_, j) => j !== i);
@@ -75,7 +76,7 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
               }}
             >
               <TextField
-                label="匹配"
+                label={i18n.t('configCenter.hooks.fields.match')}
                 value={String(m.match ?? '')}
                 onChange={(v) => {
                   const next = [...mappings];
@@ -85,7 +86,7 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
                 placeholder="pattern"
               />
               <TextField
-                label="动作"
+                label={i18n.t('configCenter.hooks.fields.action')}
                 value={String(m.action ?? '')}
                 onChange={(v) => {
                   const next = [...mappings];
@@ -95,7 +96,7 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
                 placeholder="send"
               />
               <TextField
-                label="频道"
+                label={i18n.t('configCenter.hooks.fields.channel')}
                 value={String(m.channel ?? '')}
                 onChange={(v) => {
                   const next = [...mappings];
@@ -105,7 +106,7 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
                 placeholder="telegram"
               />
               <TextField
-                label="模型"
+                label={i18n.t('configCenter.hooks.fields.model')}
                 value={String(m.model ?? '')}
                 onChange={(v) => {
                   const next = [...mappings];
@@ -118,32 +119,32 @@ export const HooksSection: React.FC<SectionProps> = ({ setField, getField }) => 
           ))
         )}
         <AddButton
-          label="添加映射"
+          label={i18n.t('configCenter.hooks.addMapping')}
           onClick={() => s(['mappings'], [...mappings, { match: '', action: 'send' }])}
         />
       </ConfigSection>
 
-      <ConfigSection title="Gmail 配置" icon={Mail} iconColor="text-red-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.hooks.title.gmail')} icon={Mail} iconColor="text-red-500" defaultOpen={false}>
         <SwitchField
-          label="启用 Gmail"
+          label={i18n.t('configCenter.hooks.fields.gmailEnabled')}
           value={g(['gmail', 'enabled']) === true}
           onChange={(v) => s(['gmail', 'enabled'], v)}
         />
         <TextField
-          label="凭证路径"
+          label={i18n.t('configCenter.hooks.fields.credentialsPath')}
           value={String(g(['gmail', 'credentialsPath']) ?? '')}
           onChange={(v) => s(['gmail', 'credentialsPath'], v)}
         />
         <TextField
-          label="Token 路径"
+          label={i18n.t('configCenter.hooks.fields.gmailTokenPath')}
           value={String(g(['gmail', 'tokenPath']) ?? '')}
           onChange={(v) => s(['gmail', 'tokenPath'], v)}
         />
       </ConfigSection>
 
-      <ConfigSection title="内部 Hooks" icon={Network} iconColor="text-slate-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.hooks.title.internal')} icon={Network} iconColor="text-slate-500" defaultOpen={false}>
         <SwitchField
-          label="启用内部"
+          label={i18n.t('configCenter.hooks.fields.internalEnabled')}
           value={g(['internal', 'enabled']) === true}
           onChange={(v) => s(['internal', 'enabled'], v)}
         />

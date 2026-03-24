@@ -6,12 +6,14 @@
 import React from 'react';
 import { useGatewayStore } from '@/stores/gateway';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface PlaceholderViewProps {
   title?: string;
 }
 
-const PlaceholderView: React.FC<PlaceholderViewProps> = ({ title = '功能开发中' }) => {
+const PlaceholderView: React.FC<PlaceholderViewProps> = ({ title = 'Feature in development' }) => {
+  const { t } = useTranslation('placeholder');
   const isOnline = useGatewayStore((s) => s.status.state === 'running');
 
   return (
@@ -26,7 +28,7 @@ const PlaceholderView: React.FC<PlaceholderViewProps> = ({ title = '功能开发
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
         <div className="text-6xl mb-4">🚧</div>
         <h2 className="text-2xl font-semibold text-white mb-2">{title}</h2>
-        <p className="text-sm text-white/60">敬请期待</p>
+        <p className="text-sm text-white/60">{t('comingSoon')}</p>
       </div>
     </div>
   );

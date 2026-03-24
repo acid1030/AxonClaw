@@ -3,12 +3,13 @@
  */
 import React from 'react';
 import { Clock } from 'lucide-react';
+import i18n from '@/i18n';
 import { ConfigSection, TextField, NumberField, SwitchField, SelectField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 
 const WAKE_OPTIONS = [
-  { value: 'now', label: '立即' },
-  { value: 'next-heartbeat', label: '下次心跳' },
+  { value: 'now', label: i18n.t('configCenter.cron.options.wake.now') },
+  { value: 'next-heartbeat', label: i18n.t('configCenter.cron.options.wake.nextHeartbeat') },
 ];
 
 export const CronSection: React.FC<SectionProps> = ({ setField, getField }) => {
@@ -17,32 +18,32 @@ export const CronSection: React.FC<SectionProps> = ({ setField, getField }) => {
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="定时任务" icon={Clock} iconColor="text-lime-500">
+      <ConfigSection title={i18n.t('configCenter.cron.title.main')} icon={Clock} iconColor="text-lime-500">
         <SwitchField
-          label="启用"
+          label={i18n.t('configCenter.cron.fields.enabled')}
           value={g(['enabled']) !== false}
           onChange={(v) => s(['enabled'], v)}
         />
         <TextField
-          label="存储路径"
+          label={i18n.t('configCenter.cron.fields.store')}
           value={String(g(['store']) ?? '')}
           onChange={(v) => s(['store'], v)}
-          placeholder="~/.openclaw/cron-store"
+          placeholder={i18n.t('configCenter.cron.placeholders.store')}
         />
         <NumberField
-          label="最大并发"
+          label={i18n.t('configCenter.cron.fields.maxConcurrentRuns')}
           value={g(['maxConcurrentRuns']) as number | undefined}
           onChange={(v) => s(['maxConcurrentRuns'], v)}
           min={1}
         />
         <SelectField
-          label="唤醒模式"
+          label={i18n.t('configCenter.cron.fields.wakeMode')}
           value={String(g(['wakeMode']) ?? 'now')}
           onChange={(v) => s(['wakeMode'], v)}
           options={WAKE_OPTIONS}
         />
         <SwitchField
-          label="轻量上下文"
+          label={i18n.t('configCenter.cron.fields.lightContext')}
           value={g(['lightContext']) === true}
           onChange={(v) => s(['lightContext'], v)}
         />

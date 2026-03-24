@@ -1,6 +1,6 @@
 /**
  * 知识库服务 - 语义记忆搜索与知识管理
- * AxonClawX 知识库完整复刻：技术决策、项目文档、用户偏好、学习笔记
+ * AxonClawX 知识库完整复刻：Technical Decisions、Project Docs、User Preferences、Learning Notes
  */
 
 export type KnowledgeBaseCategory = 'decision' | 'project' | 'preference' | 'learning';
@@ -17,10 +17,10 @@ export interface KnowledgeBaseEntry {
 }
 
 const CATEGORY_LABELS: Record<KnowledgeBaseCategory, string> = {
-  decision: '技术决策',
-  project: '项目文档',
-  preference: '用户偏好',
-  learning: '学习笔记',
+  decision: 'Technical Decisions',
+  project: 'Project Docs',
+  preference: 'User Preferences',
+  learning: 'Learning Notes',
 };
 
 /** 分类图标与颜色 */
@@ -39,46 +39,46 @@ export async function getRecentKnowledgeEntries(
   const mockData: KnowledgeBaseEntry[] = [
     {
       id: '1',
-      title: 'OpenClaw 完整配置手册',
-      content: 'OpenClaw 网关配置与最佳实践',
+      title: 'OpenClaw Complete Configuration Guide',
+      content: 'OpenClaw gateway setup and best practices',
       category: 'project',
-      categoryLabel: '项目文档',
+      categoryLabel: 'Project Docs',
       updatedAt: '2026-03-14T15:30:00Z',
       updatedTime: '15:30',
     },
     {
       id: '2',
-      title: 'LanceDB 向量存储方案',
-      content: '采用 LanceDB 作为向量记忆存储',
+      title: 'LanceDB Vector Storage Plan',
+      content: 'Use LanceDB for vector memory storage',
       category: 'decision',
-      categoryLabel: '技术决策',
+      categoryLabel: 'Technical Decisions',
       updatedAt: '2026-03-14T14:20:00Z',
       updatedTime: '14:20',
     },
     {
       id: '3',
-      title: '用户偏好深色模式',
-      content: '界面默认为深色主题',
+      title: 'User Preference: Dark Mode',
+      content: 'Default UI theme is dark',
       category: 'preference',
-      categoryLabel: '用户偏好',
+      categoryLabel: 'User Preferences',
       updatedAt: '2026-03-13T16:45:00Z',
       updatedTime: '16:45',
     },
     {
       id: '4',
-      title: 'React Hooks 最佳实践',
-      content: 'useCallback、useMemo 使用规范',
+      title: 'React Hooks Best Practices',
+      content: 'Guidelines for useCallback and useMemo',
       category: 'learning',
-      categoryLabel: '学习笔记',
+      categoryLabel: 'Learning Notes',
       updatedAt: '2026-03-13T12:10:00Z',
       updatedTime: '12:10',
     },
     {
       id: '5',
-      title: 'MaritimeOS 项目架构',
-      content: '微服务架构与模块划分',
+      title: 'MaritimeOS Project Architecture',
+      content: 'Microservice architecture and module boundaries',
       category: 'project',
-      categoryLabel: '项目文档',
+      categoryLabel: 'Project Docs',
       updatedAt: '2026-03-12T18:20:00Z',
       updatedTime: '18:20',
     },

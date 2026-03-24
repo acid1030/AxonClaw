@@ -3,23 +3,39 @@
  * 内容工厂界面 - AxonClawX 风格内容复刻
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Plus, FileText } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
 
-const templates = [
-  { id: 'xiaohongshu', name: '小红书笔记', type: '种草/评测', status: '热门' as const, color: 'blue' },
-  { id: 'wechat', name: '公众号文章', type: '品牌宣传', status: '推荐' as const, color: 'purple' },
-  { id: 'video', name: '短视频脚本', type: '抖音/快手', status: 'new' as const, color: 'green' },
-  { id: 'image', name: 'AI 绘画', type: 'FLUX/SDXL', status: 'beta' as const, color: 'amber' },
-];
-
-const filters = ['全部', '种草', '长文', '短视频', 'AI 绘画'];
-
 const ContentView: React.FC = () => {
-  const [activeFilter, setActiveFilter] = useState('全部');
+  const { t: tr, i18n } = useTranslation();
+  const filters = useMemo(
+    () => [
+      tr('views.content.filters.all'),
+      tr('views.content.filters.seeding'),
+      tr('views.content.filters.longForm'),
+      tr('views.content.filters.shortVideo'),
+      tr('views.content.filters.aiArt'),
+    ],
+    [tr, i18n.language],
+  );
+  const templates = useMemo(
+    () => [
+      { id: 'xiaohongshu', name: tr('views.content.templates.xiaohongshu.name'), type: tr('views.content.templates.xiaohongshu.type'), status: 'hot' as const, color: 'blue' },
+      { id: 'wechat', name: tr('views.content.templates.wechat.name'), type: tr('views.content.templates.wechat.type'), status: 'recommended' as const, color: 'purple' },
+      { id: 'video', name: tr('views.content.templates.video.name'), type: tr('views.content.templates.video.type'), status: 'new' as const, color: 'green' },
+      { id: 'image', name: tr('views.content.templates.image.name'), type: tr('views.content.templates.image.type'), status: 'beta' as const, color: 'amber' },
+    ],
+    [tr, i18n.language],
+  );
+  const [activeFilter, setActiveFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    setActiveFilter(filters[0] || '');
+  }, [filters]);
 
   const gradients: Record<string, string> = {
     blue: 'from-blue-500 to-indigo-500',
@@ -32,9 +48,9 @@ const ContentView: React.FC = () => {
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
-          title="内容工厂"
-          subtitle="选模板 → 填参数 → 生成"
-          stats={[{ label: '模板数', value: templates.length }]}
+          title={tr('views.content.title')}
+          subtitle={tr('views.content.subtitle')}
+          stats={[{ label: tr('views.content.stats.templateCount'), value: templates.length }]}
           statsBorderColor="border-pink-500/40"
           actions={
             <>
@@ -42,7 +58,7 @@ const ContentView: React.FC = () => {
                 <Search className="w-4 h-4 text-muted-foreground shrink-0" />
                 <input
                   type="text"
-                  placeholder="搜索模板..."
+                  placeholder={tr('views.content.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="bg-transparent border-none outline-none text-sm text-foreground placeholder-muted-foreground w-28"
@@ -50,7 +66,7 @@ const ContentView: React.FC = () => {
               </div>
               <button className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors">
                 <Plus className="w-4 h-4" />
-                新建内容
+                {tr('views.content.newContent')}
               </button>
             </>
           }
@@ -94,24 +110,24 @@ const ContentView: React.FC = () => {
                   <span
                     className={cn(
                       'px-2 py-1 rounded-lg text-xs font-medium',
-                      t.status === '热门' && 'bg-emerald-500/15 text-emerald-600',
-                      t.status === '推荐' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+                      t.status === 'hot' && 'bg-emerald-500/15 text-emerald-600',
+                      t.status === 'recommended' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
                       t.status === 'new' && 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
                       t.status === 'beta' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                     )}
                   >
-                    {t.status === 'new' ? 'NEW' : t.status}
+                    {t.status === 'new' ? 'NEW' : t.status === 'hot' ? tr('views.content.status.hot') : t.status === 'recommended' ? tr('views.content.status.recommended') : t.status.toUpperCase()}
                   </span>
                 </div>
                 <button
                   className={cn(
                     'w-full py-2 rounded-xl text-xs font-medium transition-colors',
-                    (t.status === '热门' || t.status === '推荐')
+                    (t.status === 'hot' || t.status === 'recommended')
                       ? 'bg-primary/15 text-primary hover:bg-primary/25'
                       : 'bg-black/5 dark:bg-white/5 text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10'
                   )}
                 >
-                  启用模板
+                  {tr('views.content.enableTemplate')}
                 </button>
               </div>
             </div>

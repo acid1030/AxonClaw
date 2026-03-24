@@ -38,9 +38,9 @@ interface ChatInputProps {
   disabled?: boolean;
   sending?: boolean;
   isEmpty?: boolean;
-  /** chat-page: 深色主题、更宽、附件在输入框左上角、单行起自动增高 */
+  /** chat-page: 深色主题、更宽、Attachment在输入框左上角、单行起自动增高 */
   variant?: 'default' | 'chat-page';
-  /** 附件变化回调，用于在外部（如 ChatView）渲染附件预览 */
+  /** Attachment变化回调，用于在外部（如 ChatView）渲染Attachment预览 */
   onAttachmentsChange?: (attachments: FileAttachment[], removeAttachment: (id: string) => void) => void;
 }
 
@@ -157,7 +157,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     };
   }, [pickerOpen]);
 
-  // 文档级粘贴拦截（capture 阶段），仅 preventDefault 阻止默认行为，事件仍会冒泡到 onPaste 处理
+  // Docs级粘贴拦截（capture 阶段），仅 preventDefault 阻止默认行为，事件仍会冒泡到 onPaste 处理
   useEffect(() => {
     if (variant !== 'chat-page') return;
     const onDocPaste = (e: ClipboardEvent) => {
@@ -256,7 +256,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, []);
 
   // ── Stage browser File objects (paste / drag-drop) ─────────────
-  // 缓存到 axonclaw-staged 目录，发送时把路径传给 OpenClaw
+  // 缓存到 axonclaw-staged 目录，Send时把路径传给 OpenClaw
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
     for (const file of files) {
@@ -317,7 +317,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     setAttachments(prev => prev.filter(a => a.id !== id));
   }, []);
 
-  // 通知父组件附件变化，用于在外部渲染预览
+  // 通知父组件Attachment变化，用于在外部渲染预览
   useEffect(() => {
     onAttachmentsChange?.(attachments, removeAttachment);
   }, [attachments, removeAttachment, onAttachmentsChange]);
@@ -528,7 +528,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       onDrop={handleDrop}
     >
       <div className="w-full">
-        {/* Input Row - chat-page: 附件在输入框内左上角 */}
+        {/* Input Row - chat-page: Attachment在输入框内左上角 */}
         <div
           className={cn(
             "relative rounded-2xl border p-3 transition-all",
@@ -640,7 +640,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 onCompositionEnd={() => {
                   isComposingRef.current = false;
                 }}
-                placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : (isChatPage ? '在此输入消息...' : '')}
+                placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : (isChatPage ? 'Type a message...' : '')}
                 disabled={disabled}
                 className={cn(
                   "resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 leading-relaxed",

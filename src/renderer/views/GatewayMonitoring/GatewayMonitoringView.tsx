@@ -88,18 +88,23 @@ const na = '—';
 
 // 格式化运行时间
 function fmtUptime(sec: number): string {
-  if (sec < 60) return `${sec}${t('gw.unitSec')}`;
+  if (sec < 60) return `${sec}s`;
   const m = Math.floor(sec / 60);
-  if (m < 60) return `${m}${t('gw.unitMin')}`;
+  if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}${t('gw.unitHr')} ${m % 60}${t('gw.unitMin')}`;
+  if (h < 24) return `${h}h ${m % 60}m`;
   const d = Math.floor(h / 24);
-  return `${d}${t('gw.unitDay')} ${h % 24}${t('gw.unitHr')}`;
+  return `${d}d ${h % 24}h`;
 }
 
 // 判断是否本地网关
 function isLocal(host: string): boolean {
   return ['127.0.0.1', 'localhost', '::1'].includes(host.trim());
+}
+
+function isLocalGatewayName(name: string, localGatewayLabel: string, zhLocalGatewayLabel = ''): boolean {
+  const normalized = (name || '').trim().toLowerCase();
+  return normalized === localGatewayLabel.trim().toLowerCase() || normalized === 'local gateway' || normalized === zhLocalGatewayLabel.trim().toLowerCase();
 }
 
 // Toast 简单实现
@@ -122,7 +127,7 @@ function useConfirm() {
 }
 
 export const GatewayMonitoringView: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const gatewayStatus = useGatewayStore((s) => s.status);
   const { toast } = useToast();
   const { confirm } = useConfirm();
@@ -296,18 +301,33 @@ export const GatewayMonitoringView: React.FC = () => {
       } catch {
         /* keep list */
       }
-      setProfiles(list);
+      list = list.map((p) =>
+        isLocal(p.host) && isLocalGatewayName(p.name, t('gw.localGateway'), t('gw.localGateway', { lng: 'zh' }))
+          ? { ...p, name: t('gw.localGateway') }
+          : p,
+      );
+      persistProfiles(list);
     } catch {
-      setProfiles([{ id: 1, name: t('gw.localGateway'), host: '127.0.0.1', port: 18789, token: '', is_active: true }]);
+      persistProfiles([{ id: 1, name: t('gw.localGateway'), host: '127.0.0.1', port: 18789, token: '', is_active: true }]);
     } finally {
       setProfilesLoading(false);
     }
-  }, []);
+  }, [persistProfiles, t]);
 
   const activeProfile = useMemo(
     () => profiles.find((p) => p.is_active) || profiles[0] || null,
     [profiles],
   );
+
+  useEffect(() => {
+    const normalized = profiles.map((p) =>
+      isLocal(p.host) && isLocalGatewayName(p.name, t('gw.localGateway'), t('gw.localGateway', { lng: 'zh' }))
+        ? { ...p, name: t('gw.localGateway') }
+        : p,
+    );
+    const changed = normalized.some((p, i) => p.name !== profiles[i]?.name);
+    if (changed) persistProfiles(normalized);
+  }, [persistProfiles, profiles, t]);
 
   const validateProfileForm = useCallback(() => {
     const errs: Record<string, string> = {};
@@ -465,7 +485,7 @@ export const GatewayMonitoringView: React.FC = () => {
         let time = '';
         const ts = obj.time || meta.date;
         if (typeof ts === 'string') {
-          try { time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }); } catch { time = ts; }
+          try { time = new Date(ts).toLocaleTimeString(i18n.language || 'en-US', { hour12: false }); } catch { time = ts; }
         }
         let message = typeof obj['0'] === 'string' ? obj['0'] : '';
         const extraParts: string[] = [];
@@ -485,16 +505,16 @@ export const GatewayMonitoringView: React.FC = () => {
       let time = '';
       const ts = obj.time || obj.timestamp || obj.ts;
       if (typeof ts === 'number') {
-        time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+        time = new Date(ts).toLocaleTimeString(i18n.language || 'en-US', { hour12: false });
       } else if (typeof ts === 'string') {
-        try { time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }); } catch { time = ts; }
+        try { time = new Date(ts).toLocaleTimeString(i18n.language || 'en-US', { hour12: false }); } catch { time = ts; }
       }
       const message = obj.msg || obj.message || obj.text || '';
       return { time, level: level || 'info', message, extra: undefined };
     } catch {
       return null;
     }
-  }, []);
+  }, [i18n.language]);
 
   // 过滤日志
   const filteredLogs = useMemo(() => {
@@ -959,7 +979,7 @@ export const GatewayMonitoringView: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <h4 className="text-xs font-bold text-white truncate">
-                      {isLocal(p.host) && (p.name === t('gw.localGateway') || p.name === 'Local Gateway') ? t('gw.localGateway') : p.name}
+                      {isLocal(p.host) && isLocalGatewayName(p.name, t('gw.localGateway'), t('gw.localGateway', { lng: 'zh' })) ? t('gw.localGateway') : p.name}
                     </h4>
                     {p.is_active && isOnline && uptimeDisplay !== na && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold shrink-0">
@@ -1035,7 +1055,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 <h2 className="text-lg font-bold text-white">
                   {activeProfile
                     ? isLocal(activeProfile.host) &&
-                      (activeProfile.name === t('gw.localGateway') || activeProfile.name === 'Local Gateway')
+                      isLocalGatewayName(activeProfile.name, t('gw.localGateway'), t('gw.localGateway', { lng: 'zh' }))
                       ? t('gw.localGateway')
                       : activeProfile.name
                     : t('gw.localGateway')}

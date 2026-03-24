@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ModelConfig {
   model: string;
@@ -27,19 +28,20 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
   collapsed = false,
   onToggleCollapse,
 }) => {
+  const { t } = useTranslation('views');
   // 模型列表
   const models = [
-    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', badge: '推荐' },
-    { id: 'claude-opus-4', name: 'Claude Opus 4', badge: '旗舰' },
-    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', badge: '快速' },
+    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', badge: 'Recommended' },
+    { id: 'claude-opus-4', name: 'Claude Opus 4', badge: 'Flagship' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', badge: 'Fast' },
   ];
 
-  // 工具列表
+  // Tools列表
   const tools = [
-    { id: 'web_search', name: '搜索', icon: '🔍' },
-    { id: 'code_exec', name: '代码执行', icon: '💻' },
-    { id: 'file_read', name: '文件读写', icon: '📁' },
-    { id: 'http_request', name: '网络请求', icon: '🌐' },
+    { id: 'web_search', name: 'Search', icon: '🔍' },
+    { id: 'code_exec', name: 'Code execution', icon: '💻' },
+    { id: 'file_read', name: 'File read/write', icon: '📁' },
+    { id: 'http_request', name: 'HTTP request', icon: '🌐' },
   ];
 
   // 模拟用量数据
@@ -54,7 +56,7 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
     <div className="w-64 flex flex-col bg-[var(--sidebar-bg,#161b22)] border-l border-white/10 flex-shrink-0 overflow-hidden">
       {/* 头部 */}
       <div className="h-11 flex items-center justify-between px-4 border-b border-white/10 flex-shrink-0">
-        <span className="text-sm font-medium text-gray-300">配置</span>
+        <span className="text-sm font-medium text-gray-300">{t('modelPanel.title')}</span>
         <button
           onClick={onToggleCollapse}
           className="p-1.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
@@ -65,10 +67,10 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto">
-        {/* 模型选择 */}
+        {/* 模型Select */}
         <div className="p-4 border-b border-white/10">
           <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-2">
-            模型
+            {t('modelPanel.model')}
           </label>
           <select
             value={config.model}
@@ -91,7 +93,7 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
         {/* 参数 */}
         <div className="p-4 border-b border-white/10">
           <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-            参数
+            {t('modelPanel.params')}
           </label>
 
           {/* Temperature */}
@@ -129,10 +131,10 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
           </div>
         </div>
 
-        {/* 工具 */}
+        {/* Tools */}
         <div className="p-4 border-b border-white/10">
           <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-            工具
+            Tools
           </label>
           <div className="flex flex-wrap gap-1.5">
             {tools.map((tool) => (
@@ -155,12 +157,12 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
         {/* 选项 */}
         <div className="p-4 border-b border-white/10">
           <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-            选项
+            {t('modelPanel.options')}
           </label>
 
-          {/* 流式输出 */}
+          {/* Streaming */}
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-400">流式输出</span>
+            <span className="text-xs text-gray-400">{t('modelPanel.streaming')}</span>
             <button
               onClick={() => onChange({ ...config, streamEnabled: !config.streamEnabled })}
               className={`w-9 h-5 rounded-full transition-colors relative ${
@@ -176,27 +178,27 @@ export const ModelConfigPanel: React.FC<ModelConfigPanelProps> = ({
           </div>
         </div>
 
-        {/* 本次用量 */}
+        {/* Usage */}
         <div className="p-4">
           <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-            本次用量
+            {t('modelPanel.usage')}
           </label>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2.5 bg-white/5 rounded-lg">
               <div className="text-base font-medium text-gray-200">{usage.inputTokens.toLocaleString()}</div>
-              <div className="text-[10px] text-gray-500">输入 tokens</div>
+              <div className="text-[10px] text-gray-500">{t('modelPanel.inputTokens')}</div>
             </div>
             <div className="p-2.5 bg-white/5 rounded-lg">
               <div className="text-base font-medium text-gray-200">{usage.outputTokens.toLocaleString()}</div>
-              <div className="text-[10px] text-gray-500">输出 tokens</div>
+              <div className="text-[10px] text-gray-500">{t('modelPanel.outputTokens')}</div>
             </div>
             <div className="p-2.5 bg-white/5 rounded-lg">
               <div className="text-base font-medium text-gray-200">{usage.cost}</div>
-              <div className="text-[10px] text-gray-500">费用估算</div>
+              <div className="text-[10px] text-gray-500">{t('modelPanel.estimatedCost')}</div>
             </div>
             <div className="p-2.5 bg-white/5 rounded-lg">
               <div className="text-base font-medium text-gray-200">{usage.messageCount}</div>
-              <div className="text-[10px] text-gray-500">消息数</div>
+              <div className="text-[10px] text-gray-500">{t('modelPanel.messages')}</div>
             </div>
           </div>
         </div>

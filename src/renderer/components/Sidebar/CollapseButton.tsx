@@ -25,7 +25,7 @@ export function CollapseButton({ isCollapsed, onToggle, tooltip }: CollapseButto
       `}
       whileHover={{ scale: 1.05 }}
       whilePress={{ scale: 0.95 }}
-      title={tooltip || (isCollapsed ? '展开侧边栏' : '收起侧边栏')}
+      title={tooltip || (isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
     >
       <motion.div
         animate={{ rotate: isCollapsed ? 180 : 0 }}

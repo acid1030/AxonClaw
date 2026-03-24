@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 节点管理
- * AxonClawX 风格完整复刻：节点列表、新增节点、详情、健康检查
+ * AxonClawX 风格完整复刻：节点列表、新增节点、详情、healthy检查
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface NodeItem {
   id: string;
@@ -41,6 +42,7 @@ interface NodeItem {
 }
 
 const NodesView: React.FC = () => {
+  const { t } = useTranslation('views');
   const initGateway = useGatewayStore((s) => s.init);
   const setStatus = useGatewayStore((s) => s.setStatus);
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -135,14 +137,14 @@ const NodesView: React.FC = () => {
   };
 
   const statusLabel = (s?: string) => {
-    if (s === 'online' || s === '健康' || s === '运行中') return '在线';
-    if (s === 'offline' || s === '断开') return '离线';
-    return s || '未知';
+    if (s === 'online' || s === 'healthy' || s === 'Running') return t('nodes.statusOnline', { defaultValue: 'online' });
+    if (s === 'offline' || s === 'disconnected') return t('nodes.statusOffline', { defaultValue: 'offline' });
+    return s || t('nodes.statusUnknown', { defaultValue: 'unknown' });
   };
 
   const statusColor = (s?: string) => {
-    if (s === 'online' || s === '健康' || s === '运行中') return 'bg-emerald-400';
-    if (s === 'offline' || s === '断开') return 'bg-slate-500';
+    if (s === 'online' || s === 'healthy' || s === 'Running') return 'bg-emerald-400';
+    if (s === 'offline' || s === 'disconnected') return 'bg-slate-500';
     return 'bg-amber-400';
   };
 
@@ -152,11 +154,11 @@ const NodesView: React.FC = () => {
         {/* 头部 */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
-            <h1 className="text-lg font-bold text-foreground">节点拓扑与状态</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">远程节点管理、设备配对、健康状态监控</p>
+            <h1 className="text-lg font-bold text-foreground">{t('nodes.title')}</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('nodes.subtitle')}</p>
             <div className="flex gap-2 mt-2">
-              <span className="px-2 py-0.5 rounded text-xs bg-teal-500/20 text-teal-400">多节点</span>
-              <span className="px-2 py-0.5 rounded text-xs bg-teal-500/20 text-teal-400">状态监控</span>
+              <span className="px-2 py-0.5 rounded text-xs bg-teal-500/20 text-teal-400">{t('nodes.badges.multiNode')}</span>
+              <span className="px-2 py-0.5 rounded text-xs bg-teal-500/20 text-teal-400">{t('nodes.badges.monitoring')}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -164,7 +166,7 @@ const NodesView: React.FC = () => {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="搜索节点..."
+                placeholder="Search nodes..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 pr-3 py-2 rounded-lg bg-[#1e293b] border border-slate-600/50 text-sm text-foreground placeholder:text-muted-foreground w-48"
@@ -178,7 +180,7 @@ const NodesView: React.FC = () => {
               disabled={loading}
             >
               <Activity className="h-4 w-4" />
-              健康检查
+              {t('nodes.healthCheck')}
             </Button>
             <Button
               size="sm"
@@ -186,14 +188,14 @@ const NodesView: React.FC = () => {
               onClick={() => setAddModalOpen(true)}
             >
               <Plus className="h-4 w-4" />
-              新增节点
+              {t('nodes.addNode')}
             </Button>
           </div>
         </div>
 
         {!isOnline && (
           <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
-            Gateway 未连接，点击健康检查可重新检测。本地节点仍可管理。
+            {t('nodes.gatewayOfflineHint')}
           </div>
         )}
 
@@ -203,24 +205,24 @@ const NodesView: React.FC = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700/50">
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">节点</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">类型</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">状态</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">地址</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">操作</th>
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">{t('nodes.columns.node')}</th>
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">{t('nodes.columns.type')}</th>
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">{t('nodes.columns.status')}</th>
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">{t('nodes.columns.address')}</th>
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">{t('nodes.columns.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-muted-foreground">
-                      加载中...
+                      {t('nodes.loading')}
                     </td>
                   </tr>
                 ) : filteredNodes.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-muted-foreground">
-                      暂无节点
+                      {t('nodes.empty')}
                     </td>
                   </tr>
                 ) : (
@@ -278,7 +280,7 @@ const NodesView: React.FC = () => {
                             className="h-8 w-8 text-muted-foreground hover:text-red-400"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`确定移除节点「${node.name || node.id}」？`)) {
+                              if (confirm(t('nodes.confirmRemove', { name: node.name || node.id }))) {
                                 void handleRemoveNode(node.id);
                               }
                             }}
@@ -321,22 +323,22 @@ const NodesView: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">类型</span>
+                  <span className="text-muted-foreground">{t('nodes.columns.type')}</span>
                   <span>{selectedNode.type === 'gateway' ? 'Gateway' : selectedNode.type || 'Worker'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">地址</span>
+                  <span className="text-muted-foreground">{t('nodes.columns.address')}</span>
                   <span className="font-mono">
                     {selectedNode.ip && selectedNode.port ? `${selectedNode.ip}:${selectedNode.port}` : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">平台</span>
+                  <span className="text-muted-foreground">{t('nodes.platform')}</span>
                   <span>{String(selectedNode.platform || selectedNode.metadata?.os || '—')}</span>
                 </div>
                 {selectedNode.lastSeen && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">最后心跳</span>
+                    <span className="text-muted-foreground">{t('nodes.lastSeen')}</span>
                     <span>
                       {new Date(selectedNode.lastSeen).toLocaleString()}
                     </span>
@@ -345,8 +347,8 @@ const NodesView: React.FC = () => {
               </div>
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="font-medium text-foreground mb-2">Cluster 概览</h3>
-              <p className="text-xs text-muted-foreground mb-3">已配对节点拓扑</p>
+              <h3 className="font-medium text-foreground mb-2">{t('nodes.clusterTitle')}</h3>
+              <p className="text-xs text-muted-foreground mb-3">{t('nodes.clusterHint')}</p>
               <div className="flex flex-wrap gap-2">
                 {nodes.map((n) => (
                   <div
@@ -371,11 +373,11 @@ const NodesView: React.FC = () => {
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="bg-[#1e293b] border-slate-600/50">
           <DialogHeader>
-            <DialogTitle>新增节点</DialogTitle>
+            <DialogTitle>{t('nodes.addNode')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">节点名称</label>
+              <label className="block text-sm font-medium text-foreground mb-1">{t('nodes.form.name')}</label>
               <input
                 type="text"
                 placeholder="agent-coder"
@@ -385,7 +387,7 @@ const NodesView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">节点类型</label>
+              <label className="block text-sm font-medium text-foreground mb-1">{t('nodes.form.type')}</label>
               <select
                 value={addForm.type}
                 onChange={(e) => setAddForm((f) => ({ ...f, type: e.target.value }))}
@@ -398,7 +400,7 @@ const NodesView: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">IP 地址</label>
+              <label className="block text-sm font-medium text-foreground mb-1">{t('nodes.form.ip')}</label>
               <input
                 type="text"
                 placeholder="127.0.0.1"
@@ -408,7 +410,7 @@ const NodesView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">端口</label>
+              <label className="block text-sm font-medium text-foreground mb-1">{t('nodes.form.port')}</label>
               <input
                 type="number"
                 placeholder="18789"
@@ -422,7 +424,7 @@ const NodesView: React.FC = () => {
               onClick={handleAddNode}
               disabled={!addForm.name.trim() || addSubmitting}
             >
-              {addSubmitting ? '添加中...' : '添加节点'}
+              {addSubmitting ? t('nodes.form.adding') : t('nodes.form.add')}
             </Button>
           </div>
         </DialogContent>

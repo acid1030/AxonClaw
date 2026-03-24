@@ -152,7 +152,7 @@ export function Chat() {
     <div className={cn("relative flex flex-col w-full h-full min-h-0 transition-colors duration-500 dark:bg-background")}>
       {/* 标题 + 绿线，固定在顶部 */}
       <div className="sticky top-0 z-10 shrink-0 bg-background dark:bg-background pt-4 pb-2">
-        <h1 className="text-base font-bold text-foreground mb-2">{t('title', { defaultValue: '对话' })}</h1>
+        <h1 className="text-base font-bold text-foreground mb-2">{t('title', { defaultValue: 'Chat' })}</h1>
         <div className={cn(
           'h-[3px] w-full transition-all duration-700 shrink-0 mb-2',
           isGatewayRunning ? 'bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400' : 'bg-black/10 dark:bg-white/10'

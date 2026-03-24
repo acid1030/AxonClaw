@@ -94,7 +94,7 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-300 text-[10px] font-bold">
             <Search className="w-3 h-3" />
-            {gw.presetFilterApplied || '已应用：异常事件筛选'}
+            {gw.presetFilterApplied || 'Applied: abnormal event filter'}
           </span>
           <button
             onClick={() => {
@@ -107,7 +107,7 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
             }}
             className="text-[10px] px-2 py-1 rounded bg-white/5 text-white/50 hover:text-white/80"
           >
-            {gw.clearFilter || '一键清除筛选'}
+            {gw.clearFilter || 'Clear filters'}
           </button>
         </div>
       )}

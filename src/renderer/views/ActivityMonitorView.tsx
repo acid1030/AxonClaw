@@ -21,84 +21,84 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 type SortField = 'updated' | 'tokens' | 'name';
 
 const AUTO_REFRESH_MS = 30_000;
 
-/** 相对时间（中文） */
 function fmtRelativeTime(ts: number | undefined, _labels?: Record<string, string>): string {
-  if (!ts) return '—';
+  if (!ts) return i18n.t('views.activityMonitor.emptyMark', { defaultValue: '—' });
   const diff = Date.now() - ts;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
-  if (diff < 604800_000) return `${Math.floor(diff / 86400_000)} 天前`;
-  return new Date(ts).toLocaleDateString('zh-CN');
+  if (diff < 60_000) return i18n.t('views.activityMonitor.relative.justNow', { defaultValue: 'Just now' });
+  if (diff < 3600_000) return i18n.t('views.activityMonitor.relative.minutesAgo', { count: Math.floor(diff / 60_000), defaultValue: '{{count}}m ago' });
+  if (diff < 86400_000) return i18n.t('views.activityMonitor.relative.hoursAgo', { count: Math.floor(diff / 3600_000), defaultValue: '{{count}}h ago' });
+  if (diff < 604800_000) return i18n.t('views.activityMonitor.relative.daysAgo', { count: Math.floor(diff / 86400_000), defaultValue: '{{count}}d ago' });
+  return new Date(ts).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US');
 }
 
 const labels: Record<string, string> = {
-  title: '活动监控',
-  activityHelp: '会话列表与使用统计',
-  sessions: '会话',
-  search: '搜索…',
-  all: '全部',
-  sortUpdated: '更新时间',
-  sortTokens: 'Token 数',
-  sortName: '名称',
-  refresh: '刷新',
-  exportCsv: '导出 CSV',
-  batchMode: '批量',
-  lastRefresh: '上次刷新',
-  reset: '重置',
-  confirmReset: '确定重置此会话？',
-  resetOk: '已重置',
-  delete: '删除',
-  confirmDelete: '确定删除此会话？',
-  confirmDeleteMain: '确定删除主会话？',
-  deleteOk: '已删除',
-  compact: '压缩',
-  confirmCompact: '确定压缩此会话记录？',
-  compactOk: '已压缩',
-  batchDelete: '批量删除',
-  confirmBatchDelete: '确定删除',
-  batchReset: '批量重置',
-  confirmBatchReset: '确定重置',
-  selected: '已选',
-  noSessions: '暂无会话',
-  noSessionsHint: '配置 Gateway 并开始对话后，会话将自动显示',
-  step1: '配置 Gateway',
-  step1Desc: '连接 OpenClaw Gateway',
-  step2: '开始对话',
-  step2Desc: '在 AI 对话中发送消息',
-  step3: '在此监控',
-  step3Desc: '会话将自动出现',
-  groupToday: '今天',
-  groupYesterday: '昨天',
-  groupThisWeek: '本周',
-  groupEarlier: '更早',
-  direct: '直连',
-  group: '群组',
-  global: '全局',
-  unknown: '未知',
-  totalTokens: '总 Token',
-  input: '输入',
-  output: '输出',
-  active24h: '24h 活跃',
-  activity7d: '7 日活跃',
-  messages: '消息',
-  userMsg: '用户',
-  assistantMsg: '助手',
-  toolCallsLabel: '工具',
-  errors: '错误',
-  channels: '渠道',
-  costTrend: '成本 7 日',
-  modelDist: '模型',
-  aborted: '已中止',
+  title: i18n.t('views.activityMonitor.title', { defaultValue: 'Activity Monitor' }),
+  activityHelp: i18n.t('views.activityMonitor.activityHelp', { defaultValue: 'Session list and usage analytics' }),
+  sessions: i18n.t('views.activityMonitor.sessions', { defaultValue: 'Sessions' }),
+  search: i18n.t('views.activityMonitor.search', { defaultValue: 'Search…' }),
+  all: i18n.t('views.activityMonitor.all', { defaultValue: 'All' }),
+  sortUpdated: i18n.t('views.activityMonitor.sortUpdated', { defaultValue: 'Updated Time' }),
+  sortTokens: i18n.t('views.activityMonitor.sortTokens', { defaultValue: 'Token Count' }),
+  sortName: i18n.t('views.activityMonitor.sortName', { defaultValue: 'Name' }),
+  refresh: i18n.t('views.activityMonitor.refresh', { defaultValue: 'Refresh' }),
+  exportCsv: i18n.t('views.activityMonitor.exportCsv', { defaultValue: 'Export CSV' }),
+  batchMode: i18n.t('views.activityMonitor.batchMode', { defaultValue: 'Batch' }),
+  lastRefresh: i18n.t('views.activityMonitor.lastRefresh', { defaultValue: 'Last refresh' }),
+  reset: i18n.t('views.activityMonitor.reset', { defaultValue: 'Reset' }),
+  confirmReset: i18n.t('views.activityMonitor.confirmReset', { defaultValue: 'Reset this session?' }),
+  resetOk: i18n.t('views.activityMonitor.resetOk', { defaultValue: 'Reset done' }),
+  delete: i18n.t('views.activityMonitor.delete', { defaultValue: 'Delete' }),
+  confirmDelete: i18n.t('views.activityMonitor.confirmDelete', { defaultValue: 'Delete this session?' }),
+  confirmDeleteMain: i18n.t('views.activityMonitor.confirmDeleteMain', { defaultValue: 'Delete main session?' }),
+  deleteOk: i18n.t('views.activityMonitor.deleteOk', { defaultValue: 'Deleted' }),
+  compact: i18n.t('views.activityMonitor.compact', { defaultValue: 'Compact' }),
+  confirmCompact: i18n.t('views.activityMonitor.confirmCompact', { defaultValue: 'Compact this session?' }),
+  compactOk: i18n.t('views.activityMonitor.compactOk', { defaultValue: 'Compacted' }),
+  batchDelete: i18n.t('views.activityMonitor.batchDelete', { defaultValue: 'Batch delete' }),
+  confirmBatchDelete: i18n.t('views.activityMonitor.confirmBatchDelete', { defaultValue: 'Confirm delete' }),
+  batchReset: i18n.t('views.activityMonitor.batchReset', { defaultValue: 'Batch reset' }),
+  confirmBatchReset: i18n.t('views.activityMonitor.confirmBatchReset', { defaultValue: 'Confirm reset' }),
+  selected: i18n.t('views.activityMonitor.selected', { defaultValue: 'selected' }),
+  noSessions: i18n.t('views.activityMonitor.noSessions', { defaultValue: 'No sessions' }),
+  noSessionsHint: i18n.t('views.activityMonitor.noSessionsHint', { defaultValue: 'Sessions will appear here after you start chatting via Gateway.' }),
+  step1: i18n.t('views.activityMonitor.step1', { defaultValue: 'Configure Gateway' }),
+  step1Desc: i18n.t('views.activityMonitor.step1Desc', { defaultValue: 'Connect OpenClaw Gateway' }),
+  step2: i18n.t('views.activityMonitor.step2', { defaultValue: 'Start Chatting' }),
+  step2Desc: i18n.t('views.activityMonitor.step2Desc', { defaultValue: 'Send a message in chat' }),
+  step3: i18n.t('views.activityMonitor.step3', { defaultValue: 'Monitor Here' }),
+  step3Desc: i18n.t('views.activityMonitor.step3Desc', { defaultValue: 'Sessions will show up automatically' }),
+  groupToday: i18n.t('views.activityMonitor.groupToday', { defaultValue: 'Today' }),
+  groupYesterday: i18n.t('views.activityMonitor.groupYesterday', { defaultValue: 'Yesterday' }),
+  groupThisWeek: i18n.t('views.activityMonitor.groupThisWeek', { defaultValue: 'This Week' }),
+  groupEarlier: i18n.t('views.activityMonitor.groupEarlier', { defaultValue: 'Earlier' }),
+  direct: i18n.t('views.activityMonitor.direct', { defaultValue: 'Direct' }),
+  group: i18n.t('views.activityMonitor.group', { defaultValue: 'Group' }),
+  global: i18n.t('views.activityMonitor.global', { defaultValue: 'Global' }),
+  unknown: i18n.t('views.activityMonitor.unknown', { defaultValue: 'Unknown' }),
+  totalTokens: i18n.t('views.activityMonitor.totalTokens', { defaultValue: 'Total Tokens' }),
+  input: i18n.t('views.activityMonitor.input', { defaultValue: 'Input' }),
+  output: i18n.t('views.activityMonitor.output', { defaultValue: 'Output' }),
+  active24h: i18n.t('views.activityMonitor.active24h', { defaultValue: '24h Active' }),
+  activity7d: i18n.t('views.activityMonitor.activity7d', { defaultValue: '7d Activity' }),
+  messages: i18n.t('views.activityMonitor.messages', { defaultValue: 'Messages' }),
+  userMsg: i18n.t('views.activityMonitor.userMsg', { defaultValue: 'User' }),
+  assistantMsg: i18n.t('views.activityMonitor.assistantMsg', { defaultValue: 'Assistant' }),
+  toolCallsLabel: i18n.t('views.activityMonitor.toolCallsLabel', { defaultValue: 'Tools' }),
+  errors: i18n.t('views.activityMonitor.errors', { defaultValue: 'Errors' }),
+  channels: i18n.t('views.activityMonitor.channels', { defaultValue: 'Channels' }),
+  costTrend: i18n.t('views.activityMonitor.costTrend', { defaultValue: '7d Cost' }),
+  modelDist: i18n.t('views.activityMonitor.modelDist', { defaultValue: 'Models' }),
+  aborted: i18n.t('views.activityMonitor.aborted', { defaultValue: 'Aborted' }),
   tokens: 'Token',
-  metadata: '详情',
-  openChat: '打开对话',
-  latencyStats: '延迟',
+  metadata: i18n.t('views.activityMonitor.metadata', { defaultValue: 'Details' }),
+  openChat: i18n.t('views.activityMonitor.openChat', { defaultValue: 'Open Chat' }),
+  latencyStats: i18n.t('views.activityMonitor.latencyStats', { defaultValue: 'Latency' }),
 };
 
 interface ActivityMonitorViewProps {
@@ -468,10 +468,10 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
           title={labels.title}
           subtitle={`${sessions.length} ${labels.sessions}${storePath ? ` · ${storePath}` : ''}`}
           stats={[
-            { label: '会话', value: sessions.length },
-            { label: '总 Token', value: kpiStats.totalTok >= 1000 ? `${(kpiStats.totalTok / 1000).toFixed(1)}K` : kpiStats.totalTok },
-            { label: '24h 活跃', value: kpiStats.active24h },
-            { label: 'Gateway', value: isOnline ? '在线' : '离线', valueClassName: isOnline ? 'text-emerald-400' : 'text-amber-400' },
+            { label: i18n.t('views.activityMonitor.stats.sessions', { defaultValue: 'Sessions' }), value: sessions.length },
+            { label: i18n.t('views.activityMonitor.stats.totalTokens', { defaultValue: 'Total Tokens' }), value: kpiStats.totalTok >= 1000 ? `${(kpiStats.totalTok / 1000).toFixed(1)}K` : kpiStats.totalTok },
+            { label: i18n.t('views.activityMonitor.stats.active24h', { defaultValue: '24h Active' }), value: kpiStats.active24h },
+            { label: 'Gateway', value: isOnline ? i18n.t('views.activityMonitor.online', { defaultValue: 'Online' }) : i18n.t('views.activityMonitor.offline', { defaultValue: 'Offline' }), valueClassName: isOnline ? 'text-emerald-400' : 'text-amber-400' },
           ]}
           onRefresh={() => void loadSessions()}
           refreshing={loading || refreshing}
@@ -511,7 +511,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
                   setCardDensity((d) => (d === 'compact' ? 'normal' : d === 'normal' ? 'large' : 'compact'))
                 }
                 className="p-1.5 rounded-lg text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
-                title={`密度: ${cardDensity}`}
+                title={`${i18n.t('views.activityMonitor.density', { defaultValue: 'Density' })}: ${cardDensity}`}
               >
                 <span className="text-sm font-bold">{cardDensity === 'compact' ? 'S' : cardDensity === 'large' ? 'L' : 'M'}</span>
               </button>
@@ -659,7 +659,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
                 <div
           className={cn(
             'sticky top-0 z-10 py-1.5 text-[10px] font-bold text-white/40 uppercase tracking-wider bg-[#0f172a]/95 backdrop-blur-sm border-b',
-            group.label === '今天' ? 'border-emerald-500/20' : group.label === '昨天' ? 'border-blue-500/15' : 'border-white/10'
+            group.label === labels.groupToday ? 'border-emerald-500/20' : group.label === labels.groupYesterday ? 'border-blue-500/15' : 'border-white/10'
           )}
         >
                   {group.label} ({group.items.length})
@@ -705,7 +705,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
 
       {lastRefresh > 0 && (
         <div className="shrink-0 py-1 border-t border-indigo-500/10 text-[9px] text-white/30 text-center">
-          {labels.lastRefresh}: {new Date(lastRefresh).toLocaleTimeString('zh-CN')}
+          {labels.lastRefresh}: {new Date(lastRefresh).toLocaleTimeString(i18n.language === 'zh' ? 'zh-CN' : 'en-US')}
         </div>
       )}
 
@@ -714,7 +714,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
         title={labels.reset}
         message={confirmMessage}
         confirmLabel={labels.reset}
-        cancelLabel="取消"
+        cancelLabel={i18n.t('common.cancel')}
         variant="default"
         onConfirm={handleResetConfirm}
         onCancel={() => {
@@ -727,7 +727,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
         title={labels.delete}
         message={confirmMessage}
         confirmLabel={labels.delete}
-        cancelLabel="取消"
+        cancelLabel={i18n.t('common.cancel')}
         variant="destructive"
         onConfirm={handleDeleteConfirm}
         onCancel={() => {
@@ -740,7 +740,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
         title={labels.compact}
         message={confirmMessage}
         confirmLabel={labels.compact}
-        cancelLabel="取消"
+        cancelLabel={i18n.t('common.cancel')}
         variant="default"
         onConfirm={handleCompactConfirm}
         onCancel={() => {

@@ -1,22 +1,23 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useChatStore } from '@/stores/chat';
 import { Icons } from '../Icons/IconComponents';
 import { SidebarItem } from './SidebarItem';
 import { CollapseButton } from './CollapseButton';
 
 // 新菜单结构（按用户要求）
 const menuItems: { id: string; icon: any; labelKey: string }[] = [
-  { id: 'overview', icon: Icons.dashboard, labelKey: 'nav.overview' },
-  { id: 'chat', icon: Icons.chat, labelKey: 'nav.chat' },
-  { id: 'channel-config', icon: Icons.channel, labelKey: 'nav.config' },
-  { id: 'agent-config', icon: Icons.agent, labelKey: 'nav.agents' },
-  { id: 'skill-config', icon: Icons.skill, labelKey: 'nav.skills' },
-  { id: 'knowledge', icon: Icons.knowledge, labelKey: 'nav.knowledge' },
-  { id: 'cron', icon: Icons.cron, labelKey: 'nav.cron' },
-  { id: 'nodes', icon: Icons.nodes, labelKey: 'nav.nodes' },
-  { id: 'system-monitor', icon: Icons.gatewayMonitor, labelKey: 'nav.monitor' },
-  { id: 'system-config', icon: Icons.system, labelKey: 'nav.settings' },
+  { id: 'overview', icon: Icons.dashboard, labelKey: 'overview' },
+  { id: 'chat', icon: Icons.chat, labelKey: 'chat' },
+  { id: 'channel-config', icon: Icons.channel, labelKey: 'config' },
+  { id: 'agent-config', icon: Icons.agent, labelKey: 'agents' },
+  { id: 'skill-config', icon: Icons.skill, labelKey: 'skills' },
+  { id: 'knowledge', icon: Icons.knowledge, labelKey: 'knowledge' },
+  { id: 'cron', icon: Icons.cron, labelKey: 'cron' },
+  { id: 'nodes', icon: Icons.nodes, labelKey: 'nodes' },
+  { id: 'system-monitor', icon: Icons.gatewayMonitor, labelKey: 'monitor' },
+  { id: 'system-config', icon: Icons.system, labelKey: 'settings' },
 ];
 
 interface UnifiedSidebarProps {
@@ -27,6 +28,7 @@ interface UnifiedSidebarProps {
 export function UnifiedSidebar({ activeView = 'dashboard', onViewChange }: UnifiedSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { t } = useTranslation();
+  const newSession = useChatStore((s) => s.newSession);
 
   return (
     <motion.aside
@@ -85,11 +87,14 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange }: Unifi
       {!isCollapsed && (
         <div className="px-3 pb-3">
           <button
-            onClick={() => onViewChange?.('chat')}
+            onClick={() => {
+              newSession();
+              onViewChange?.('chat');
+            }}
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors"
           >
             <Icons.chat className="w-4 h-4 text-white/60 flex-shrink-0" />
-            <span className="text-sm text-white/80">{t('chat.newChatShort')}</span>
+            <span className="text-sm text-white/80">{t('newChatShort', { ns: 'chat' })}</span>
           </button>
         </div>
       )}
@@ -105,7 +110,7 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange }: Unifi
           <SidebarItem
             key={item.id}
             icon={item.icon}
-            label={t(item.labelKey)}
+            label={t(item.labelKey, { ns: 'nav' })}
             isActive={activeView === item.id}
             isCollapsed={isCollapsed}
             onClick={() => onViewChange?.(item.id)}

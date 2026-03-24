@@ -17,12 +17,12 @@ export interface CronBuilderProps {
 }
 
 const PRESET_TEMPLATES = [
-  { label: '每分钟', cron: '* * * * *', desc: '每分钟执行一次' },
-  { label: '每小时', cron: '0 * * * *', desc: '每小时整点执行' },
-  { label: '每天', cron: '0 0 * * *', desc: '每天午夜执行' },
-  { label: '每周', cron: '0 0 * * 0', desc: '每周日午夜执行' },
-  { label: '每月', cron: '0 0 1 * *', desc: '每月 1 号午夜执行' },
-  { label: '工作日', cron: '0 9 * * 1-5', desc: '工作日上午 9 点执行' },
+  { label: 'Every minute', cron: '* * * * *', desc: 'Runs every minute' },
+  { label: 'Every hour', cron: '0 * * * *', desc: 'Runs every hour on the hour' },
+  { label: 'Daily', cron: '0 0 * * *', desc: 'Runs daily at midnight' },
+  { label: 'Weekly', cron: '0 0 * * 0', desc: 'Runs weekly on Sunday midnight' },
+  { label: 'Monthly', cron: '0 0 1 * *', desc: 'Runs monthly on day 1 midnight' },
+  { label: 'Weekdays', cron: '0 9 * * 1-5', desc: 'Runs at 9:00 on weekdays' },
 ];
 
 export function CronBuilder({ value = '* * * * *', onChange }: CronBuilderProps) {
@@ -39,14 +39,14 @@ export function CronBuilder({ value = '* * * * *', onChange }: CronBuilderProps)
     // 简单实现，可以扩展更详细的中文描述
     const templates = PRESET_TEMPLATES.find(t => t.cron === cron);
     if (templates) return templates.desc;
-    return '自定义 Cron 表达式';
+    return 'Custom cron expression';
   };
 
   return (
     <div className="space-y-4">
-      {/* 预设模板 */}
+      {/* 预设Templates */}
       <div>
-        <label className="block text-sm text-muted mb-2">快速选择</label>
+        <label className="block text-sm text-muted mb-2">FastSelect</label>
         <div className="grid grid-cols-3 gap-2">
           {PRESET_TEMPLATES.map((template) => (
             <button

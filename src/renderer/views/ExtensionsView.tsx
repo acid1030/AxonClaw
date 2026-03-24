@@ -1,6 +1,6 @@
 /**
  * AxonClaw - Extensions View (Composite)
- * Tab: 模板 | 插件
+ * Tab: Templates | Plugins
  */
 
 import React, { useState } from 'react';
@@ -11,8 +11,8 @@ import { cn } from '@/lib/utils';
 type ExtTab = 'template' | 'plugin';
 
 const tabs: { id: ExtTab; label: string }[] = [
-  { id: 'template', label: '模板' },
-  { id: 'plugin', label: '插件' },
+  { id: 'template', label: 'Templates' },
+  { id: 'plugin', label: 'Plugins' },
 ];
 
 const ExtensionsView: React.FC = () => {

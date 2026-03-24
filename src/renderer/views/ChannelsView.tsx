@@ -12,6 +12,7 @@ import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { hostApiFetch } from '@/lib/host-api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 const CHANNEL_GRADIENTS: Record<string, string> = {
   telegram: 'from-sky-500 to-blue-500',
@@ -58,15 +59,15 @@ const ChannelsView: React.FC = () => {
       setTestingType(type as ChannelType);
       const result = await hostApiFetch<{ success?: boolean; message?: string; error?: string }>('/api/v1/notify/test', {
         method: 'POST',
-        body: JSON.stringify({ channel: type, message: `AxonClawX 测试消息 · ${new Date().toLocaleTimeString()}` }),
+        body: JSON.stringify({ channel: type, message: i18n.t('views.channels.testMessage', { time: new Date().toLocaleTimeString() }) }),
         headers: { 'Content-Type': 'application/json' },
       });
       if (result?.success === false) {
-        throw new Error(result?.error || '测试失败');
+        throw new Error(result?.error || i18n.t('views.channels.testFailed'));
       }
-      toast.success(result?.message || `${CHANNEL_NAMES[type] || type} 测试发送成功`);
+      toast.success(result?.message || i18n.t('views.channels.testSuccess', { name: CHANNEL_NAMES[type] || type }));
     } catch (err: any) {
-      toast.error(`${CHANNEL_NAMES[type] || type} 测试失败：${err?.message || err}`);
+      toast.error(i18n.t('views.channels.testFailedDetail', { name: CHANNEL_NAMES[type] || type, error: err?.message || err }));
     } finally {
       setTestingType(null);
     }
@@ -90,11 +91,11 @@ const ChannelsView: React.FC = () => {
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
-          title="Channel 管理"
-          subtitle="连接消息平台 · 配置向导"
+          title={i18n.t('views.channels.title')}
+          subtitle={i18n.t('views.channels.subtitle')}
           stats={[
-            { label: '已连接', value: `${connectedCount}/${totalCount}` },
-            { label: 'Gateway', value: isOnline ? '在线' : '离线' },
+            { label: i18n.t('views.channels.stats.connected'), value: `${connectedCount}/${totalCount}` },
+            { label: i18n.t('views.channels.stats.gateway'), value: isOnline ? i18n.t('views.channels.gateway.online') : i18n.t('views.channels.gateway.offline') },
           ]}
           onRefresh={refresh}
           refreshing={loading}
@@ -109,8 +110,8 @@ const ChannelsView: React.FC = () => {
 
         {!isOnline ? (
           <div className="rounded-xl border-2 border-emerald-500/40 bg-[#1e293b] p-8 text-center">
-            <p className="text-muted-foreground text-sm">请先启动 Gateway 以加载渠道</p>
-            <p className="text-muted-foreground/70 text-xs mt-1">点击上方「启动 Gateway」按钮</p>
+            <p className="text-muted-foreground text-sm">{i18n.t('views.channels.gatewayRequired')}</p>
+            <p className="text-muted-foreground/70 text-xs mt-1">{i18n.t('views.channels.clickStartGateway')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-5xl">
@@ -136,7 +137,7 @@ const ChannelsView: React.FC = () => {
                             {name}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {ch?.accountId ? `ID: ${ch.accountId.slice(0, 12)}…` : 'Bot / OAuth'}
+                            {ch?.accountId ? i18n.t('views.channels.accountId', { id: ch.accountId.slice(0, 12) }) : i18n.t('views.channels.botOAuth')}
                           </div>
                         </div>
                       </div>
@@ -148,25 +149,25 @@ const ChannelsView: React.FC = () => {
                             : 'bg-black/5 dark:bg-white/5 text-muted-foreground'
                         )}
                       >
-                        {isConnected ? '已连接' : '未配置'}
+                        {isConnected ? i18n.t('views.channels.badges.connected') : i18n.t('views.channels.badges.unconfigured')}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mb-4">
-                      {ch?.error ? `错误: ${ch.error}` : isConnected ? '运行中' : '点击配置向导完成连接'}
+                      {ch?.error ? i18n.t('views.channels.errorPrefix', { error: ch.error }) : isConnected ? i18n.t('views.channels.running') : i18n.t('views.channels.configureHint')}
                     </p>
                     <div className="flex gap-2">
                       <button
                         onClick={() => openConfig(type)}
                         className="flex-1 py-2 rounded-xl bg-black/5 dark:bg-white/5 text-xs font-medium text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
                       >
-                        配置
+                        {i18n.t('views.channels.actions.configure')}
                       </button>
                       <button
                         onClick={() => runTest(type)}
                         disabled={testingType === type}
                         className="flex-1 py-2 rounded-xl bg-primary/15 text-primary text-xs font-medium hover:bg-primary/25 transition-colors disabled:opacity-60"
                       >
-                        {testingType === type ? '测试中…' : '测试'}
+                        {testingType === type ? i18n.t('views.channels.actions.testing') : i18n.t('views.channels.actions.test')}
                       </button>
                     </div>
                   </div>

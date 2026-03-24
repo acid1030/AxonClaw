@@ -25,14 +25,14 @@ interface PageHeaderProps {
   stats?: PageStat[];
   /** 右侧操作区 */
   actions?: React.ReactNode;
-  /** 是否显示刷新按钮（传入 onClick） */
+  /** 是否显示Refresh按钮（传入 onClick） */
   onRefresh?: () => void;
   refreshing?: boolean;
-  /** 刷新按钮文案，默认「刷新」 */
+  /** Refresh按钮文案，默认「Refresh」 */
   refreshLabel?: string;
   /** 统计面板边框色，默认 indigo */
   statsBorderColor?: string;
-  /** 副标题下方的分割线样式，如 'bg-gradient-to-r from-emerald-400...'，不传则默认绿色（在线时） */
+  /** 副标题下方的分割线样式，如 'bg-gradient-to-r from-emerald-400...'，不传则默认绿色（online时） */
   dividerClassName?: string;
   /** 为 true 时：副标题 → 分割线 → 操作/统计（分割线紧贴副标题下方） */
   dividerUnderSubtitle?: boolean;
@@ -45,7 +45,7 @@ export function PageHeader({
   actions,
   onRefresh,
   refreshing = false,
-  refreshLabel = '刷新',
+  refreshLabel = 'Refresh',
   statsBorderColor = 'border-indigo-500/40',
   dividerClassName,
   dividerUnderSubtitle = false,
@@ -156,7 +156,7 @@ export function PageHeader({
             )}
           >
             <Power className="w-3.5 h-3.5" />
-            {starting ? '启动中…' : '启动 Gateway'}
+            {starting ? 'Starting...' : 'Start Gateway'}
           </button>
         </div>
       )}

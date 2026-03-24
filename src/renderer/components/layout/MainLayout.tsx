@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
 import { loadLocale } from '@/clawdeckx/locales';
+import { hostApiFetch } from '@/lib/host-api';
 import { DashboardView } from '@/views/DashboardView';
 import { ChatView } from '@/components/chat/ChatView';
 import { AgentsView } from '@/views/AgentsView';
@@ -50,6 +51,7 @@ const MainLayout: React.FC = () => {
 
   const language = useSettingsStore((s) => s.language);
   const theme = useSettingsStore((s) => s.theme);
+  const applyLanguageFromExternal = useSettingsStore((s) => s.applyLanguageFromExternal);
 
   // Initialize settings from config file on mount
   useEffect(() => {
@@ -98,6 +100,28 @@ const MainLayout: React.FC = () => {
     }
   }, [language]);
 
+  // Keep global UI language synced with backend settings (including changes made in Configuration Center).
+  useEffect(() => {
+    let stopped = false;
+    const syncLanguage = async () => {
+      try {
+        const settings = await hostApiFetch<{ language?: string }>('/api/settings');
+        const remote = String(settings?.language ?? '').trim();
+        if (!stopped && remote) applyLanguageFromExternal(remote);
+      } catch {
+        // ignore sync failures
+      }
+    };
+    void syncLanguage();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void syncLanguage();
+    }, 800);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [applyLanguageFromExternal]);
+
   // Handle Cmd/Ctrl + K shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -131,10 +155,10 @@ const MainLayout: React.FC = () => {
         return <Nodes language={language as any} />;
       case 'system-monitor': {
         const monitorTabs = [
-          { key: 'network', label: t('monitor.tabs.network') },
-          { key: 'activity', label: t('monitor.tabs.activity') },
-          { key: 'usage', label: t('monitor.tabs.usage') },
-          { key: 'health', label: t('monitor.tabs.health') },
+          { key: 'network', label: t('tabs.network', { ns: 'monitor' }) },
+          { key: 'activity', label: t('tabs.activity', { ns: 'monitor' }) },
+          { key: 'usage', label: t('tabs.usage', { ns: 'monitor' }) },
+          { key: 'health', label: t('tabs.health', { ns: 'monitor' }) },
         ] as const;
         return (
           <div className="h-full flex flex-col overflow-hidden">
@@ -202,7 +226,7 @@ const MainLayout: React.FC = () => {
           ${isConnected ? 'bg-green-400' : 'bg-red-400'}
           animate-pulse
         `}
-        title={isConnected ? t('gateway.online') : t('gateway.offline')}
+        title={isConnected ? t('online', { ns: 'gateway' }) : t('offline', { ns: 'gateway' })}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 /**
  * AxonClaw - 使用向导
- * AxonClawX 风格：配置完成度、分步引导、场景模板
+ * AxonClawX 风格：配置完成度、分步引导、场景Templates
  */
 
 import React, { useEffect, useState } from 'react';
@@ -12,6 +12,7 @@ import { useSkillsStore } from '@/stores/skills';
 import { useProviderStore } from '@/stores/providers';
 import { useGatewayStore } from '@/stores/gateway';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface ChecklistItem {
   id: string;
@@ -23,6 +24,7 @@ interface ChecklistItem {
 export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({
   onNavigateTo,
 }) => {
+  const { t } = useTranslation('usageWizard');
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
@@ -32,14 +34,14 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
 
   useEffect(() => {
     const list: ChecklistItem[] = [
-      { id: 'gateway', label: 'Gateway 已连接', done: gatewayStatus.state === 'running', target: 'system' },
-      { id: 'model', label: '已配置 AI 模型', done: (accounts?.length ?? 0) > 0, target: 'model' },
-      { id: 'agent', label: '已创建 Agent', done: (agents?.length ?? 0) > 0, target: 'agent' },
-      { id: 'channel', label: '已配置频道', done: (channels?.length ?? 0) > 0, target: 'channel' },
-      { id: 'skill', label: '已安装技能', done: (skills?.length ?? 0) > 0, target: 'skill' },
+      { id: 'gateway', label: t('check.gatewayConnected'), done: gatewayStatus.state === 'running', target: 'system' },
+      { id: 'model', label: t('check.modelConfigured'), done: (accounts?.length ?? 0) > 0, target: 'model' },
+      { id: 'agent', label: t('check.agentCreated'), done: (agents?.length ?? 0) > 0, target: 'agent' },
+      { id: 'channel', label: t('check.channelConfigured'), done: (channels?.length ?? 0) > 0, target: 'channel' },
+      { id: 'skill', label: t('check.skillsInstalled'), done: (skills?.length ?? 0) > 0, target: 'skill' },
     ];
     setItems(list);
-  }, [gatewayStatus.state, agents?.length, channels?.length, skills?.length, accounts?.length]);
+  }, [gatewayStatus.state, agents?.length, channels?.length, skills?.length, accounts?.length, t]);
 
   const doneCount = items.filter((i) => i.done).length;
   const total = items.length;
@@ -49,9 +51,9 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
   return (
     <div className="h-full flex flex-col overflow-y-auto bg-[#0f172a]">
       <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-4 pb-4">
-        <h1 className="text-base font-bold text-foreground mb-2">使用向导</h1>
+        <h1 className="text-base font-bold text-foreground mb-2">{t('title')}</h1>
         <p className="text-xs text-muted-foreground mb-2">
-          AxonClawX 风格：配置完成度检查，分步引导完成设置
+          {t('subtitle')}
         </p>
         <div className={cn(
           'h-[3px] w-full transition-all duration-700 shrink-0',
@@ -63,7 +65,7 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
         {/* 完成度 */}
         <div className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-medium text-foreground">配置完成度</span>
+            <span className="text-sm font-medium text-foreground">{t('progressTitle')}</span>
             <span className="text-2xl font-bold text-indigo-400">{pct}%</span>
           </div>
           <div className="h-2 rounded-full bg-[#0f172a] overflow-hidden">
@@ -105,12 +107,12 @@ export const UsageWizardView: React.FC<{ onNavigateTo?: (view: string) => void }
         {pct === 100 && (
           <div className="mt-8 text-center">
             <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground mb-4">配置已完成，可以开始使用了</p>
+            <p className="text-sm text-muted-foreground mb-4">{t('allDone')}</p>
             <Button
               className="bg-indigo-500 hover:bg-indigo-600"
               onClick={() => onNavigateTo?.('chat')}
             >
-              开始对话
+              {t('startChat')}
             </Button>
           </div>
         )}

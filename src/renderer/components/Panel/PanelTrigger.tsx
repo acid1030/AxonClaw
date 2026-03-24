@@ -28,7 +28,7 @@ export function PanelTrigger({ onClick, isOpen }: PanelTriggerProps) {
       whilePress={{ scale: 0.95 }}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      title="打开任务面板 (⌘K)"
+      title="Open task panel (⌘K)"
     >
       <Icons.panelOpen className="w-5 h-5 text-green-400 group-hover:text-green-300" />
     </motion.button>

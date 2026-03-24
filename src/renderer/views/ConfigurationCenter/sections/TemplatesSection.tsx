@@ -3,6 +3,7 @@
  */
 import React, { useState } from 'react';
 import { Sparkles, Plus, Settings, Trash2 } from 'lucide-react';
+import i18n from '@/i18n';
 import { ConfigSection, TextField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 import { cn } from '@/lib/utils';
@@ -29,7 +30,7 @@ export const TemplatesSection: React.FC<SectionProps> = ({ setField, getField })
 
   const addTemplate = () => {
     const newId = `template_${Date.now()}`;
-    const next = [...templatesList, { id: newId, name: '新模板' }];
+    const next = [...templatesList, { id: newId, name: i18n.t('configCenter.templates.defaults.newTemplate') }];
     setField(['templates'], next);
     setEditingId(newId);
   };
@@ -48,7 +49,7 @@ export const TemplatesSection: React.FC<SectionProps> = ({ setField, getField })
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="模板列表" icon={Sparkles} iconColor="text-amber-500" desc="提示词模板、工作流模板">
+      <ConfigSection title={i18n.t('configCenter.templates.title.list')} icon={Sparkles} iconColor="text-amber-500" desc={i18n.t('configCenter.templates.desc.list')}>
         <div className="space-y-2">
           {templatesList.map((tmpl, idx) => {
             const isEditing = editingId === (tmpl.id ?? `${idx}`);
@@ -65,7 +66,7 @@ export const TemplatesSection: React.FC<SectionProps> = ({ setField, getField })
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-amber-500" />
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {(tmpl.name as string) || tmpl.id || '未命名'}
+                      {(tmpl.name as string) || tmpl.id || i18n.t('configCenter.templates.defaults.unnamed')}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -88,18 +89,18 @@ export const TemplatesSection: React.FC<SectionProps> = ({ setField, getField })
                 {isEditing && (
                   <div className="p-3 space-y-2 border-t border-slate-100 dark:border-white/[0.04]">
                     <TextField
-                      label="名称"
+                      label={i18n.t('configCenter.templates.fields.name')}
                       value={String(tmpl.name ?? '')}
                       onChange={(v) => updateTemplate(idx, 'name', v)}
                     />
                     <TextField
-                      label="ID"
+                      label={i18n.t('configCenter.templates.fields.id')}
                       value={String(tmpl.id ?? '')}
                       onChange={(v) => updateTemplate(idx, 'id', v)}
                       placeholder="my_template"
                     />
                     <TextField
-                      label="提示词 (prompt)"
+                      label={i18n.t('configCenter.templates.fields.prompt')}
                       value={String(tmpl.prompt ?? '')}
                       onChange={(v) => updateTemplate(idx, 'prompt', v)}
                       multiline
@@ -120,7 +121,7 @@ export const TemplatesSection: React.FC<SectionProps> = ({ setField, getField })
             )}
           >
             <Plus className="h-5 w-5" />
-            <span className="text-sm">添加模板</span>
+            <span className="text-sm">{i18n.t('configCenter.templates.addTemplate')}</span>
           </button>
         </div>
       </ConfigSection>

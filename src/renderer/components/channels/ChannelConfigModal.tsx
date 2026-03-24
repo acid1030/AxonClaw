@@ -394,14 +394,14 @@ export function ChannelConfigModal({
             <CardTitle className="text-2xl font-serif font-normal tracking-tight text-foreground">
               {selectedType
                 ? isExistingConfig
-                  ? tr('dialog.updateTitle', `更新 ${CHANNEL_NAMES[selectedType]} 配置`)
-                  : tr('dialog.configureTitle', `配置 ${CHANNEL_NAMES[selectedType]}`)
-                : tr('dialog.addTitle', '添加频道')}
+                  ? tr('dialog.updateTitle', `Update ${CHANNEL_NAMES[selectedType]} configuration`)
+                  : tr('dialog.configureTitle', `Configure ${CHANNEL_NAMES[selectedType]}`)
+                : tr('dialog.addTitle', 'Add Channel')}
             </CardTitle>
             <CardDescription className="text-[15px] mt-1 text-foreground/70">
               {selectedType && isExistingConfig
-                ? tr('dialog.existingDesc', '该频道已配置，修改后会覆盖原配置。')
-                : meta ? t(meta.description.replace('channels:', '')) : tr('dialog.selectDesc', '选择一个频道开始配置')}
+                ? tr('dialog.existingDesc', 'This channel is already configured. Updating it will overwrite the existing configuration.')
+                : meta ? t(meta.description.replace('channels:', '')) : tr('dialog.selectDesc', 'Select a channel to start configuration')}
             </CardDescription>
           </div>
           <Button
@@ -442,7 +442,7 @@ export function ChannelConfigModal({
                             variant="secondary"
                             className="font-mono text-[10px] font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
                           >
-                            {tr('pluginBadge', '插件')}
+                            {tr('pluginBadge', 'Plugin')}
                           </Badge>
                         )}
                       </div>
@@ -455,7 +455,7 @@ export function ChannelConfigModal({
                     </div>
                     {isConfigured && (
                       <Badge className="absolute top-3 right-3 text-[10px] font-medium rounded-full bg-green-600 hover:bg-green-600">
-                        {tr('configuredBadge', '已配置')}
+                        {tr('configuredBadge', 'Configured')}
                       </Badge>
                     )}
                   </button>
@@ -492,7 +492,7 @@ export function ChannelConfigModal({
           ) : loadingConfig ? (
             <div className="flex items-center justify-center py-10 rounded-2xl bg-[#0f172a] border border-indigo-500/40">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-[14px] text-muted-foreground">{tr('dialog.loadingConfig', '正在加载配置...')}</span>
+              <span className="ml-2 text-[14px] text-muted-foreground">{tr('dialog.loadingConfig', 'Loading configuration...')}</span>
             </div>
           ) : (
             <div className="space-y-6">
@@ -506,7 +506,7 @@ export function ChannelConfigModal({
               <div className="bg-[#0f172a] p-4 rounded-2xl space-y-4 shadow-sm border border-cyan-500/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className={labelClasses}>{tr('dialog.howToConnect', '如何连接')}</p>
+                    <p className={labelClasses}>{tr('dialog.howToConnect', 'How to connect')}</p>
                     <p className="text-[13px] text-muted-foreground mt-1">
                       {meta ? t(meta.description.replace('channels:', '')) : ''}
                     </p>
@@ -517,7 +517,7 @@ export function ChannelConfigModal({
                     onClick={openDocs}
                   >
                     <BookOpen className="h-3 w-3 mr-1" />
-                    {tr('dialog.viewDocs', '查看文档')}
+                    {tr('dialog.viewDocs', 'View docs')}
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
@@ -530,7 +530,7 @@ export function ChannelConfigModal({
 
               {showChannelName && (
                 <div className="space-y-2.5">
-                  <Label htmlFor="name" className={labelClasses}>{tr('dialog.channelName', '频道名称')}</Label>
+                  <Label htmlFor="name" className={labelClasses}>{tr('dialog.channelName', 'Channel Name')}</Label>
                   <Input
                     ref={firstInputRef}
                     id="name"
@@ -617,12 +617,12 @@ export function ChannelConfigModal({
                       {validating ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {tr('dialog.validating', '验证中...')}
+                          {tr('dialog.validating', 'Validating...')}
                         </>
                       ) : (
                         <>
                           <ShieldCheck className="h-4 w-4 mr-2" />
-                          {tr('dialog.validateConfig', '验证配置')}
+                          {tr('dialog.validateConfig', 'Validate configuration')}
                         </>
                       )}
                     </Button>

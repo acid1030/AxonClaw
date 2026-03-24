@@ -10,6 +10,19 @@ import { hostApiFetch } from '@/lib/host-api';
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
 
+function normalizeLanguageCode(input: string | undefined | null): string {
+  const raw = String(input || '').trim();
+  if (!raw) return 'en';
+  const lower = raw.toLowerCase();
+  if (lower === 'cn' || lower === 'zh-cn') return 'zh';
+  if (lower === 'zh-tw' || lower.startsWith('zh-hant') || lower.startsWith('zh-hk')) return 'zh-TW';
+  if (lower.startsWith('zh')) return 'zh';
+  if (lower.startsWith('ja')) return 'ja';
+  if (lower.startsWith('ko')) return 'ko';
+  if (lower.startsWith('en')) return 'en';
+  return raw;
+}
+
 interface SettingsState {
   // General
   theme: Theme;
@@ -47,6 +60,7 @@ interface SettingsState {
   init: () => Promise<void>;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: string) => void;
+  applyLanguageFromExternal: (language: string) => void;
   setStartMinimized: (value: boolean) => void;
   setLaunchAtStartup: (value: boolean) => void;
   setTelemetryEnabled: (value: boolean) => void;
@@ -71,10 +85,7 @@ interface SettingsState {
 const defaultSettings = {
   theme: 'system' as Theme,
   language: (() => {
-    const lang = navigator.language.toLowerCase();
-    if (lang.startsWith('zh')) return 'zh';
-    if (lang.startsWith('ja')) return 'ja';
-    return 'en';
+    return normalizeLanguageCode(navigator.language);
   })(),
   startMinimized: false,
   launchAtStartup: false,
@@ -96,17 +107,58 @@ const defaultSettings = {
   setupComplete: false,
 };
 
+const PENDING_LANGUAGE_KEY = 'clawx:pending-language';
+
+function readPendingLanguage(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(PENDING_LANGUAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writePendingLanguage(language: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PENDING_LANGUAGE_KEY, language);
+  } catch {
+    // ignore
+  }
+}
+
+function clearPendingLanguage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(PENDING_LANGUAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...defaultSettings,
 
       init: async () => {
         try {
           const settings = await hostApiFetch<Partial<typeof defaultSettings>>('/api/settings');
-          set((state) => ({ ...state, ...settings }));
-          if (settings.language) {
-            i18n.changeLanguage(settings.language);
+          const pendingLanguage = readPendingLanguage();
+          const mergedLanguage = normalizeLanguageCode(pendingLanguage || settings.language || '');
+          set((state) => ({ ...state, ...settings, ...(mergedLanguage ? { language: mergedLanguage } : {}) }));
+          if (mergedLanguage) {
+            i18n.changeLanguage(mergedLanguage);
+          }
+          if (pendingLanguage) {
+            void hostApiFetch('/api/settings/language', {
+              method: 'PUT',
+              body: JSON.stringify({ value: pendingLanguage }),
+            })
+              .then(() => clearPendingLanguage())
+              .catch(() => {
+                // Keep pending language for next retry if host API is temporarily unavailable.
+              });
           }
         } catch {
           // Keep renderer-persisted settings as a fallback when the main
@@ -122,12 +174,25 @@ export const useSettingsStore = create<SettingsState>()(
         }).catch(() => { });
       },
       setLanguage: (language) => {
-        i18n.changeLanguage(language);
-        set({ language });
+        const nextLanguage = normalizeLanguageCode(language);
+        if (get().language === nextLanguage) return;
+        i18n.changeLanguage(nextLanguage);
+        set({ language: nextLanguage });
+        writePendingLanguage(nextLanguage);
         void hostApiFetch('/api/settings/language', {
           method: 'PUT',
-          body: JSON.stringify({ value: language }),
-        }).catch(() => { });
+          body: JSON.stringify({ value: nextLanguage }),
+        })
+          .then(() => clearPendingLanguage())
+          .catch(() => {
+            // Keep pending language for next retry if host API is temporarily unavailable.
+          });
+      },
+      applyLanguageFromExternal: (language) => {
+        const nextLanguage = normalizeLanguageCode(language);
+        if (!nextLanguage || get().language === nextLanguage) return;
+        i18n.changeLanguage(nextLanguage);
+        set({ language: nextLanguage });
       },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => {

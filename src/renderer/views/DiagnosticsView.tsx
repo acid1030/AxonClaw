@@ -1035,7 +1035,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       </div>
 
-      {/* 底部区域（AxonClawX）：左侧{t('diagnostics.issues.title')} + 右侧 2x2 指标 + {t('diagnostics.suggestedActions')} */}
+      {/* Bottom area (AxonClawX): left {t('diagnostics.issues.title')} + right 2x2 metrics + {t('diagnostics.suggestedActions')} */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
         <div className="rounded-xl border border-white/10 bg-black/15 p-4">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">

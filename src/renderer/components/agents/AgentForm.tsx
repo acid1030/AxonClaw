@@ -22,20 +22,20 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 
 const PRESET_ROLES = [
-  { value: 'strategist', label: '战略执行官 (NEXUS)' },
-  { value: 'product', label: '产品架构师 (ARIA)' },
-  { value: 'engineering', label: '工程总管 (KAEL)' },
-  { value: 'fullstack', label: '全栈开发 (ZARA)' },
-  { value: 'backend', label: '后端架构师 (DANTE)' },
-  { value: 'designer', label: '交互设计师 (LUNA)' },
-  { value: 'devops', label: '运维指挥官 (ATLAS)' },
-  { value: 'qa', label: '质量守门员 (REX)' },
-  { value: 'security', label: '安全架构师 (CIPHER)' },
-  { value: 'analyst', label: '数据分析师 (ECHO)' },
-  { value: 'writer', label: '文档专家 (SCRIBE)' },
-  { value: 'content', label: '内容策略师 (MUSE)' },
-  { value: 'growth', label: '增长引擎 (NOVA)' },
-  { value: 'custom', label: '自定义角色' },
+  { value: 'strategist', label: 'Strategy Lead (NEXUS)' },
+  { value: 'product', label: 'Product Architect (ARIA)' },
+  { value: 'engineering', label: 'Engineering Lead (KAEL)' },
+  { value: 'fullstack', label: 'Full-Stack Dev (ZARA)' },
+  { value: 'backend', label: 'Backend Architect (DANTE)' },
+  { value: 'designer', label: 'Interaction Designer (LUNA)' },
+  { value: 'devops', label: 'DevOps Lead (ATLAS)' },
+  { value: 'qa', label: 'QA Gatekeeper (REX)' },
+  { value: 'security', label: 'Security Architect (CIPHER)' },
+  { value: 'analyst', label: 'Data Analyst (ECHO)' },
+  { value: 'writer', label: 'Documentation Specialist (SCRIBE)' },
+  { value: 'content', label: 'Content Strategist (MUSE)' },
+  { value: 'growth', label: 'Growth Engine (NOVA)' },
+  { value: 'custom', label: 'Custom Role' },
 ];
 
 interface AgentFormProps {
@@ -96,21 +96,21 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? '编辑 Agent' : '创建 Agent'}
+            {isEditing ? 'Edit Agent' : 'Create Agent'}
           </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? '修改 Agent 的配置和人格设定'
-              : '为你的军团添加新的 Agent 成员'}
+              ? 'Update this agent's configuration and persona'
+              : 'Add a new agent to your team'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="name">名称</Label>
+            <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              placeholder="给 Agent 起个名字"
+              placeholder="Give this agent a name"
               value={formData.name}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
@@ -119,10 +119,10 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="role">角色</Label>
+            <Label htmlFor="role">Role</Label>
             <Select value={formData.role} onValueChange={handleRoleChange}>
               <SelectTrigger>
-                <SelectValue placeholder="选择角色" />
+                <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
                 {PRESET_ROLES.map((role) => (
@@ -135,10 +135,10 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="specialty">专业领域</Label>
+            <Label htmlFor="specialty">Specialty</Label>
             <Input
               id="specialty"
-              placeholder="例如：前端开发、API设计、用户研究"
+              placeholder="e.g. frontend, API design, user research"
               value={formData.specialty}
               onChange={(e) =>
                 setFormData((prev) => ({
@@ -150,10 +150,10 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="soul">人格设定 (SOUL.md)</Label>
+            <Label htmlFor="soul">Persona (SOUL.md)</Label>
             <Textarea
               id="soul"
-              placeholder="描述 Agent 的性格、工作风格、口头禅..."
+              placeholder="Describe this agent's personality and working style..."
               value={formData.soul}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, soul: e.target.value }))
@@ -165,10 +165,10 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? '保存中...' : isEditing ? '保存' : '创建'}
+            {isSubmitting ? 'Saving...' : isEditing ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>

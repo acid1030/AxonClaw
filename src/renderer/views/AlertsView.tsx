@@ -9,6 +9,7 @@ import { Bell, RefreshCw, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { hostApiFetch } from '@/lib/host-api';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 type AlertLevel = 'critical' | 'warning' | 'info';
 
@@ -55,12 +56,12 @@ const AlertsView: React.FC = () => {
     <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
       <div className="w-full flex flex-col h-full py-6 min-h-0">
         <PageHeader
-          title="警报"
-          subtitle="系统警报、错误通知、告警规则配置"
+          title={i18n.t('views.alerts.title')}
+          subtitle={i18n.t('views.alerts.subtitle')}
           stats={[
-            { label: '总数', value: alerts.length },
-            { label: '严重', value: alerts.filter((a) => a.level === 'critical').length },
-            { label: '警告', value: alerts.filter((a) => a.level === 'warning').length },
+            { label: i18n.t('views.alerts.stats.total'), value: alerts.length },
+            { label: i18n.t('views.alerts.stats.critical'), value: alerts.filter((a) => a.level === 'critical').length },
+            { label: i18n.t('views.alerts.stats.warning'), value: alerts.filter((a) => a.level === 'warning').length },
           ]}
           onRefresh={fetchAlerts}
           refreshing={loading}
@@ -79,7 +80,13 @@ const AlertsView: React.FC = () => {
                   : 'text-muted-foreground hover:bg-white/5'
               )}
             >
-              {level === 'ALL' ? '全部' : level === 'critical' ? '严重' : level === 'warning' ? '警告' : '信息'}
+              {level === 'ALL'
+                ? i18n.t('views.alerts.filters.all')
+                : level === 'critical'
+                  ? i18n.t('views.alerts.filters.critical')
+                  : level === 'warning'
+                    ? i18n.t('views.alerts.filters.warning')
+                    : i18n.t('views.alerts.filters.info')}
             </button>
           ))}
         </div>
@@ -88,7 +95,7 @@ const AlertsView: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-4">
             {filteredAlerts.length === 0 ? (
               <div className="text-muted-foreground py-12 text-center">
-                {loading ? '加载中...' : '暂无警报'}
+                {loading ? i18n.t('views.alerts.loading') : i18n.t('views.alerts.empty')}
               </div>
             ) : (
               <div className="space-y-3">

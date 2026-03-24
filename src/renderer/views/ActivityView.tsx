@@ -9,6 +9,7 @@ import { RefreshCw, Filter, Zap } from 'lucide-react';
 import { useGatewayLogsStore } from '@/stores/gateway-logs';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 type EventFilter = 'ALL' | 'MESSAGE' | 'TOOL' | 'SESSION' | 'INFO';
 
@@ -40,7 +41,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
       'app:gateway-log',
       (payload: { time?: string; level?: string; agent?: string; message?: string }) => {
         addStreamLog({
-          time: payload.time ?? new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          time: payload.time ?? new Date().toLocaleTimeString(i18n.language === 'zh' ? 'zh-CN' : 'en-US', { hour12: false }),
           level: payload.level ?? 'INFO',
           agent: payload.agent ?? 'Gateway',
           message: payload.message ?? '',
@@ -55,17 +56,17 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
     const msg = (log.message ?? '').toLowerCase();
     if (eventFilter === 'MESSAGE') return msg.includes('message') || msg.includes('chat') || msg.includes('send');
     if (eventFilter === 'TOOL') return msg.includes('tool') || msg.includes('invoke');
-    if (eventFilter === 'SESSION') return msg.includes('session') || msg.includes('会话');
+    if (eventFilter === 'SESSION') return msg.includes('session');
     if (eventFilter === 'INFO') return log.level === 'INFO';
     return true;
   });
 
   const eventFilters: { value: EventFilter; label: string }[] = [
-    { value: 'ALL', label: '全部' },
-    { value: 'MESSAGE', label: '消息' },
-    { value: 'TOOL', label: '工具' },
-    { value: 'SESSION', label: '会话' },
-    { value: 'INFO', label: '信息' },
+    { value: 'ALL', label: i18n.t('views.activity.filters.all') },
+    { value: 'MESSAGE', label: i18n.t('views.activity.filters.message') },
+    { value: 'TOOL', label: i18n.t('views.activity.filters.tool') },
+    { value: 'SESSION', label: i18n.t('views.activity.filters.session') },
+    { value: 'INFO', label: i18n.t('views.activity.filters.info') },
   ];
 
   return (
@@ -77,9 +78,9 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
     >
       <div className="w-full flex flex-col h-full py-6 min-h-0">
         <PageHeader
-          title="活动流"
-          subtitle="Gateway 事件、消息收发、工具调用记录"
-          stats={[{ label: '事件数', value: filteredLogs.length }]}
+          title={i18n.t('views.activity.title')}
+          subtitle={i18n.t('views.activity.subtitle')}
+          stats={[{ label: i18n.t('views.activity.stats.eventCount'), value: filteredLogs.length }]}
           onRefresh={() => void fetchSystemLogs(200)}
           refreshing={systemLogsLoading}
           statsBorderColor="border-amber-500/40"
@@ -88,7 +89,7 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
               onClick={clearLogs}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors"
             >
-              清空
+              {i18n.t('views.activity.actions.clear')}
             </button>
           }
         />
@@ -122,10 +123,10 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
             {filteredLogs.length === 0 ? (
               <div className="text-muted-foreground py-8 text-center">
                 {systemLogsLoading
-                  ? '正在加载活动事件...'
+                  ? i18n.t('views.activity.loading')
                   : eventFilter !== 'ALL'
-                    ? `无 ${eventFilter} 类型事件`
-                    : '暂无活动。发送消息或执行操作后查看。'}
+                    ? i18n.t('views.activity.noTypeEvents', { type: eventFilter })
+                    : i18n.t('views.activity.empty')}
               </div>
             ) : (
               filteredLogs.map((log, index) => (
@@ -156,9 +157,9 @@ const ActivityView: React.FC<ActivityViewProps> = ({ embedded }) => {
           <div className="flex items-center gap-4 px-4 py-2 border-t border-slate-700/50 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              <span>实时</span>
+              <span>{i18n.t('views.activity.realtime')}</span>
             </div>
-            <span>{filteredLogs.length} 条</span>
+            <span>{i18n.t('views.activity.recordCount', { count: filteredLogs.length })}</span>
           </div>
         </div>
       </div>

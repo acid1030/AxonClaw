@@ -7,13 +7,14 @@ import { Target, Key } from 'lucide-react';
 import { ConfigSection, TextField, SelectField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 const PROVIDERS = [
   { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-…', baseUrl: 'https://api.anthropic.com' },
   { id: 'openai', name: 'OpenAI', icon: '🔗', placeholder: 'sk-…', baseUrl: 'https://api.openai.com' },
-  { id: 'zai', name: '智谱 GLM', icon: '🇨🇳', placeholder: '智谱 API Key', baseUrl: 'https://open.bigmodel.cn/api' },
+  { id: 'zai', name: 'Zhipu GLM', icon: '🇨🇳', placeholder: 'Zhipu API Key', baseUrl: 'https://open.bigmodel.cn/api' },
   { id: 'google', name: 'Google', icon: '🔷', placeholder: 'AIza…', baseUrl: 'https://generativelanguage.googleapis.com' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'ollama-local（本地无需 Key）', baseUrl: 'http://localhost:11434' },
+  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'ollama-local (no key required)', baseUrl: 'http://localhost:11434' },
 ];
 
 const COMMON_MODELS = [
@@ -22,7 +23,7 @@ const COMMON_MODELS = [
   { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   { value: 'openai/gpt-4o', label: 'GPT-4o' },
   { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'zai/glm-5', label: '智谱 GLM-5' },
+  { value: 'zai/glm-5', label: 'Zhipu GLM-5' },
   { value: 'ollama/llama3.2', label: 'Ollama Llama 3.2' },
 ];
 
@@ -31,7 +32,7 @@ function buildModelOptions(currentValue: string): { value: string; label: string
     return COMMON_MODELS;
   }
   const modelTail = currentValue.includes('/') ? currentValue.split('/').slice(1).join('/') : currentValue;
-  return [{ value: currentValue, label: `${modelTail}（当前配置）` }, ...COMMON_MODELS];
+  return [{ value: currentValue, label: `${modelTail} (${i18n.t('configCenter.models.currentConfig')})` }, ...COMMON_MODELS];
 }
 
 function ProviderCard({
@@ -66,10 +67,10 @@ function ProviderCard({
         <span className="text-base">{provider.icon}</span>
         <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{provider.name}</span>
         {hasKey && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-500">已配置</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-500">{i18n.t('configCenter.models.configured')}</span>
         )}
         {!hasKey && provider.id !== 'ollama' && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500">未配置</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500">{i18n.t('configCenter.models.notConfigured')}</span>
         )}
       </div>
       <div className="p-3 space-y-3">
@@ -86,13 +87,13 @@ function ProviderCard({
           </div>
         )}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">默认模型</label>
+          <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{i18n.t('configCenter.models.defaultModel')}</label>
           <select
             value={defaultModel}
             onChange={(e) => onDefaultModelChange(e.target.value)}
             className="h-8 px-2.5 rounded-md border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900/80 text-xs text-foreground cursor-pointer"
           >
-            <option value="">— 选择 —</option>
+            <option value="">{i18n.t('configCenter.models.select')}</option>
             {COMMON_MODELS.filter((m) => m.value.startsWith(provider.id + '/')).map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
@@ -128,9 +129,9 @@ export const ModelsSection: React.FC<SectionProps> = ({ setField, getField }) =>
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="默认模型" icon={Target} iconColor="text-indigo-500">
+      <ConfigSection title={i18n.t('configCenter.models.defaultSection')} icon={Target} iconColor="text-indigo-500">
         <SelectField
-          label="全局默认"
+          label={i18n.t('configCenter.models.globalDefault')}
           value={globalDefaultModel}
           onChange={(v) => {
             setField(['agents', 'defaults', 'model', 'primary'], v);
@@ -141,7 +142,7 @@ export const ModelsSection: React.FC<SectionProps> = ({ setField, getField }) =>
         />
       </ConfigSection>
 
-      <ConfigSection title="API 密钥 / 提供商" icon={Key} iconColor="text-amber-500" desc="管理各 AI 服务商的 API 访问凭据">
+      <ConfigSection title={i18n.t('configCenter.models.providersSection')} icon={Key} iconColor="text-amber-500" desc={i18n.t('configCenter.models.providersDesc')}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {PROVIDERS.map((provider) => {
             const prov = (providers[provider.id] as Record<string, unknown>) ?? {};

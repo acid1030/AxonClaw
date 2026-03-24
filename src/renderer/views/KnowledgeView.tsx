@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import {
   BookOpen,
@@ -73,23 +74,27 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   hard: 'bg-red-500/10 text-red-600 dark:text-red-400',
 };
 
-const KB_CATEGORY_TABS: { id: 'all' | KnowledgeBaseCategory; label: string }[] = [
-  { id: 'all', label: i18n.t('knowledge.kbCategory.all') },
-  { id: 'decision', label: i18n.t('knowledge.kbCategory.decision') },
-  { id: 'project', label: i18n.t('knowledge.kbCategory.project') },
-  { id: 'preference', label: i18n.t('knowledge.kbCategory.preference') },
-  { id: 'learning', label: i18n.t('knowledge.kbCategory.learning') },
-];
+function getKbCategoryTabs(): { id: 'all' | KnowledgeBaseCategory; label: string }[] {
+  return [
+    { id: 'all', label: i18n.t('knowledge.kbCategory.all') },
+    { id: 'decision', label: i18n.t('knowledge.kbCategory.decision') },
+    { id: 'project', label: i18n.t('knowledge.kbCategory.project') },
+    { id: 'preference', label: i18n.t('knowledge.kbCategory.preference') },
+    { id: 'learning', label: i18n.t('knowledge.kbCategory.learning') },
+  ];
+}
 
 type FilterType = 'all' | KnowledgeItemType;
 
-const filterTabs: { id: FilterType; label: string; icon: typeof LayoutGrid; activeColor: string }[] = [
-  { id: 'all', label: i18n.t('knowledge.filter.all'), icon: LayoutGrid, activeColor: 'bg-primary/15 text-primary' },
-  { id: 'recipe', label: i18n.t('knowledge.filter.recipe'), icon: BookOpen, activeColor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
-  { id: 'tip', label: i18n.t('knowledge.filter.tip'), icon: Lightbulb, activeColor: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  { id: 'snippet', label: i18n.t('knowledge.filter.snippet'), icon: Code, activeColor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
-  { id: 'faq', label: i18n.t('knowledge.filter.faq'), icon: HelpCircle, activeColor: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' },
-];
+function getFilterTabs(): { id: FilterType; label: string; icon: typeof LayoutGrid; activeColor: string }[] {
+  return [
+    { id: 'all', label: i18n.t('knowledge.filter.all'), icon: LayoutGrid, activeColor: 'bg-primary/15 text-primary' },
+    { id: 'recipe', label: i18n.t('knowledge.filter.recipe'), icon: BookOpen, activeColor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+    { id: 'tip', label: i18n.t('knowledge.filter.tip'), icon: Lightbulb, activeColor: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+    { id: 'snippet', label: i18n.t('knowledge.filter.snippet'), icon: Code, activeColor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+    { id: 'faq', label: i18n.t('knowledge.filter.faq'), icon: HelpCircle, activeColor: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' },
+  ];
+}
 
 function getTypeLabel(type: KnowledgeItemType): string {
   const labels: Record<KnowledgeItemType, string> = {
@@ -99,6 +104,67 @@ function getTypeLabel(type: KnowledgeItemType): string {
     faq: i18n.t('knowledge.types.faq'),
   };
   return labels[type] || type;
+}
+
+const HAN_REGEX = /\p{Script=Han}/u;
+
+function hasHan(value?: string | null): boolean {
+  return typeof value === 'string' && HAN_REGEX.test(value);
+}
+
+function isEnglishUI(): boolean {
+  return (i18n.language || '').toLowerCase().startsWith('en');
+}
+
+function displayOrFallback(value: string | undefined | null, fallback: string): string {
+  if (!value) return fallback;
+  if (isEnglishUI() && hasHan(value)) return fallback;
+  return value;
+}
+
+function sanitizeTags(tags?: string[], prefix = 'Tag'): string[] | undefined {
+  if (!tags) return tags;
+  if (!isEnglishUI()) return tags;
+  return tags.map((tag, index) => displayOrFallback(tag, `${prefix} ${index + 1}`));
+}
+
+function sanitizeKnowledgeItemsForLocale(items: KnowledgeItem[]): KnowledgeItem[] {
+  if (!isEnglishUI()) return items;
+  return items.map((item, index) => {
+    const nameFromI18n = item.metadata.i18n?.en?.name || item.metadata.name;
+    const descFromI18n = item.metadata.i18n?.en?.description || item.metadata.description;
+    return {
+      ...item,
+      metadata: {
+        ...item.metadata,
+        name: displayOrFallback(nameFromI18n, `${getTypeLabel(item.type)} ${index + 1}`),
+        description: displayOrFallback(descFromI18n, 'Localized content is being prepared.'),
+        tags: sanitizeTags(item.metadata.tags),
+      },
+      content: {
+        ...item.content,
+        body: item.content.body
+          ? displayOrFallback(item.content.body, 'Localized content is being prepared for this entry.')
+          : item.content.body,
+        question: item.content.question
+          ? displayOrFallback(item.content.question, 'Question')
+          : item.content.question,
+        answer: item.content.answer
+          ? displayOrFallback(item.content.answer, 'Localized answer is being prepared.')
+          : item.content.answer,
+        snippet: item.content.snippet
+          ? displayOrFallback(item.content.snippet, '// Localized snippet is being prepared.')
+          : item.content.snippet,
+        steps: item.content.steps?.map((step, stepIndex) => ({
+          ...step,
+          title: displayOrFallback(step.title, `Step ${stepIndex + 1}`),
+          description: step.description
+            ? displayOrFallback(step.description, 'See details in this step.')
+            : step.description,
+        })),
+      },
+    };
+  });
 }
 
 function copyToClipboard(text: string): Promise<void> {
@@ -390,7 +456,7 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
   const [sceneCategory, setSceneCategory] = useState<SceneCategory>('all');
   const [sceneSearch, setSceneSearch] = useState('');
   const [previewScene, setPreviewScene] = useState<SceneTemplate | null>(null);
-  const scenes = useMemo(() => getScenes(sceneCategory, sceneSearch), [sceneCategory, sceneSearch]);
+  const scenes = useMemo(() => getScenes(sceneCategory, sceneSearch, i18n.language), [sceneCategory, sceneSearch, i18n.language]);
 
   const handleOneClickSetup = useCallback(
     (scene: SceneTemplate) => {
@@ -432,7 +498,7 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
               )}
             >
               {Icon && <Icon className="w-3.5 h-3.5" />}
-              {c.label}
+              {i18n.t(`knowledge.scene.category.${c.id}`, { defaultValue: c.label })}
             </button>
           );
         })}
@@ -676,7 +742,7 @@ function SearchTab({
   const [scope, setScope] = useState<'all' | 'scenes' | 'knowledge' | 'agents'>('all');
 
   const hasQuery = query.trim().length > 0;
-  const scenes = useMemo(() => (hasQuery ? getScenes('all', query) : []), [query, hasQuery]);
+  const scenes = useMemo(() => (hasQuery ? getScenes('all', query, i18n.language) : []), [query, hasQuery, i18n.language]);
   const workflows = useMemo(
     () =>
       hasQuery
@@ -1014,7 +1080,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap">
-        {KB_CATEGORY_TABS.map((tab) => (
+        {getKbCategoryTabs().map((tab) => (
           <button
             key={tab.id}
             onClick={() => setKbCategory(tab.id)}
@@ -1060,7 +1126,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-foreground truncate">{item.title}</div>
                           <div className="text-[11px] text-muted-foreground">
-                            {new Date(item.updatedAt).toLocaleDateString('zh-CN')} · {item.categoryLabel}
+                            {new Date(item.updatedAt).toLocaleDateString(isEnglishUI() ? 'en-US' : 'zh-CN')} · {item.categoryLabel}
                           </div>
                         </div>
                       </div>
@@ -1246,7 +1312,7 @@ function KnowledgeEncyclopediaTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1.5 flex-wrap">
-        {filterTabs.map((tab) => (
+        {getFilterTabs().map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveFilter(tab.id)}
@@ -1289,15 +1355,18 @@ function KnowledgeEncyclopediaTab({
   );
 }
 
-const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'scenes', label: i18n.t('knowledge.primaryTabs.scenes'), icon: Sparkles },
-  { id: 'multi-agent', label: i18n.t('knowledge.primaryTabs.multiAgent'), icon: Users },
-  { id: 'agent-presets', label: i18n.t('knowledge.primaryTabs.agentPresets'), icon: User },
-  { id: 'knowledge', label: i18n.t('knowledge.primaryTabs.knowledge'), icon: BookOpen },
-  { id: 'search', label: i18n.t('knowledge.primaryTabs.search'), icon: Search },
-];
+function getPrimaryTabs(): { id: PrimaryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] {
+  return [
+    { id: 'scenes', label: i18n.t('knowledge.primaryTabs.scenes'), icon: Sparkles },
+    { id: 'multi-agent', label: i18n.t('knowledge.primaryTabs.multiAgent'), icon: Users },
+    { id: 'agent-presets', label: i18n.t('knowledge.primaryTabs.agentPresets'), icon: User },
+    { id: 'knowledge', label: i18n.t('knowledge.primaryTabs.knowledge'), icon: BookOpen },
+    { id: 'search', label: i18n.t('knowledge.primaryTabs.search'), icon: Search },
+  ];
+}
 
 const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ onNavigateTo }) => {
+  const { i18n: i18next } = useTranslation();
   const [primaryTab, setPrimaryTab] = useState<PrimaryTab>('scenes');
   const [globalSearch, setGlobalSearch] = useState('');
   const [items, setItems] = useState<KnowledgeItem[]>([]);
@@ -1308,10 +1377,10 @@ const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ on
   useEffect(() => {
     setLoading(true);
     getKnowledgeItems()
-      .then((data) => setItems(data))
+      .then((data) => setItems(sanitizeKnowledgeItemsForLocale(data)))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [i18next.language]);
 
   const expandedItem = useMemo(() => items.find((i) => i.id === expandedId), [items, expandedId]);
 
@@ -1346,7 +1415,7 @@ const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ on
 
         {/* 主 Tab */}
         <div className="flex items-center gap-1.5 flex-wrap mb-4">
-          {PRIMARY_TABS.map((tab) => {
+          {getPrimaryTabs().map((tab) => {
             const Icon = tab.icon;
             return (
               <button

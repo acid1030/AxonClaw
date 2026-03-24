@@ -9,6 +9,7 @@ import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 interface PluginsViewProps {
   embedded?: boolean;
@@ -39,11 +40,11 @@ const PluginsView: React.FC<PluginsViewProps> = ({ embedded }) => {
     >
       <div className="w-full flex flex-col h-full py-6 overflow-y-auto">
         <PageHeader
-          title="插件管理"
-          subtitle="安装和管理插件（技能）"
+          title={i18n.t('views.plugins.title')}
+          subtitle={i18n.t('views.plugins.subtitle')}
           stats={[
-            { label: '已启用', value: `${enabledCount}/${skills.length}` },
-            { label: 'Gateway', value: isOnline ? '在线' : '离线' },
+            { label: i18n.t('views.plugins.stats.enabled'), value: `${enabledCount}/${skills.length}` },
+            { label: i18n.t('views.plugins.stats.gateway'), value: isOnline ? i18n.t('views.plugins.gateway.online') : i18n.t('views.plugins.gateway.offline') },
           ]}
           onRefresh={() => fetchSkills()}
           refreshing={loading}
@@ -52,13 +53,13 @@ const PluginsView: React.FC<PluginsViewProps> = ({ embedded }) => {
 
         {!isOnline ? (
           <div className="rounded-xl border-2 border-purple-500/40 bg-[#1e293b] p-8 text-center">
-            <p className="text-muted-foreground text-sm">请先启动 Gateway 以加载插件</p>
-            <p className="text-muted-foreground/70 text-xs mt-1">点击上方「启动 Gateway」按钮</p>
+            <p className="text-muted-foreground text-sm">{i18n.t('views.plugins.gatewayRequired')}</p>
+            <p className="text-muted-foreground/70 text-xs mt-1">{i18n.t('views.plugins.clickStartGateway')}</p>
           </div>
         ) : skills.length === 0 ? (
           <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center">
             <Package className="w-10 h-10 text-muted-foreground/50 mb-3" />
-            <p className="text-muted-foreground text-sm">暂无插件</p>
+            <p className="text-muted-foreground text-sm">{i18n.t('views.plugins.empty')}</p>
           </div>
         ) : (
           <div className="space-y-3 max-w-2xl">
@@ -98,7 +99,7 @@ const PluginsView: React.FC<PluginsViewProps> = ({ embedded }) => {
                       : 'bg-black/5 dark:bg-white/5 text-muted-foreground'
                   )}
                 >
-                  {skill.enabled ? '已启用' : '已禁用'}
+                  {skill.enabled ? i18n.t('views.plugins.badges.enabled') : i18n.t('views.plugins.badges.disabled')}
                 </span>
               </div>
             ))}
@@ -108,7 +109,7 @@ const PluginsView: React.FC<PluginsViewProps> = ({ embedded }) => {
         {skills.length > 0 && (
           <div className="mt-4 rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 max-w-2xl">
             <div className="text-sm text-muted-foreground">
-              {enabledCount}/{skills.length} 已启用 · 完整技能管理请前往「技能」页面
+              {i18n.t('views.plugins.summary', { enabled: enabledCount, total: skills.length })}
             </div>
           </div>
         )}

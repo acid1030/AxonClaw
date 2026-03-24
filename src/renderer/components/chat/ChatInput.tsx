@@ -17,7 +17,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onChange,
   onSend,
   disabled = false,
-  placeholder = '发消息…',
+  placeholder = 'Send a message...',
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,7 +58,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             style={{ fontFamily: '-apple-system, "SF Pro Text", "Helvetica Neue", sans-serif' }}
           />
           
-          {/* 发送按钮 */}
+          {/* Send按钮 */}
           <button
             onClick={onSend}
             disabled={disabled || !isActive}
@@ -67,7 +67,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 ? 'bg-blue-500 hover:bg-blue-400 text-white'
                 : 'bg-gray-600 text-gray-400'
             }`}
-            title="发送"
+            title="Send"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 12V2M2 7l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
@@ -75,14 +75,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </button>
         </div>
 
-        {/* 工具栏 */}
+        {/* Tools栏 */}
         <div className="flex items-center gap-1 px-3 pb-2">
-          <ToolButton icon="📎" label="附件" />
-          <ToolButton icon="🔧" label="工具" />
-          <ToolButton icon="📷" label="截图" />
+          <ToolButton icon="📎" label="Attachment" />
+          <ToolButton icon="🔧" label="Tools" />
+          <ToolButton icon="📷" label="Screenshot" />
           <div className="flex-1" />
           <span className="text-[11px] text-gray-500 px-1">
-            ↩ 发送 · ⇧↩ 换行
+            ↩ Send · ⇧↩ 换行
           </span>
         </div>
       </div>
@@ -90,7 +90,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   );
 };
 
-// 工具按钮
+// Tools按钮
 const ToolButton: React.FC<{
   icon: string;
   label: string;

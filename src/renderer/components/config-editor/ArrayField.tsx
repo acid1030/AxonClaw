@@ -22,7 +22,7 @@ export const ArrayField: React.FC<ArrayFieldProps> = ({
   tooltip,
   value,
   onChange,
-  placeholder = '输入后按 Enter 添加',
+  placeholder = 'Type and press Enter to add',
 }) => {
   const [input, setInput] = useState('');
   const items = Array.isArray(value) ? value : [];

@@ -1,8 +1,9 @@
 /**
- * ConversationList - 对话列表组件
+ * ConversationList - Chat列表组件
  */
 
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface Conversation {
   id: string;
@@ -34,7 +35,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   collapsed = false,
   onToggleCollapse,
 }) => {
-  // 过滤对话
+  const { t, i18n } = useTranslation('views');
+  // 过滤Chat
   const filteredConversations = useMemo(() => {
     if (!searchQuery) return conversations;
     const query = searchQuery.toLowerCase();
@@ -51,13 +53,13 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 60) return `${minutes}分钟前`;
-    if (hours < 24) return `${hours}小时前`;
-    if (days < 7) return `${days}天前`;
-    return new Date(timestamp).toLocaleDateString('zh-CN');
+    if (minutes < 60) return t('chatList.minutesAgo', { count: minutes });
+    if (hours < 24) return t('chatList.hoursAgo', { count: hours });
+    if (days < 7) return t('chatList.daysAgo', { count: days });
+    return new Date(timestamp).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US');
   };
 
-  // 分组对话
+  // 分组Chat
   const groupedConversations = useMemo(() => {
     const now = Date.now();
     const today: Conversation[] = [];
@@ -79,16 +81,16 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     <div className="w-60 flex flex-col bg-[var(--sidebar-bg,#161b22)] border-r border-white/10 flex-shrink-0">
       {/* 头部 */}
       <div className="px-3 py-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-400">对话</span>
+        <span className="text-sm font-medium text-gray-400">Chat</span>
         <button
           onClick={onNewChat}
           className="h-7 px-3 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
         >
-          ＋ 新建
+          + {t('chatList.new')}
         </button>
       </div>
 
-      {/* 搜索 */}
+      {/* Search */}
       <div className="px-3 pb-2">
         <div className="relative">
           <svg
@@ -103,19 +105,19 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="搜索对话…"
+            placeholder={t('chatList.searchPlaceholder')}
             className="w-full h-7 pl-8 pr-3 bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
           />
         </div>
       </div>
 
-      {/* 对话列表 */}
+      {/* Chat列表 */}
       <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
         {/* 最近 */}
         {groupedConversations.today.length > 0 && (
           <>
             <div className="px-2 py-1.5 text-[10px] font-medium text-gray-500 uppercase tracking-wider">
-              最近
+              {t('chatList.recent')}
             </div>
             {groupedConversations.today.map(conv => (
               <ConversationItem
@@ -133,7 +135,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         {groupedConversations.earlier.length > 0 && (
           <>
             <div className="px-2 py-1.5 mt-2 text-[10px] font-medium text-gray-500 uppercase tracking-wider">
-              更早
+              {t('chatList.earlier')}
             </div>
             {groupedConversations.earlier.map(conv => (
               <ConversationItem
@@ -150,7 +152,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         {/* 空状态 */}
         {filteredConversations.length === 0 && (
           <div className="py-8 text-center text-gray-500 text-sm">
-            {searchQuery ? '没有找到匹配的对话' : '暂无对话'}
+            {searchQuery ? 'No matching chats' : 'No chats'}
           </div>
         )}
       </div>
@@ -161,12 +163,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           U
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-gray-300 truncate">用户</div>
+          <div className="text-xs font-medium text-gray-300 truncate">{t('chatList.user')}</div>
           <div className="text-[10px] text-gray-500">Free Plan</div>
         </div>
         <button
           className="p-1.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
-          title="设置"
+          title="Settings"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -177,7 +179,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   );
 };
 
-// 对话项组件
+// Chat项组件
 const ConversationItem: React.FC<{
   conversation: Conversation;
   isActive: boolean;

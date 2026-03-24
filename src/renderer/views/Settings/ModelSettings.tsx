@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, Loader2, Key, Globe, Cpu } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ModelConfig {
   id: string;
@@ -18,6 +19,7 @@ interface ModelConfig {
 }
 
 export function ModelSettings() {
+  const { t } = useTranslation('views');
   const [models, setModels] = useState<ModelConfig[]>([
     {
       id: 'claude-1',
@@ -72,11 +74,11 @@ export function ModelSettings() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'connected':
-        return <Badge className="bg-green-500/10 text-green-600 border-green-200">已连接</Badge>;
+        return <Badge className="bg-green-500/10 text-green-600 border-green-200">{t('modelSettings.connected')}</Badge>;
       case 'disconnected':
-        return <Badge variant="secondary">未连接</Badge>;
+        return <Badge variant="secondary">{t('modelSettings.disconnected')}</Badge>;
       case 'configuring':
-        return <Badge variant="outline">配置中</Badge>;
+        return <Badge variant="outline">{t('modelSettings.configuring')}</Badge>;
       default:
         return null;
     }
@@ -86,8 +88,8 @@ export function ModelSettings() {
     <div className="space-y-6">
       {/* 页面标题 */}
       <div>
-        <h2 className="text-2xl font-semibold text-gray-900">模型配置</h2>
-        <p className="text-sm text-gray-500 mt-1">管理和配置 LLM 模型提供商</p>
+        <h2 className="text-2xl font-semibold text-gray-900">{t('modelSettings.title')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{t('modelSettings.subtitle')}</p>
       </div>
 
       {/* 模型列表 */}
@@ -113,7 +115,7 @@ export function ModelSettings() {
               <div className="flex items-center gap-2">
                 {getStatusBadge(model.status)}
                 {model.isActive && (
-                  <Badge className="bg-blue-500/10 text-blue-600 border-blue-200">默认</Badge>
+                  <Badge className="bg-blue-500/10 text-blue-600 border-blue-200">{t('modelSettings.default')}</Badge>
                 )}
               </div>
             </div>
@@ -123,7 +125,7 @@ export function ModelSettings() {
 
       {/* 配置表单 */}
       <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">配置详情</h3>
+        <h3 className="text-lg font-semibold mb-4">{t('modelSettings.details')}</h3>
         <div className="space-y-4">
           <div>
             <Label htmlFor="api-key">API Key</Label>
@@ -141,7 +143,7 @@ export function ModelSettings() {
           </div>
 
           <div>
-            <Label htmlFor="endpoint">API Endpoint (可选)</Label>
+            <Label htmlFor="endpoint">{t('modelSettings.endpointOptional')}</Label>
             <Input
               id="endpoint"
               type="url"
@@ -159,12 +161,12 @@ export function ModelSettings() {
               {isSaving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  保存中...
+                  {t('modelSettings.saving')}
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  保存配置
+                  {t('modelSettings.save')}
                 </>
               )}
             </Button>
@@ -172,7 +174,7 @@ export function ModelSettings() {
               variant="outline"
               onClick={() => handleTestConnection(selectedModel)}
             >
-              测试连接
+              {t('modelSettings.testConnection')}
             </Button>
           </div>
         </div>
@@ -183,9 +185,9 @@ export function ModelSettings() {
         <div className="flex items-start gap-3">
           <Globe className="w-5 h-5 text-blue-600 mt-0.5" />
           <div>
-            <h4 className="font-medium text-blue-900">获取 API Key</h4>
+            <h4 className="font-medium text-blue-900">{t('modelSettings.getApiKey')}</h4>
             <p className="text-sm text-blue-700 mt-1">
-              访问各提供商的控制台获取 API Key：
+              {t('modelSettings.getApiKeyDesc')}
             </p>
             <ul className="text-sm text-blue-700 mt-2 space-y-1">
               <li>• Anthropic: https://console.anthropic.com</li>

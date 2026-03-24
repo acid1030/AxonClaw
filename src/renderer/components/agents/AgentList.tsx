@@ -27,10 +27,10 @@ const statusColors = {
 };
 
 const statusLabels = {
-  idle: '空闲',
-  busy: '忙碌',
-  error: '错误',
-  offline: '离线',
+  idle: 'Idle',
+  busy: 'Busy',
+  error: 'Error',
+  offline: 'Offline',
 };
 
 interface AgentListProps {

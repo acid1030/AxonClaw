@@ -52,32 +52,39 @@ import { CHANNEL_NAMES, CHANNEL_ICONS } from '@/types/channel';
 import { AgentSettingsModal } from '@/pages/Agents';
 import { hostApiFetch } from '@/lib/host-api';
 import { agentFilesList, agentFileGet, agentFileSet, configGet, agentSkills, wake } from '@/services/agent-api';
+import i18n from '@/i18n';
 
 const TABS = [
-  { id: 'overview', label: '概览', icon: BarChart3 },
-  { id: 'files', label: '文件', icon: FileText },
-  { id: 'tools', label: '工具', icon: Wrench },
-  { id: 'skills', label: '技能', icon: Puzzle },
-  { id: 'channels', label: '渠道', icon: MessageSquare },
-  { id: 'cron', label: '定时任务', icon: Calendar },
-  { id: 'chat', label: '对话', icon: MessageSquare },
-  { id: 'scenarios', label: '场景库', icon: LayoutTemplate },
-  { id: 'multi-agent', label: '多代理协作', icon: Sparkles },
+  { id: 'overview', icon: BarChart3 },
+  { id: 'files', icon: FileText },
+  { id: 'tools', icon: Wrench },
+  { id: 'skills', icon: Puzzle },
+  { id: 'multi-agent', icon: Sparkles },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
 
 function formatSchedule(schedule: unknown): string {
+  const isZh = /^(zh|cn)/i.test(i18n.language || '');
   if (typeof schedule === 'string') return schedule;
   if (schedule && typeof schedule === 'object') {
     const s = schedule as { kind?: string; expr?: string; everyMs?: number; at?: string };
     if (s.kind === 'cron' && s.expr) return s.expr;
     if (s.kind === 'every' && s.everyMs) {
       const ms = s.everyMs;
-      if (ms < 60_000) return `每 ${Math.round(ms / 1000)} 秒`;
-      if (ms < 3_600_000) return `每 ${Math.round(ms / 60_000)} 分钟`;
-      if (ms < 86_400_000) return `每 ${Math.round(ms / 3_600_000)} 小时`;
-      return `每 ${Math.round(ms / 86_400_000)} 天`;
+      if (ms < 60_000) {
+        const n = Math.round(ms / 1000);
+        return isZh ? `每 ${n} 秒` : `Every ${n} seconds`;
+      }
+      if (ms < 3_600_000) {
+        const n = Math.round(ms / 60_000);
+        return isZh ? `每 ${n} 分钟` : `Every ${n} minutes`;
+      }
+      if (ms < 86_400_000) {
+        const n = Math.round(ms / 3_600_000);
+        return isZh ? `每 ${n} 小时` : `Every ${n} hours`;
+      }
+      return `Every ${Math.round(ms / 86_400_000)}d`;
     }
     if (s.kind === 'at' && s.at) return s.at;
   }
@@ -213,7 +220,7 @@ export const AgentsView: React.FC = () => {
       <aside className="w-64 shrink-0 flex flex-col border-r border-indigo-500/20 bg-[#1e293b]">
         <div className="p-4 border-b border-indigo-500/20">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-foreground">代理管理</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('view.sidebarTitle', { defaultValue: '代理管理' })}</h2>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -235,19 +242,19 @@ export const AgentsView: React.FC = () => {
           </div>
           <div className="relative mt-2">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="搜索 Agent / 角色..."
-              value={searchAgent}
-              onChange={(e) => setSearchAgent(e.target.value)}
-              className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-[#0f172a] border border-indigo-500/20 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
+              <input
+                type="text"
+                placeholder={t('view.searchAgent', { defaultValue: '搜索 Agent / 角色...' })}
+                value={searchAgent}
+                onChange={(e) => setSearchAgent(e.target.value)}
+                className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-[#0f172a] border border-indigo-500/20 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
             />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{filteredAgents.length} 个代理</p>
+          <p className="text-xs text-muted-foreground mt-1">{t('view.agentCount', { count: filteredAgents.length, defaultValue: '{{count}} 个代理' })}</p>
         </div>
         <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
           {filteredAgents.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground text-center py-8">暂无代理</p>
+            <p className="text-[10px] text-muted-foreground text-center py-8">{t('view.noAgents', { defaultValue: '暂无代理' })}</p>
           ) : filteredAgents.map((agent) => {
               const label = resolveLabel(agent);
               const emoji = resolveEmoji(agent);
@@ -273,7 +280,7 @@ export const AgentsView: React.FC = () => {
                 </div>
                 {agent.isDefault && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
-                    默认
+                    {t('view.defaultBadge', { defaultValue: '默认' })}
                   </span>
                 )}
               </button>
@@ -287,7 +294,7 @@ export const AgentsView: React.FC = () => {
         {!selectedAgent ? (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
             <Bot className="h-12 w-12 mb-3 opacity-40" />
-            <p className="text-sm">选择一个 Agent 查看详情</p>
+            <p className="text-sm">{t('view.selectAgentHint', { defaultValue: '选择一个代理查看详情' })}</p>
           </div>
         ) : (
           <>
@@ -301,7 +308,7 @@ export const AgentsView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-foreground truncate">{resolveLabel(selectedAgent)}</h2>
                     {selectedAgent.isDefault && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold">default</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold">{t('view.defaultBadge', { defaultValue: '默认' })}</span>
                     )}
                   </div>
                   <p className="text-[10px] text-muted-foreground font-mono">{selectedAgent.id}</p>
@@ -311,17 +318,17 @@ export const AgentsView: React.FC = () => {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
-                    title="唤醒 Agent"
+                    title={t('view.wakeAgent', { defaultValue: '唤醒代理' })}
                     disabled={!isOnline || waking}
                     onClick={async () => {
                       setWaking(true);
                       setWakeResult(null);
                       try {
-                        await wake({ mode: 'now', text: '检查' });
-                        setWakeResult({ ok: true, text: '已唤醒' });
+                        await wake({ mode: 'now', text: 'check' });
+                        setWakeResult({ ok: true, text: t('view.woken', { defaultValue: '已唤醒' }) });
                         setTimeout(() => setWakeResult(null), 3000);
                       } catch (e) {
-                        setWakeResult({ ok: false, text: `唤醒失败: ${e}` });
+                        setWakeResult({ ok: false, text: t('view.wakeFailed', { error: String(e), defaultValue: '唤醒失败: {{error}}' }) });
                       } finally {
                         setWaking(false);
                       }
@@ -333,7 +340,7 @@ export const AgentsView: React.FC = () => {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-indigo-500/20"
-                    title="编辑"
+                    title={t('view.edit', { defaultValue: '编辑' })}
                     onClick={() => setShowSettingsModal(true)}
                   >
                     <Pencil className="h-4 w-4" />
@@ -343,7 +350,7 @@ export const AgentsView: React.FC = () => {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/20"
-                      title="删除"
+                      title={t('view.delete', { defaultValue: '删除' })}
                       onClick={() => setAgentToDelete(selectedAgent)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -373,7 +380,14 @@ export const AgentsView: React.FC = () => {
                         : 'border-transparent text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {tab.label}
+                    {t(`view.tabs.${tab.id}`, {
+                      defaultValue:
+                        tab.id === 'overview' ? '概览' :
+                        tab.id === 'files' ? '文件' :
+                        tab.id === 'tools' ? '工具' :
+                        tab.id === 'skills' ? '技能' :
+                        '多代理',
+                    })}
                   </button>
                 ))}
               </div>
@@ -459,7 +473,7 @@ export const AgentsView: React.FC = () => {
             onChange={(e) => setDeleteFiles(e.target.checked)}
             className="rounded border-indigo-500/40"
           />
-          <span className="text-sm text-muted-foreground">同时删除工作区文件</span>
+          <span className="text-sm text-muted-foreground">{t('deleteDialog.deleteWorkspaceFiles', { defaultValue: '同时删除工作区文件' })}</span>
         </label>
       </ConfirmDialog>
 
@@ -478,6 +492,7 @@ export const AgentsView: React.FC = () => {
 };
 
 function OverviewTab({ agent }: { agent: AgentSummary }) {
+  const { t } = useTranslation('agents');
   const { resolveLabel, resolveEmoji, resolveAgentConfig, identity, defaultAgentId } = useAgentsStore();
   const isOnline = useGatewayOnline();
   const cfg = resolveAgentConfig(agent.id);
@@ -486,14 +501,14 @@ function OverviewTab({ agent }: { agent: AgentSummary }) {
   const emoji = resolveEmoji(agent);
 
   const skillsValue = Array.isArray(cfg.skills)
-    ? `${cfg.skills.length} selected`
+    ? `${cfg.skills.length} 已选`
     : cfg.skills && typeof cfg.skills === 'object' && Object.keys(cfg.skills).length > 0
-      ? `${Object.keys(cfg.skills).length} selected`
+      ? `${Object.keys(cfg.skills).length} 已选`
       : '全部';
 
   const cards = [
     { label: '工作区', value: cfg.workspace || '—', icon: Laptop },
-    { label: '模型', value: cfg.model, icon: Bot },
+    { label: '模型', value: cfg.model || '—', icon: Bot },
     { label: '身份', value: emoji ? `${emoji} ${ident?.name || label}` : (ident?.name || label), icon: Star },
     { label: '状态', value: isOnline ? '在线' : '离线', icon: Zap, statusColor: isOnline ? 'text-emerald-400' : 'text-slate-400' },
     { label: '默认代理', value: agent.id === defaultAgentId ? '是' : '否', icon: Star },
@@ -507,7 +522,7 @@ function OverviewTab({ agent }: { agent: AgentSummary }) {
           <div key={kv.label} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
             <div className="flex items-center gap-1.5 mb-1.5">
               <kv.icon className={cn('w-3.5 h-3.5', kv.statusColor || 'text-white/40')} />
-              <span className="text-[11px] font-bold text-white/40 uppercase">{kv.label}</span>
+              <span className="text-[11px] font-bold text-white/40">{kv.label}</span>
             </div>
             <p className={cn('text-[11px] font-semibold font-mono truncate', kv.statusColor || 'text-white/70')}>
               {kv.value}
@@ -518,7 +533,7 @@ function OverviewTab({ agent }: { agent: AgentSummary }) {
 
       {ident?.theme && (
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
-          <p className="text-[11px] font-bold text-white/40 uppercase mb-1">主题</p>
+          <p className="text-[11px] font-bold text-white/40 mb-1">{t('view.theme', { defaultValue: '主题' })}</p>
           <p className="text-[11px] text-white/50">{ident.theme}</p>
         </div>
       )}
@@ -540,6 +555,7 @@ function fmtBytes(b?: number): string {
 }
 
 function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const { t } = useTranslation('agents');
   const [filesList, setFilesList] = useState<Array<{ name: string; size?: number; missing?: boolean }>>([]);
   const [fileActive, setFileActive] = useState<string | null>(null);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
@@ -586,7 +602,7 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
     try {
       await agentFileSet(agent.id, fileActive, fileDrafts[fileActive] || '');
       setFileContents((prev) => ({ ...prev, [fileActive!]: fileDrafts[fileActive!] || '' }));
-      toast.success('已保存');
+      toast.success(t('view.saved', { defaultValue: '已保存' }));
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -612,19 +628,19 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
       <div className="max-w-5xl flex flex-col md:flex-row gap-4">
         <div className="w-full md:w-48 shrink-0 space-y-1">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground uppercase">核心文件</span>
+            <span className="text-xs font-bold text-muted-foreground uppercase">{t('view.coreFiles', { defaultValue: '核心文件' })}</span>
             <button
               onClick={loadFiles}
               disabled={!isOnline || loading}
               className="text-xs text-indigo-400 hover:underline disabled:opacity-40"
             >
-              {loading ? '加载中…' : '刷新'}
+              {loading ? t('view.loading', { defaultValue: '加载中...' }) : t('common:actions.refresh', { defaultValue: '刷新' })}
             </button>
           </div>
           {!isOnline ? (
-            <p className="text-xs text-muted-foreground py-4">Gateway 未连接</p>
+            <p className="text-xs text-muted-foreground py-4">{t('view.gatewayOffline', { defaultValue: 'Gateway 未连接' })}</p>
           ) : filesList.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-4 text-center">暂无文件</p>
+            <p className="text-xs text-muted-foreground py-4 text-center">{t('view.noFiles', { defaultValue: '暂无文件' })}</p>
           ) : (
             filesList.map((f) => (
               <button
@@ -639,7 +655,7 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
               >
                 <p className="font-mono font-semibold truncate">{f.name}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {f.missing ? <span className="text-amber-500">缺失</span> : fmtBytes(f.size)}
+                  {f.missing ? <span className="text-amber-500">{t('view.fileMissing', { defaultValue: '缺失' })}</span> : fmtBytes(f.size)}
                 </p>
               </button>
             ))
@@ -648,7 +664,7 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
         <div className="flex-1 min-w-0">
           {!fileActive ? (
             <div className="flex items-center justify-center h-48 text-muted-foreground text-xs">
-              选择文件
+              {t('view.selectFile', { defaultValue: '选择一个文件' })}
             </div>
           ) : (
             <div className="space-y-2">
@@ -662,7 +678,7 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
                     disabled={!hasUnsaved}
                     className="h-7 text-xs border-indigo-500/40"
                   >
-                    重置
+                    {t('view.reset', { defaultValue: '重置' })}
                   </Button>
                   <Button
                     size="sm"
@@ -670,7 +686,7 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
                     disabled={fileSaving || !hasUnsaved}
                     className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600"
                   >
-                    {fileSaving ? '保存中…' : '保存'}
+                    {fileSaving ? t('view.saving', { defaultValue: '保存中...' }) : t('common:actions.save', { defaultValue: '保存' })}
                   </Button>
                 </div>
               </div>
@@ -694,16 +710,16 @@ function FilesTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
 }
 
 const TOOL_SECTIONS = [
-  { label: 'Files', tools: ['read', 'write', 'edit', 'apply_patch'] },
-  { label: 'Runtime', tools: ['exec', 'process'] },
-  { label: 'Web', tools: ['web_search', 'web_fetch'] },
-  { label: 'Memory', tools: ['memory_search', 'memory_get'] },
-  { label: 'Sessions', tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'session_status'] },
-  { label: 'UI', tools: ['browser', 'canvas'] },
-  { label: 'Messaging', tools: ['message'] },
-  { label: 'Automation', tools: ['cron', 'gateway'] },
-  { label: 'Agents', tools: ['agents_list'] },
-  { label: 'Media', tools: ['image'] },
+  { id: 'files', tools: ['read', 'write', 'edit', 'apply_patch'] },
+  { id: 'runtime', tools: ['exec', 'process'] },
+  { id: 'web', tools: ['web_search', 'web_fetch'] },
+  { id: 'memory', tools: ['memory_search', 'memory_get'] },
+  { id: 'sessions', tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'session_status'] },
+  { id: 'ui', tools: ['browser', 'canvas'] },
+  { id: 'messaging', tools: ['message'] },
+  { id: 'automation', tools: ['cron', 'gateway'] },
+  { id: 'agents', tools: ['agents_list'] },
+  { id: 'media', tools: ['image'] },
 ];
 
 interface AgentConfigEntry {
@@ -716,8 +732,21 @@ interface ConfigShape {
 }
 
 function ToolsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const { t } = useTranslation('agents');
   const [config, setConfig] = useState<ConfigShape | null>(null);
   const [loading, setLoading] = useState(false);
+  const sectionLabels: Record<string, string> = {
+    files: t('view.toolSections.files', { defaultValue: '文件' }),
+    runtime: t('view.toolSections.runtime', { defaultValue: '运行时' }),
+    web: t('view.toolSections.web', { defaultValue: '网络' }),
+    memory: t('view.toolSections.memory', { defaultValue: '记忆' }),
+    sessions: t('view.toolSections.sessions', { defaultValue: '会话' }),
+    ui: t('view.toolSections.ui', { defaultValue: '界面' }),
+    messaging: t('view.toolSections.messaging', { defaultValue: '消息' }),
+    automation: t('view.toolSections.automation', { defaultValue: '自动化' }),
+    agents: t('view.toolSections.agents', { defaultValue: '代理' }),
+    media: t('view.toolSections.media', { defaultValue: '媒体' }),
+  };
 
   useEffect(() => {
     if (!isOnline) return;
@@ -743,24 +772,24 @@ function ToolsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
     <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-5xl space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Tools</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t('view.tools', { defaultValue: '工具' })}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Profile: <span className="font-mono text-indigo-400">{profile}</span>
+            {t('view.profile', { defaultValue: '配置档' })}: <span className="font-mono text-indigo-400">{profile}</span>
           </p>
         </div>
         {!isOnline ? (
           <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
-            Gateway 未连接
+            {t('view.gatewayOffline', { defaultValue: 'Gateway 未连接' })}
           </div>
         ) : loading ? (
           <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
-            加载中…
+            {t('view.loading', { defaultValue: '加载中...' })}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {TOOL_SECTIONS.map((section) => (
-              <div key={section.label} className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-3">
-                <p className="text-xs font-bold text-muted-foreground uppercase mb-2">{section.label}</p>
+              <div key={section.id} className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-3">
+                <p className="text-xs font-bold text-muted-foreground uppercase mb-2">{sectionLabels[section.id] ?? section.id}</p>
                 <div className="space-y-1">
                   {section.tools.map((tool) => {
                     const denied = denyList.includes(tool);
@@ -783,6 +812,7 @@ function ToolsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean 
 }
 
 function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean }) {
+  const { t } = useTranslation('agents');
   const [skillsReport, setSkillsReport] = useState<{ skills?: Array<{ name: string; description?: string; eligible?: boolean; bundled?: boolean; source?: string }> } | null>(null);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'ready' | 'notReady'>('ready');
@@ -819,7 +849,7 @@ function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean
 
   const groups: Record<string, typeof allSkills> = {};
   skills.forEach((sk) => {
-    const src = sk.bundled ? '内置' : sk.source || '其他';
+    const src = sk.bundled ? t('view.builtIn', { defaultValue: '内置' }) : sk.source || t('view.other', { defaultValue: '其他' });
     if (!groups[src]) groups[src] = [];
     groups[src].push(sk);
   });
@@ -828,22 +858,22 @@ function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean
     <div className="flex-1 overflow-y-auto py-6">
       <div className="max-w-5xl space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Skills</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t('view.skillsTitle', { defaultValue: '技能' })}</h2>
           <button onClick={loadSkills} disabled={!isOnline || loading} className="text-xs text-indigo-400 hover:underline disabled:opacity-40">
-            {loading ? '加载中…' : '刷新'}
+            {loading ? t('view.loading', { defaultValue: '加载中...' }) : t('common:actions.refresh', { defaultValue: '刷新' })}
           </button>
         </div>
         {!isOnline ? (
           <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
-            Gateway 未连接
+            {t('view.gatewayOffline', { defaultValue: 'Gateway 未连接' })}
           </div>
         ) : (
           <>
             <div className="flex items-center gap-2">
               {[
-                { key: 'ready' as const, label: `就绪 (${readyCount})` },
-                { key: 'notReady' as const, label: `未就绪 (${notReadyCount})` },
-                { key: 'all' as const, label: `全部 (${allSkills.length})` },
+                { key: 'ready' as const, label: t('view.skillsReady', { count: readyCount, defaultValue: '就绪 ({{count}})' }) },
+                { key: 'notReady' as const, label: t('view.skillsNotReady', { count: notReadyCount, defaultValue: '未就绪 ({{count}})' }) },
+                { key: 'all' as const, label: t('view.skillsAll', { count: allSkills.length, defaultValue: '全部 ({{count}})' }) },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -866,7 +896,7 @@ function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean
             {skills.length === 0 ? (
               <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
                 <Puzzle className="h-12 w-12 mb-3 opacity-50" />
-                <p className="text-sm">{!loading ? '暂无技能' : '加载中…'}</p>
+                <p className="text-sm">{!loading ? t('view.noSkills', { defaultValue: '暂无技能' }) : t('view.loading', { defaultValue: '加载中...' })}</p>
               </div>
             ) : (
               Object.entries(groups).map(([group, items]) => (
@@ -889,7 +919,7 @@ function SkillsTab({ agent, isOnline }: { agent: AgentSummary; isOnline: boolean
                             sk.eligible ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
                           )}
                         >
-                          {sk.eligible ? '就绪' : '未就绪'}
+                          {sk.eligible ? t('view.ready', { defaultValue: '就绪' }) : t('view.notReady', { defaultValue: '未就绪' })}
                         </span>
                       </div>
                     ))}
@@ -915,6 +945,7 @@ function ChannelsTab({
   onAddChannel: () => void;
   onRemoveChannel: (type: ChannelType) => void;
 }) {
+  const { t } = useTranslation('agents');
   const runtimeByType = Object.fromEntries(channels.map((c) => [c.type, c]));
   const assigned = agent.channelTypes.map((t) => ({
     type: t as ChannelType,
@@ -927,23 +958,23 @@ function ChannelsTab({
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">渠道</h2>
-            <p className="text-sm text-muted-foreground mt-1">渠道连接状态</p>
+            <h2 className="text-lg font-semibold text-foreground">{t('view.channels', { defaultValue: '渠道' })}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{t('view.channelStatus', { defaultValue: '渠道连接状态' })}</p>
           </div>
           <Button
             onClick={onAddChannel}
             className="bg-indigo-500 hover:bg-indigo-600 text-white border-2 border-indigo-500/40"
           >
             <Plus className="h-4 w-4 mr-2" />
-            添加渠道
+            {t('view.addChannel', { defaultValue: '添加渠道' })}
           </Button>
         </div>
         {assigned.length === 0 ? (
           <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
             <MessageSquare className="h-12 w-12 mb-3 opacity-50" />
-            <p className="text-sm mb-2">暂无渠道</p>
+            <p className="text-sm mb-2">{t('view.noChannels', { defaultValue: '暂无渠道' })}</p>
             <Button variant="outline" size="sm" onClick={onAddChannel} className="border-indigo-500/40">
-              添加渠道
+              {t('view.addChannel', { defaultValue: '添加渠道' })}
             </Button>
           </div>
         ) : (
@@ -1000,6 +1031,7 @@ function CronTab({
   onRefresh: () => void;
   isOnline: boolean;
 }) {
+  const { t } = useTranslation('agents');
   const safe = Array.isArray(jobs) ? jobs : [];
 
   return (
@@ -1007,8 +1039,8 @@ function CronTab({
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">定时任务</h2>
-            <p className="text-sm text-muted-foreground mt-1">Cron 定时调度</p>
+            <h2 className="text-lg font-semibold text-foreground">{t('view.cronJobs', { defaultValue: '定时任务' })}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{t('view.cronSchedule', { defaultValue: 'Cron 定时调度' })}</p>
           </div>
           <Button
             variant="outline"
@@ -1018,17 +1050,17 @@ function CronTab({
             className="border-indigo-500/40"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            刷新
+            {t('common:actions.refresh', { defaultValue: '刷新' })}
           </Button>
         </div>
         {!isOnline ? (
           <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-8 text-center text-muted-foreground">
-            Gateway 未连接
+            {t('view.gatewayOffline', { defaultValue: 'Gateway 未连接' })}
           </div>
         ) : safe.length === 0 ? (
           <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center text-muted-foreground">
             <Calendar className="h-12 w-12 mb-3 opacity-50" />
-            <p className="text-sm">暂无定时任务</p>
+            <p className="text-sm">{t('view.noCronJobs', { defaultValue: '暂无定时任务' })}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1049,7 +1081,7 @@ function CronTab({
                     job.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
                   )}
                 >
-                  {job.enabled ? '运行中' : '已暂停'}
+                  {job.enabled ? t('view.running', { defaultValue: '运行中' }) : t('view.paused', { defaultValue: '已暂停' })}
                 </span>
               </div>
             ))}
@@ -1063,24 +1095,24 @@ function CronTab({
 /** 场景库分类（与 AxonClawX 一致） */
 const SCENE_CATEGORIES = [
   { id: 'all', label: '全部' },
-  { id: 'productivity', label: '生产力' },
+  { id: 'productivity', label: '效率' },
   { id: 'social', label: '社交媒体' },
   { id: 'content', label: '内容创作' },
-  { id: 'devops', label: 'DevOps' },
-  { id: 'research', label: '研究学习' },
-  { id: 'finance', label: '金融交易' },
-  { id: 'home', label: '家庭生活' },
+  { id: 'devops', label: '开发运维' },
+  { id: 'research', label: '研究' },
+  { id: 'finance', label: '金融' },
+  { id: 'home', label: '家庭' },
 ] as const;
 
 /** 场景模板（AxonClawX 风格） */
 const SCENE_LIBRARY_TEMPLATES = [
   {
     id: 'personal-assistant',
-    title: '个人助理',
-    desc: '您的 AI 驱动个人助理，帮助管理日程、任务和提醒',
+    title: 'Personal Assistant',
+    desc: 'AI-powered personal assistant for schedules, tasks, and reminders',
     category: 'productivity',
-    tags: ['助理', '生产力', '任务', '提醒'],
-    badges: ['简单', '推荐'] as const,
+    tags: ['Assistant', 'Productivity', 'Tasks', 'Reminders'],
+    badges: ['Simple', 'Recommended'] as const,
     skillCount: 1,
     cronCount: 1,
     icon: MessageSquare,
@@ -1089,11 +1121,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'email-butler',
-    title: '邮件管家',
-    desc: '智能邮件分类、摘要和回复助手',
+    title: 'Email Manager',
+    desc: 'Smart email classification, summarization, and replies',
     category: 'productivity',
-    tags: ['邮件', '生产力', '自动化'],
-    badges: ['中等'] as const,
+    tags: ['Email', 'Productivity', 'Automation'],
+    badges: ['Medium'] as const,
     skillCount: 1,
     cronCount: 1,
     icon: Mail,
@@ -1102,11 +1134,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'schedule-management',
-    title: '日程管理',
-    desc: '智能日程管理，支持冲突检测和排程优化',
+    title: 'Schedule Manager',
+    desc: 'Smart scheduling with conflict detection and optimization',
     category: 'productivity',
-    tags: ['日历', '排程', '生产力'],
-    badges: ['简单', '推荐'] as const,
+    tags: ['Calendar', 'Scheduling', 'Productivity'],
+    badges: ['Simple', 'Recommended'] as const,
     skillCount: 1,
     cronCount: 1,
     icon: CalendarDays,
@@ -1115,11 +1147,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'tech-assistant',
-    title: '技术助手',
-    desc: '编程、调试、代码审查、技术文档编写',
+    title: 'Tech Assistant',
+    desc: 'Programming, debugging, code review, and technical writing',
     category: 'devops',
-    tags: ['开发', '技术', '代码'],
-    badges: ['中等'] as const,
+    tags: ['Development', 'Tech', 'Code'],
+    badges: ['Medium'] as const,
     skillCount: 1,
     cronCount: 0,
     icon: Laptop,
@@ -1128,11 +1160,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'translator',
-    title: '翻译助手',
-    desc: '多语言翻译、本地化、术语一致性',
+    title: 'Translation Assistant',
+    desc: 'Multilingual translation, localization, and terminology consistency',
     category: 'productivity',
-    tags: ['语言', '翻译', '本地化'],
-    badges: ['简单'] as const,
+    tags: ['Language', 'Translation', 'Localization'],
+    badges: ['Simple'] as const,
     skillCount: 1,
     cronCount: 0,
     icon: Languages,
@@ -1141,11 +1173,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'writer',
-    title: '写作助手',
-    desc: '文章撰写、润色、结构化写作',
+    title: 'Writing Assistant',
+    desc: 'Drafting, polishing, and structured writing',
     category: 'content',
-    tags: ['写作', '内容', '创作'],
-    badges: ['中等'] as const,
+    tags: ['Writing', 'Content', 'Creation'],
+    badges: ['Medium'] as const,
     skillCount: 1,
     cronCount: 0,
     icon: PenTool,
@@ -1154,11 +1186,11 @@ const SCENE_LIBRARY_TEMPLATES = [
   },
   {
     id: 'content-factory',
-    title: '内容工厂',
-    desc: '研究 → 撰写 → 编辑 → 发布的完整内容生产流水线',
+    title: 'Content Factory',
+    desc: 'End-to-end pipeline: research -> write -> edit -> publish',
     category: 'content',
-    tags: ['内容', '工作流', '创作'],
-    badges: ['中等'] as const,
+    tags: ['Content', 'Workflow', 'Creation'],
+    badges: ['Medium'] as const,
     skillCount: 2,
     cronCount: 1,
     icon: BookOpen,
@@ -1168,6 +1200,7 @@ const SCENE_LIBRARY_TEMPLATES = [
 ];
 
 function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: () => void }) {
+  const { t } = useTranslation('agents');
   const [searchScene, setSearchScene] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [previewScene, setPreviewScene] = useState<typeof SCENE_LIBRARY_TEMPLATES[0] | null>(null);
@@ -1195,10 +1228,10 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
         { method: 'POST', body: JSON.stringify({ sceneId }) }
       );
       if (res?.success !== false) {
-        toast.success('场景已应用到当前 Agent');
+        toast.success(t('view.scenarioApplied', { defaultValue: '场景已应用到当前代理' }));
         onRefresh?.();
       } else {
-        toast.error(res?.error || '应用失败');
+        toast.error(res?.error || t('view.applyFailed', { defaultValue: '应用失败' }));
       }
     } catch (e) {
       toast.error(String(e));
@@ -1208,9 +1241,9 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
   };
 
   const badgeColor = (b: string) => {
-    if (b === '简单') return 'bg-emerald-500/20 text-emerald-400';
-    if (b === '推荐') return 'bg-blue-500/20 text-blue-400';
-    if (b === '中等') return 'bg-amber-500/20 text-amber-400';
+    if (b === 'Simple') return 'bg-emerald-500/20 text-emerald-400';
+    if (b === 'Recommended') return 'bg-blue-500/20 text-blue-400';
+    if (b === 'Medium') return 'bg-amber-500/20 text-amber-400';
     return 'bg-slate-500/20 text-slate-400';
   };
 
@@ -1219,17 +1252,17 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
       <div className="max-w-5xl space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">场景库</h2>
-            <p className="text-sm text-muted-foreground mt-1">选择适合你的使用场景，一键配置</p>
+          <h2 className="text-lg font-semibold text-foreground">{t('view.scenarioLibrary', { defaultValue: '场景库' })}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{t('view.scenarioHint', { defaultValue: '选择适合你的使用场景，一键配置' })}</p>
           </div>
           <div className="relative w-48 shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="搜索场景..."
-              value={searchScene}
-              onChange={(e) => setSearchScene(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
+              <input
+                type="text"
+                placeholder={t('view.searchScenarios', { defaultValue: '搜索场景...' })}
+                value={searchScene}
+                onChange={(e) => setSearchScene(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/20 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500/40"
             />
           </div>
         </div>
@@ -1284,11 +1317,11 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
               <div className="flex gap-2 mb-4">
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-400">
                   <Star className="h-3 w-3" />
-                  {scene.skillCount} 技能
+                  {scene.skillCount} {t('view.skillsTitle', { defaultValue: '技能' })}
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400">
                   <Calendar className="h-3 w-3" />
-                  {scene.cronCount} 定时任务
+                  {scene.cronCount} {t('view.cronJobs', { defaultValue: '定时任务' })}
                 </span>
               </div>
               <div className="flex gap-2 mt-auto">
@@ -1299,7 +1332,7 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
                   onClick={() => handlePreview(scene)}
                 >
                   <Eye className="h-3.5 w-3.5 mr-1" />
-                  预览配置
+                  {t('view.previewConfig', { defaultValue: 'Preview config' })}
                 </Button>
                 <Button
                   size="sm"
@@ -1308,11 +1341,11 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
                   disabled={applyingId !== null}
                 >
                   {applyingId === scene.id ? (
-                    <span className="animate-pulse">设置中…</span>
+                    <span className="animate-pulse">{t('view.applying', { defaultValue: 'Applying...' })}</span>
                   ) : (
                     <>
                       <Zap className="h-3.5 w-3.5 mr-1" />
-                      一键设置
+                      {t('view.oneClickSetup', { defaultValue: '一键设置' })}
                     </>
                   )}
                 </Button>
@@ -1323,7 +1356,7 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
 
         {filtered.length === 0 && (
           <div className="rounded-xl border-2 border-indigo-500/20 bg-[#1e293b] p-8 text-center text-muted-foreground text-sm">
-            暂无匹配的场景
+            {t('view.noMatchingScenarios', { defaultValue: '没有匹配的场景' })}
           </div>
         )}
       </div>
@@ -1347,12 +1380,12 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
               ))}
             </div>
             <div className="text-xs text-muted-foreground space-y-1">
-              <p>技能: {previewScene.skillCount} 个</p>
-              <p>定时任务: {previewScene.cronCount} 个</p>
+              <p>{t('view.skillsTitle', { defaultValue: '技能' })}: {previewScene.skillCount}</p>
+              <p>{t('view.cronJobs', { defaultValue: '定时任务' })}: {previewScene.cronCount}</p>
             </div>
             <div className="flex gap-2 mt-4">
               <Button variant="outline" onClick={() => setPreviewScene(null)}>
-                关闭
+                {t('view.close', { defaultValue: 'Close' })}
               </Button>
               <Button
                 className="bg-indigo-500 hover:bg-indigo-600"
@@ -1362,7 +1395,7 @@ function ScenariosTab({ agent, onRefresh }: { agent: AgentSummary; onRefresh?: (
                 }}
                 disabled={applyingId !== null}
               >
-                一键设置
+                {t('view.oneClickSetup', { defaultValue: '一键设置' })}
               </Button>
             </div>
           </div>

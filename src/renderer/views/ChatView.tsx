@@ -5,8 +5,10 @@ import { MarkdownContent } from '../components/chat/MarkdownContent';
 import { TypewriterMarkdown } from '../components/chat/TypewriterMarkdown';
 import { useGatewayStore } from '../stores/gateway';
 import { extractText } from '../pages/Chat/message-utils';
+import { useTranslation } from 'react-i18next';
 
 const ChatView: React.FC = () => {
+  const { t } = useTranslation('views');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -67,12 +69,12 @@ const ChatView: React.FC = () => {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="page-header">
         <div className="page-header-left">
-          <div className="page-title">智能对话 {currentSession ? `- ${currentSession.label || currentSession.displayName || currentSession.key}` : ''}</div>
+          <div className="page-title">Smart Chat {currentSession ? `- ${currentSession.label || currentSession.displayName || currentSession.key}` : ''}</div>
           <div className="page-tags">
-            <span className="page-tag">对话助手</span>
-            <span className="page-tag">智能引擎</span>
+            <span className="page-tag">{t('chatLegacy.assistantTag')}</span>
+            <span className="page-tag">{t('chatLegacy.engineTag')}</span>
             <span className={`page-tag ${gatewayOnline ? '' : 'offline'}`}>
-              {gatewayOnline ? '🟢 Gateway 在线' : '🔴 Gateway 离线'}
+              {gatewayOnline ? '🟢 Gateway online' : '🔴 Gateway Offline'}
             </span>
           </div>
         </div>
@@ -89,7 +91,7 @@ const ChatView: React.FC = () => {
               </option>
             ))}
           </select>
-          <button className="btn-outline" onClick={() => loadSessions()}>🔄 刷新</button>
+          <button className="btn-outline" onClick={() => loadSessions()}>🔄 {t('chatLegacy.refresh')}</button>
         </div>
       </div>
 
@@ -98,9 +100,9 @@ const ChatView: React.FC = () => {
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
-              <p>开始新对话</p>
+              <p>{t('chatLegacy.startNew')}</p>
               <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>
-                {gatewayOnline ? 'Gateway 已连接，可以开始聊天' : '等待 Gateway 连接...'}
+                {gatewayOnline ? 'Gateway connected, you can start chatting' : 'Waiting for Gateway...'}
               </p>
             </div>
           </div>
@@ -133,7 +135,7 @@ const ChatView: React.FC = () => {
                 <div className="msg-body">
                   <div className="msg-meta">
                     <span className="msg-name">Claw</span>
-                    <span className="msg-time">正在输入...</span>
+                    <span className="msg-time">{t('chatLegacy.typing')}</span>
                   </div>
                   <div className="msg-bubble">
                     <TypewriterMarkdown content={streamingText} isStreaming animate />
@@ -152,20 +154,20 @@ const ChatView: React.FC = () => {
             ref={inputRef}
             className="chat-input"
             id="chatInput"
-            placeholder={gatewayOnline ? "在此输入消息..." : "等待 Gateway 连接..."}
+            placeholder={gatewayOnline ? "Type a message..." : "Waiting for Gateway..."}
             rows={1}
             onKeyDown={handleKeyDown}
             disabled={!gatewayOnline || sending}
           />
           <div className="chat-tools">
-            <button className="tool-btn" title="附件">📎</button>
-            <button className="tool-btn" title="拖拽上传">📁</button>
+            <button className="tool-btn" title="Attachment">📎</button>
+            <button className="tool-btn" title="Drag to upload">📁</button>
             <div className="spacer" />
-            <button className="tool-btn" title="增强">✦</button>
+            <button className="tool-btn" title="Enhance">✦</button>
             <button
               className="send-btn"
               id="sendBtn"
-              title="发送"
+              title="Send"
               onClick={handleSend}
               disabled={!gatewayOnline || sending}
             >

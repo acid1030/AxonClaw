@@ -38,7 +38,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSend, disabled }) => {
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="发送消息... (Shift+Enter 换行)"
+        placeholder="Send message... (Shift+Enter for newline)"
         disabled={disabled}
         className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 resize-none outline-none min-h-[24px] max-h-[200px] py-1 disabled:opacity-50"
         rows={1}

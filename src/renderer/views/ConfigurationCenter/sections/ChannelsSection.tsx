@@ -4,6 +4,7 @@
  */
 import React, { useState } from 'react';
 import { Radio, Plus, Settings, Trash2 } from 'lucide-react';
+import i18n from '@/i18n';
 import { ConfigSection, TextField, SelectField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 import { cn } from '@/lib/utils';
@@ -59,7 +60,7 @@ export const ChannelsSection: React.FC<SectionProps> = ({ setField, getField }) 
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="频道列表" icon={Radio} iconColor="text-blue-500" desc="连接消息平台 · Telegram、Discord 等">
+      <ConfigSection title={i18n.t('configCenter.channels.title.list')} icon={Radio} iconColor="text-blue-500" desc={i18n.t('configCenter.channels.desc.list')}>
         <div className="flex flex-wrap gap-3">
           {channelsList.map((ch, idx) => {
             const typeInfo = CHANNEL_TYPES.find((t) => t.value === (ch.type ?? 'telegram'));
@@ -77,11 +78,11 @@ export const ChannelsSection: React.FC<SectionProps> = ({ setField, getField }) 
                   <div className="flex items-center gap-2">
                     <span>{typeInfo?.icon ?? '📡'}</span>
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {(ch.id as string) || typeInfo?.label || '未命名'}
+                      {(ch.id as string) || typeInfo?.label || i18n.t('configCenter.channels.defaults.unnamed')}
                     </span>
                     {isConnected && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-500">
-                        已配置
+                        {i18n.t('configCenter.channels.badges.configured')}
                       </span>
                     )}
                   </div>
@@ -103,13 +104,13 @@ export const ChannelsSection: React.FC<SectionProps> = ({ setField, getField }) 
                 {editingId === (ch.id ?? `${idx}`) && (
                   <div className="p-3 space-y-2 border-t border-slate-100 dark:border-white/[0.04]">
                     <SelectField
-                      label="类型"
+                      label={i18n.t('configCenter.channels.fields.type')}
                       value={String(ch.type ?? 'telegram')}
                       onChange={(v) => updateChannel(idx, 'type', v)}
                       options={CHANNEL_TYPES}
                     />
                     <TextField
-                      label="Bot Token / API Key"
+                      label={i18n.t('configCenter.channels.fields.token')}
                       value={String(ch.token ?? ch.botToken ?? '')}
                       onChange={(v) => {
                         updateChannel(idx, 'token', v);
@@ -118,7 +119,7 @@ export const ChannelsSection: React.FC<SectionProps> = ({ setField, getField }) 
                       placeholder="Bot token…"
                     />
                     <TextField
-                      label="ID（可选）"
+                      label={i18n.t('configCenter.channels.fields.idOptional')}
                       value={String(ch.id ?? '')}
                       onChange={(v) => updateChannel(idx, 'id', v)}
                       placeholder="channel_1"
@@ -139,7 +140,7 @@ export const ChannelsSection: React.FC<SectionProps> = ({ setField, getField }) 
             )}
           >
             <Plus className="h-8 w-8" />
-            <span className="text-sm">添加频道</span>
+            <span className="text-sm">{i18n.t('configCenter.channels.addChannel')}</span>
           </button>
         </div>
       </ConfigSection>

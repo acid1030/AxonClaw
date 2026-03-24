@@ -46,7 +46,7 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components
         const filePath = decodeURIComponent(href.replace(/^file:\/\//, ''));
         await invokeIpc('shell:openPath', filePath);
       } catch (err) {
-        console.error('打开文件失败:', err);
+        console.error('Failed to open file:', err);
       }
     };
     return (
@@ -80,7 +80,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           onClick={copy}
           className="text-[11px] text-[#58a6ff] hover:text-[#79c0ff] bg-transparent border-none cursor-pointer"
         >
-          {copied ? '已复制' : '复制'}
+          {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <SyntaxHighlighter

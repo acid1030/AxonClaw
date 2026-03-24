@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { Message } from '@/services/gateway';
+import { useTranslation } from 'react-i18next';
 
 interface MessageListProps {
   messages: Message[];
@@ -16,6 +17,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   isTyping,
   messagesEndRef,
 }) => {
+  const { t } = useTranslation('views');
   // 格式化时间
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -29,14 +31,14 @@ export const MessageList: React.FC<MessageListProps> = ({
         <div className="text-center max-w-md">
           <div className="text-4xl mb-4">🦾</div>
           <div className="text-xl font-light text-gray-300 mb-2">OpenClaw</div>
-          <div className="text-sm mb-6">基于 Anthropic Claude 的本地 AI 助手</div>
+          <div className="text-sm mb-6">{t('messageList.subtitle')}</div>
           
           {/* 建议卡片 */}
           <div className="grid grid-cols-2 gap-3 text-left">
-            <SuggestionCard icon="🔧" text="帮我调试这段代码" />
-            <SuggestionCard icon="📝" text="写一份技术文档" />
-            <SuggestionCard icon="🔍" text="解释这个概念" />
-            <SuggestionCard icon="⚡" text="优化性能问题" />
+            <SuggestionCard icon="🔧" text="Help me debug this code" />
+            <SuggestionCard icon="📝" text="Write technical documentation" />
+            <SuggestionCard icon="🔍" text="Explain this concept" />
+            <SuggestionCard icon="⚡" text="Optimize performance issues" />
           </div>
         </div>
       </div>
@@ -47,7 +49,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     <div className="flex-1 overflow-y-auto py-4 px-4 scroll-smooth">
       {/* 系统消息 */}
       <div className="text-center text-gray-500 text-xs mb-4">
-        今天 · 智能对话
+        {t('messageList.todayChat')}
       </div>
 
       {/* 消息列表 */}

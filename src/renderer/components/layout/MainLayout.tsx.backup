@@ -10,28 +10,28 @@ import { ChatView } from '@/components/chat/ChatView';
 
 // 导航项
 const navItems = [
-  { id: 'dashboard', icon: '📊', title: '仪表板' },
-  { id: 'chat', icon: '💬', title: '聊天' },
+  { id: 'dashboard', icon: '📊', title: 'Dashboard' },
+  { id: 'chat', icon: '💬', title: 'Chat' },
   { id: 'agents', icon: '🤖', title: 'Agent' },
   { id: 'channels', icon: '📡', title: 'Channel' },
-  { id: 'memory', icon: '🧠', title: '记忆' },
-  { id: 'content', icon: '📝', title: '内容工厂' },
-  { id: 'workflow', icon: '📈', title: '多Agent' },
-  { id: 'skills', icon: '⚡', title: '技能' },
-  { id: 'cron', icon: '⏰', title: '定时任务' },
-  { id: 'diagnostics', icon: '🔧', title: '诊断' },
+  { id: 'memory', icon: '🧠', title: 'Memory' },
+  { id: 'content', icon: '📝', title: 'Content Factory' },
+  { id: 'workflow', icon: '📈', title: 'Multi-Agent' },
+  { id: 'skills', icon: '⚡', title: 'Skills' },
+  { id: 'cron', icon: '⏰', title: 'Scheduled Tasks' },
+  { id: 'diagnostics', icon: '🔧', title: 'Diagnostics' },
 ];
 
 const sidebarItems = [
-  { id: 'dashboard', label: '仪表板' },
-  { id: 'chat', label: '聊天中心' },
-  { id: 'agents', label: 'Agent 管理' },
-  { id: 'channels', label: 'Channel 管理' },
-  { id: 'memory', label: '记忆系统' },
-  { id: 'content', label: '内容工厂' },
-  { id: 'workflow', label: '多 Agent 工作流' },
-  { id: 'skills', label: '技能市场' },
-  { id: 'settings', label: '设置' },
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'chat', label: 'Chat Center' },
+  { id: 'agents', label: 'Agent Management' },
+  { id: 'channels', label: 'Channel Management' },
+  { id: 'memory', label: 'Memory System' },
+  { id: 'content', label: 'Content Factory' },
+  { id: 'workflow', label: 'Multi-Agent Workflow' },
+  { id: 'skills', label: 'Skills Market' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 const MainLayout: React.FC = () => {
@@ -77,7 +77,7 @@ const MainLayout: React.FC = () => {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <div className={`health-dot ${isConnected ? '' : 'error'}`} title={isConnected ? 'Gateway 在线' : 'Gateway 离线'} />
+        <div className={`health-dot ${isConnected ? '' : 'error'}`} title={isConnected ? 'Gateway online' : 'Gateway offline'} />
       </nav>
 
       {/* 左侧：侧边栏 + 收缩按钮 */}
@@ -97,13 +97,13 @@ const MainLayout: React.FC = () => {
           </div>
           <div className="sidebar-section">
             <div className="sidebar-title">快捷入口</div>
-            <div className="sidebar-item" onClick={() => setActiveNav('diagnostics')}>诊断工具</div>
+            <div className="sidebar-item" onClick={() => setActiveNav('diagnostics')}>Diagnostics工具</div>
           </div>
         </aside>
         <button
           className={`collapse-btn sidebar-btn ${sidebarCollapsed ? 'collapsed' : ''}`}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M15 18l-6-6 6-6" />
@@ -121,7 +121,7 @@ const MainLayout: React.FC = () => {
         <button
           className={`collapse-btn panel-btn ${panelCollapsed ? 'collapsed' : ''}`}
           onClick={() => setPanelCollapsed(!panelCollapsed)}
-          title={panelCollapsed ? '展开任务面板' : '收起任务面板'}
+          title={panelCollapsed ? 'Expand task panel' : 'Collapse task panel'}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M9 18l6-6-6-6" />
@@ -135,11 +135,11 @@ const MainLayout: React.FC = () => {
                 <div className="card-title">运行概览</div>
                 <div className="card-subtitle">实时健康</div>
               </div>
-              <span className="badge success">{isConnected ? '在线' : '离线'}</span>
+              <span className="badge success">{isConnected ? 'Online' : 'Offline'}</span>
             </div>
             <div style={{ marginBottom: '12px' }}>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Gateway</div>
-              <div style={{ fontSize: '18px', fontWeight: 600 }}>{isConnected ? '稳定' : '离线'}</div>
+              <div style={{ fontSize: '18px', fontWeight: 600 }}>{isConnected ? 'Stable' : 'Offline'}</div>
             </div>
             <div>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>任务队列</div>
@@ -170,7 +170,7 @@ const MainLayout: React.FC = () => {
               <div className="card-title">快捷操作</div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              <span className="badge" style={{ cursor: 'pointer' }}>运行诊断</span>
+              <span className="badge" style={{ cursor: 'pointer' }}>运行Diagnostics</span>
               <span className="badge" style={{ cursor: 'pointer' }}>新建任务</span>
             </div>
           </div>
