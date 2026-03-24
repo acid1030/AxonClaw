@@ -439,8 +439,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   const diskPct = hostInfo?.diskUsage?.[0]?.usedPct ?? 0;
   const resourceAlerts: string[] = [];
   if (cpuPct > 90) resourceAlerts.push(`CPU ${cpuPct.toFixed(0)}%`);
-  if (memPct > 90) resourceAlerts.push(`内存 ${memPct.toFixed(0)}%`);
-  if (diskPct > 90) resourceAlerts.push(`磁盘 ${diskPct.toFixed(0)}%`);
+  if (memPct > 90) resourceAlerts.push(t('dashboard.resource.memPct', { pct: memPct.toFixed(0) }));
+  if (diskPct > 90) resourceAlerts.push(t('dashboard.resource.diskPct', { pct: diskPct.toFixed(0) }));
   const hasResourceAlert = resourceAlerts.length > 0;
 
   // 今日费用趋势（双线：令牌 + 费用）
@@ -532,7 +532,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           {hasResourceAlert && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>资源告警：{resourceAlerts.join('、')} 超过 90%</span>
+              <span>{t('dashboard.resource.alert', { details: resourceAlerts.join('、') })}</span>
             </div>
           )}
 
@@ -628,7 +628,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                       {isStarting ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          启动中…
+                          {t('dashboard.starting')}
                         </>
                       ) : (
                         t('dashboard.start')
@@ -654,7 +654,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                         onClick={handleShowLogs}
                         className="px-2 py-1 rounded-lg bg-slate-500/10 text-slate-600 dark:text-slate-400 text-xs font-bold hover:bg-slate-500/20 transition-colors"
                       >
-                        日志
+                        {t('dashboard.logs')}
                       </button>
                     </>
                   )}
@@ -723,31 +723,31 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold text-foreground">安全状态</p>
+                      <p className="text-sm font-bold text-foreground">{t('dashboard.security.title')}</p>
                       {secStatus === 'ok' && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-500">
-                          全部通过
+                          {t('dashboard.security.allPassed')}
                         </span>
                       )}
                       {secCritical > 0 && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/10 text-red-500">
-                          {secCritical} 项严重
+                          {t('dashboard.security.critical', { count: secCritical })}
                         </span>
                       )}
                       {secWarn > 0 && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-500/10 text-amber-500">
-                          {secWarn} 项警告
+                          {t('dashboard.security.warn', { count: secWarn })}
                         </span>
                       )}
                     </div>
                     {secTotal > 0 && (
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        共 {secTotal} 项发现
+                        {t('dashboard.security.totalFindings', { count: secTotal })}
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 text-xs font-bold text-primary shrink-0">
-                    <span>查看详情</span>
+                    <span>{t('dashboard.viewDetails')}</span>
                     <ChevronRight className="w-4 h-4" />
                   </div>
                 </div>
@@ -760,7 +760,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             <div className="flex items-center gap-3">
               <Monitor className="w-5 h-5 text-cyan-500" />
               <div>
-                <h3 className="text-sm font-bold text-foreground">宿主机信息</h3>
+                <h3 className="text-sm font-bold text-foreground">{t('dashboard.host.title')}</h3>
                 <p className="text-xs text-muted-foreground font-mono truncate">
                   {hostInfo?.hostname || (loadingHostInfo ? t('dashboard.loading') : '--')}
                 </p>
@@ -790,10 +790,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               borderColor="border-blue-500/40"
             >
               <p className="text-xs text-muted-foreground mt-0.5">
-                {hostInfo?.numCpu ?? 0}核 - {hostInfo?.arch ?? '--'}
+                {t('dashboard.host.coresArch', { cores: hostInfo?.numCpu ?? 0, arch: hostInfo?.arch ?? '--' })}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                协程数: {hostInfo?.coroutineCount ?? 0} - GC: {hostInfo?.processMemory?.gcCount ?? 0}
+                {t('dashboard.host.coroutinesGc', { coroutines: hostInfo?.coroutineCount ?? 0, gc: hostInfo?.processMemory?.gcCount ?? 0 })}
               </p>
             </GaugeCard>
             <GaugeCard
@@ -822,7 +822,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                     {formatBytes(hostInfo.diskUsage[0].used)} / {formatBytes(hostInfo.diskUsage[0].total)}
                   </p>
                   <p className="text-xs text-muted-foreground/70 mt-0.5">
-                    可用: {formatBytes(hostInfo.diskUsage[0].free)} ({hostInfo.diskUsage[0].path})
+                    {t('dashboard.host.diskFree', { free: formatBytes(hostInfo.diskUsage[0].free), path: hostInfo.diskUsage[0].path })}
                   </p>
                   <div className="h-1 bg-[#334155] rounded-full overflow-hidden mt-1">
                     <div
@@ -840,7 +840,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   </div>
                 </>
               ) : (
-                <p className="text-xs text-muted-foreground mt-0.5">暂无数据</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.noData')}</p>
               )}
             </GaugeCard>
           </div>
@@ -864,13 +864,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           <div className="grid grid-cols-3 gap-6 sm:gap-8">
             <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-indigo-400">{hostInfo?.coroutineCount ?? 0}</p>
-              <p className="text-xs text-slate-400 mt-1">协程数</p>
+              <p className="text-xs text-slate-400 mt-1">{t('dashboard.host.coroutines')}</p>
             </div>
             <div className="rounded-xl border-2 border-amber-500/40 bg-[#1e293b] p-4 text-center">
               <p className="text-2xl font-black tabular-nums text-amber-400">
                 {hostInfo?.processUptime != null ? formatUptime(hostInfo.processUptime * 1000) : '--'}
               </p>
-              <p className="text-xs text-slate-400 mt-1">进程运行</p>
+              <p className="text-xs text-slate-400 mt-1">{t('dashboard.host.processUptime')}</p>
             </div>
             <div className={cn(
               'rounded-xl border-2 bg-[#1e293b] p-4 text-center',
@@ -882,7 +882,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               )}>
                 {hostInfo?.gatewayUptime != null ? formatUptime(hostInfo.gatewayUptime * 1000) : (isOnline ? t('dashboard.running') : t('dashboard.zeroHours'))}
               </p>
-              <p className="text-xs text-slate-400 mt-1">服务器运行</p>
+              <p className="text-xs text-slate-400 mt-1">{t('dashboard.host.serverUptime')}</p>
             </div>
           </div>
 
@@ -891,7 +891,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             <div className="rounded-xl border-2 border-violet-500/40 bg-[#1e293b] p-4">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
                 <RefreshCw className="w-3.5 h-3.5 text-violet-500" />
-                进程内存
+                {t('dashboard.processMemory.title')}
               </h3>
               {loadingHostInfo && !hostInfo ? (
                 <div className="space-y-1.5 animate-pulse">
@@ -900,34 +900,34 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 </div>
               ) : hostInfo?.processMemory ? (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                  <span className="text-muted-foreground">堆内存</span>
+                  <span className="text-muted-foreground">{t('dashboard.processMemory.heap')}</span>
                   <span className="font-mono text-blue-400">{formatBytes(hostInfo.processMemory.heapUsed)}</span>
-                  <span className="text-muted-foreground">线程内存</span>
+                  <span className="text-muted-foreground">{t('dashboard.processMemory.stack')}</span>
                   <span className="font-mono text-blue-400">{formatBytes(hostInfo.processMemory.stackMemory ?? 0)}</span>
-                  <span className="text-muted-foreground">系统分配</span>
+                  <span className="text-muted-foreground">{t('dashboard.processMemory.system')}</span>
                   <span className="font-mono text-foreground">{formatBytes(hostInfo.processMemory.rss)}</span>
-                  <span className="text-muted-foreground">GC 次数</span>
+                  <span className="text-muted-foreground">{t('dashboard.processMemory.gcCount')}</span>
                   <span className="font-mono text-emerald-500">{hostInfo.processMemory.gcCount ?? 0}</span>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">暂无数据</p>
+                <p className="text-xs text-muted-foreground">{t('dashboard.noData')}</p>
               )}
             </div>
             <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-4">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
                 <FolderOpen className="w-3.5 h-3.5 text-indigo-500" />
-                环境
+                {t('dashboard.environment.title')}
               </h3>
               {hostInfo?.env ? (
                 <div className="space-y-0.5 text-xs">
-                  <p className="truncate"><span className="text-muted-foreground">用户</span> {hostInfo.env.user}</p>
+                  <p className="truncate"><span className="text-muted-foreground">{t('dashboard.environment.user')}</span> {hostInfo.env.user}</p>
                   <p className="truncate"><span className="text-muted-foreground">Shell</span> {hostInfo.env.shell.split('/').pop() || hostInfo.env.shell}</p>
                   <p className="truncate font-mono" title={hostInfo.env.cwd}>
-                    <span className="text-muted-foreground">工作目录</span> {hostInfo.env.cwd.length > 24 ? '...' + hostInfo.env.cwd.slice(-21) : hostInfo.env.cwd}
+                    <span className="text-muted-foreground">{t('dashboard.environment.cwd')}</span> {hostInfo.env.cwd.length > 24 ? '...' + hostInfo.env.cwd.slice(-21) : hostInfo.env.cwd}
                   </p>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">暂无数据</p>
+                <p className="text-xs text-muted-foreground">{t('dashboard.noData')}</p>
               )}
             </div>
           </div>
@@ -938,18 +938,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-                  系统健康
+                  {t('dashboard.health.title')}
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-500 text-xs font-bold">
-                  健康评分: {computedHealthScore}
+                  {t('dashboard.health.score', { score: computedHealthScore })}
                 </span>
               </div>
               {alertSummary != null && (
                 <div className="flex items-center gap-2 mb-3 flex-wrap flex-shrink-0">
-                  <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-medium">高:{alertSummary.high}</span>
-                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-medium">中:{alertSummary.medium}</span>
+                  <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-medium">{t('dashboard.health.high', { count: alertSummary.high })}</span>
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-medium">{t('dashboard.health.medium', { count: alertSummary.medium })}</span>
                   <span className="text-xs text-muted-foreground">
-                    1小时:{alertSummary.count1h} - 24小时:{alertSummary.count24h}
+                    {t('dashboard.health.window', { count1h: alertSummary.count1h, count24h: alertSummary.count24h })}
                   </span>
                 </div>
               )}
@@ -957,28 +957,28 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
                     <HealthDot ok={isOnline} />
-                    <span className="text-xs text-muted-foreground">网关状态</span>
+                    <span className="text-xs text-muted-foreground">{t('dashboard.health.gatewayStatus')}</span>
                   </div>
                   <p className={cn('text-sm font-semibold', isOnline ? 'text-emerald-500' : 'text-slate-400')}>{isOnline ? t('dashboard.healthy') : t('dashboard.offline')}</p>
                 </div>
                 <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
                     <div className="w-2 h-2 rounded-full bg-blue-500" />
-                    <span className="text-xs text-muted-foreground">频道</span>
+                    <span className="text-xs text-muted-foreground">{t('dashboard.health.channels')}</span>
                   </div>
                   <p className="text-sm font-semibold text-foreground">{activeChannels}/{totalChannels}</p>
                 </div>
                 <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
                     <HealthDot ok={true} />
-                    <span className="text-xs text-muted-foreground">定时任务</span>
+                    <span className="text-xs text-muted-foreground">{t('dashboard.health.cron')}</span>
                   </div>
-                  <p className="text-sm font-semibold text-foreground">{safeCronJobs.length}定时任务</p>
+                  <p className="text-sm font-semibold text-foreground">{t('dashboard.health.cronCount', { count: safeCronJobs.length })}</p>
                 </div>
                 <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
                     <HealthDot ok={true} />
-                    <span className="text-xs text-muted-foreground">代理</span>
+                    <span className="text-xs text-muted-foreground">{t('dashboard.health.agents')}</span>
                   </div>
                   <p className="text-sm font-semibold text-foreground">{safeAgents.length}</p>
                 </div>
@@ -998,20 +998,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                         </span>
                       </span>
                     ))}
-                    <span className="text-xs text-muted-foreground">服务商状态</span>
+                    <span className="text-xs text-muted-foreground">{t('dashboard.providers.status')}</span>
                   </>
                 ) : (
-                  <span className="text-xs text-muted-foreground">服务商状态</span>
+                  <span className="text-xs text-muted-foreground">{t('dashboard.providers.status')}</span>
                 )}
               </div>
               {/* 今日费用 趋势（靠底部，无空白） */}
               <div className="flex-1 min-h-0 flex flex-col justify-end pt-3 border-t border-indigo-500/20">
                 <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">今日费用 趋势</h3>
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t('dashboard.costTrend.title')}</h3>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-1" />令牌</span>
+                    <span><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-1" />{t('dashboard.costTrend.tokens')}</span>
                     <span>-</span>
-                    <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />费用</span>
+                    <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />{t('dashboard.costTrend.cost')}</span>
                   </div>
                 </div>
                 <div ref={trendChartRef} className="flex-shrink-0 w-full min-w-0">
@@ -1029,14 +1029,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               <div className="flex items-center justify-between mb-3 flex-shrink-0">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Bell className="w-3.5 h-3.5 text-orange-500" />
-                  最近异常事件
+                  {t('dashboard.recentIncidents')}
                 </h3>
                 {(alerts.length > 0 || logAbnormal.length > 0) && (
                   <button
                     onClick={() => onNavigateTo?.(alerts.length > 0 ? 'alerts' : 'logs')}
                     className="text-xs text-primary font-bold hover:underline"
                   >
-                    查看全部
+                    {t('dashboard.viewAll')}
                   </button>
                 )}
               </div>
@@ -1048,7 +1048,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                     ...logAbnormal.slice(0, Math.max(0, 5 - alerts.length)),
                   ].slice(0, 5);
                   if (merged.length === 0) {
-                    return <p className="text-xs text-muted-foreground py-4 text-center">暂无告警</p>;
+                    return <p className="text-xs text-muted-foreground py-4 text-center">{t('dashboard.noAlerts')}</p>;
                   }
                   return merged.map((a) => (
                     <div
@@ -1069,11 +1069,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   ));
                 })()}
               </div>
-              {/* 7天 Token（靠面板底部，仅保留合适高度） */}
+              {/* {t('dashboard.sevenDaysToken')}（靠面板底部，仅保留合适高度） */}
               <div className="flex-shrink-0 pt-4 mt-4 border-t border-orange-500/20">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-1.5">
                   <Zap className="w-3.5 h-3.5 text-violet-500" />
-                  7天 Token
+                  {t('dashboard.sevenDaysToken')}
                 </h3>
                 <div className="flex items-baseline gap-4">
                   <span className="text-2xl font-black text-foreground tabular-nums">{fmtTokens(sevenDayTokens) || '--'}</span>
@@ -1087,7 +1087,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           <div className="rounded-xl border-2 border-blue-500/40 bg-[#1e293b] p-4">
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
-              连接实例 ({hostInfo?.connectionsCount ?? 0})
+              {t('dashboard.connections')} ({hostInfo?.connectionsCount ?? 0})
             </h3>
           </div>
 
@@ -1096,14 +1096,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                 <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
-                最近会话
+                {t('dashboard.recentSessions')}
               </h3>
               {sessions.length > 6 && (
                 <button
                   onClick={() => onNavigateTo?.('run')}
                   className="text-xs text-primary font-bold hover:underline"
                 >
-                  查看全部
+                  {t('dashboard.viewAll')}
                 </button>
               )}
             </div>
@@ -1124,7 +1124,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                       {i + 1}
                     </div>
                     <span className="text-xs font-medium text-foreground truncate flex-1">
-                      {session.label || session.sessionKey || `会话 ${i + 1}`}
+                      {session.label || session.sessionKey || t('dashboard.sessionNumber', { num: i + 1 })}
                     </span>
                     {(session.lastActivity || 0) > 0 && (
                       <span className="text-xs text-muted-foreground shrink-0">
@@ -1171,7 +1171,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              系统日志
+              {t('dashboard.systemLogs')}
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 flex flex-col gap-3">
@@ -1184,7 +1184,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 className="rounded-lg"
               >
                 <RefreshCw className={cn('w-4 h-4 mr-1.5', loadingLogs && 'animate-spin')} />
-                刷新
+                {t('common.refresh')}
               </Button>
               <Button
                 variant="outline"
@@ -1193,7 +1193,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 className="rounded-lg"
               >
                 <ExternalLink className="w-4 h-4 mr-1.5" />
-                打开日志目录
+                {t('dashboard.openLogDir')}
               </Button>
             </div>
             <pre className="flex-1 overflow-auto rounded-xl border border-slate-600/30 bg-slate-900/40 p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words max-h-[50vh]">
