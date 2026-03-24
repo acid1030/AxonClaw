@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Router,
   RefreshCw,
@@ -83,166 +84,17 @@ interface GatewayProfile {
 
 const GW_PROFILES_STORAGE = 'axonclaw_gw_profiles_override';
 
-// 翻译文本
-const gw = {
-  profiles: '网关配置',
-  gwListTitle: '网关列表',
-  addGateway: '添加网关',
-  editGateway: '编辑网关',
-  gwName: '名称',
-  gwHost: '主机',
-  gwPort: '端口',
-  gwToken: 'Token',
-  namePlaceholder: '例如 本地网关',
-  hostPlaceholder: '127.0.0.1',
-  tokenPlaceholder: '可选',
-  save: '保存',
-  cancel: '取消',
-  required: '必填',
-  portRange: '端口 1–65535',
-  deleteProfile: '删除',
-  confirmDelete: '确定删除该网关配置？',
-  searchLogs: '搜索日志…',
-  secureSession: '安全加密会话',
-  runtimeProcess: '进程',
-  detecting: '正在检测网关…',
-  loading: '加载中...',
-  noProfiles: '暂无网关配置，点击添加',
-  local: '本地',
-  remote: '远程',
-  localGateway: '本地网关',
-  running: '运行中',
-  stopped: '已停止',
-  inactive: '未激活',
-  status: '状态',
-  start: '启动',
-  stop: '停止',
-  restart: '重启',
-  healthCheck: '看门狗',
-  watchdogAdvanced: '高级参数',
-  watchdogInterval: '检测间隔(秒)',
-  watchdogMaxFails: '最大失败数',
-  watchdogBackoffCap: '退避上限(ms)',
-  watchdogResetDefaults: '重置默认',
-  watchdogApply: '应用',
-  saving: '保存中...',
-  patchOk: '已保存',
-  ok: '成功',
-  failed: '失败',
-  confirmAction: '确认',
-  confirmKill: '强制终止网关进程？',
-  logs: '日志',
-  events: '事件',
-  channels: '通道',
-  service: '服务',
-  debug: '调试',
-  search: '搜索...',
-  clear: '清空',
-  export: '导出',
-  autoFollow: '自动跟随',
-  noLogs: '暂无日志',
-  lines: '行',
-  secure: '安全',
-  copied: '已复制',
-  unitSec: '秒',
-  unitMin: '分钟',
-  unitHr: '小时',
-  unitDay: '天',
-  uptime: '运行时间',
-  mode: '运行模式',
-  wsStatus: '连接状态',
-  wsConnected: '已连接',
-  wsDisconnected: '断开',
-  detail: '详情',
-  refresh: '刷新',
-  diagnose: '诊断',
-  kill: '强制终止',
-  noEvents: '暂无事件',
-  noChannels: '暂无配置通道',
-  channelConnected: '已连接',
-  channelDisconnected: '断开',
-  channelIdle: '空闲',
-  channelDisabled: '已禁用',
-  channelUnknown: '未知',
-  channelLogout: '登出',
-  channelLogoutConfirm: '确定要登出此通道吗？',
-  channelLoggedOut: '已登出',
-  channelLogoutFailed: '登出失败',
-  chBusy: '忙碌',
-  chStuck: '卡住',
-  chRestarting: '重启中',
-  chReconnects: '重连',
-  chLastIn: '入站',
-  chLastOut: '出站',
-  chStuckCount: '个通道卡住',
-  chDisconnectedCount: '个通道断开',
-  eventSource: '来源',
-  eventCategory: '类别',
-  eventRisk: '风险',
-  details: '详情',
-  openRelated: '打开相关',
-  exportEvents: '导出事件',
-  totalEvents: '条',
-  prev: '上一页',
-  next: '下一页',
-  presetFilterApplied: '已应用筛选',
-  clearFilter: '清除筛选',
-  riskAll: '全部',
-  riskLow: '低',
-  riskMedium: '中',
-  riskHigh: '高',
-  riskCritical: '严重',
-  typeAll: '全部',
-  typeActivity: '活动',
-  typeAlert: '警报',
-  rpc: 'RPC 调试',
-  rpcMethod: '方法名',
-  rpcParams: '参数 (JSON)',
-  rpcCall: '调用',
-  rpcError: '错误',
-  rpcResult: '结果',
-  rpcPresets: '预设',
-  rpcRecent: '最近',
-  systemEvent: '系统事件',
-  systemEventDesc: '发送自定义系统事件到网关',
-  systemEventPlaceholder: '事件名称',
-  systemEventSend: '发送',
-  systemEventOk: '事件已发送',
-  systemEventFailed: '发送失败',
-  snapshots: '快照',
-  gwHealth: '健康状态',
-  serviceProcessInfo: '进程信息',
-  runtimeMode: '运行模式',
-  serviceDetail: '详情',
-  serviceNotRunning: '网关未运行',
-  serviceTitle: '系统服务',
-  serviceDesc: '将网关作为系统服务运行，开机自启动',
-  daemonRemoteHint: '远程网关已作为服务运行。',
-  daemonAlreadyManaged: '已由系统服务管理',
-  serviceCopied: '已复制',
-  hbHealthy: '健康',
-  hbUnhealthy: '不健康',
-  hbProbing: '探测中',
-  wsDisconnectedHint: 'WebSocket 数据通道未建立，请检查 token、防火墙和代理设置。',
-  runtimeBare: 'Bare',
-  runtimeSystemd: 'Systemd',
-  runtimeDocker: 'Docker',
-  runtimeElectron: 'Electron',
-  version: '版本',
-  connections: '连接数',
-};
-
 const na = '—';
 
 // 格式化运行时间
 function fmtUptime(sec: number): string {
-  if (sec < 60) return `${sec}${gw.unitSec}`;
+  if (sec < 60) return `${sec}${t('gw.unitSec')}`;
   const m = Math.floor(sec / 60);
-  if (m < 60) return `${m}${gw.unitMin}`;
+  if (m < 60) return `${m}${t('gw.unitMin')}`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}${gw.unitHr} ${m % 60}${gw.unitMin}`;
+  if (h < 24) return `${h}${t('gw.unitHr')} ${m % 60}${t('gw.unitMin')}`;
   const d = Math.floor(h / 24);
-  return `${d}${gw.unitDay} ${h % 24}${gw.unitHr}`;
+  return `${d}${t('gw.unitDay')} ${h % 24}${t('gw.unitHr')}`;
 }
 
 // 判断是否本地网关
@@ -270,6 +122,7 @@ function useConfirm() {
 }
 
 export const GatewayMonitoringView: React.FC = () => {
+  const { t } = useTranslation();
   const gatewayStatus = useGatewayStore((s) => s.status);
   const { toast } = useToast();
   const { confirm } = useConfirm();
@@ -432,7 +285,7 @@ export const GatewayMonitoringView: React.FC = () => {
     try {
       const data = await hostApiFetch<GatewayProfile[]>('/api/gateway/profiles');
       let list = Array.isArray(data) && data.length > 0 ? data : [
-        { id: 1, name: '本地网关', host: '127.0.0.1', port: 18789, token: '', is_active: true },
+        { id: 1, name: t('gw.localGateway'), host: '127.0.0.1', port: 18789, token: '', is_active: true },
       ];
       try {
         const raw = localStorage.getItem(GW_PROFILES_STORAGE);
@@ -445,7 +298,7 @@ export const GatewayMonitoringView: React.FC = () => {
       }
       setProfiles(list);
     } catch {
-      setProfiles([{ id: 1, name: '本地网关', host: '127.0.0.1', port: 18789, token: '', is_active: true }]);
+      setProfiles([{ id: 1, name: t('gw.localGateway'), host: '127.0.0.1', port: 18789, token: '', is_active: true }]);
     } finally {
       setProfilesLoading(false);
     }
@@ -458,9 +311,9 @@ export const GatewayMonitoringView: React.FC = () => {
 
   const validateProfileForm = useCallback(() => {
     const errs: Record<string, string> = {};
-    if (!formData.name.trim()) errs.name = gw.required;
-    if (!formData.host.trim()) errs.host = gw.required;
-    if (formData.port < 1 || formData.port > 65535) errs.port = gw.portRange;
+    if (!formData.name.trim()) errs.name = t('gw.required');
+    if (!formData.host.trim()) errs.host = t('gw.required');
+    if (formData.port < 1 || formData.port > 65535) errs.port = t('gw.portRange');
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   }, [formData]);
@@ -494,7 +347,7 @@ export const GatewayMonitoringView: React.FC = () => {
       setEditingProfile(null);
       setFormData({ name: '', host: '127.0.0.1', port: 18789, token: '' });
       setFormErrors({});
-      toast('success', gw.patchOk);
+      toast('success', t('gw.patchOk'));
     } finally {
       setSavingProfile(false);
     }
@@ -510,10 +363,10 @@ export const GatewayMonitoringView: React.FC = () => {
 
   const handleDeleteProfile = useCallback(
     async (id: number) => {
-      if (!(await confirm({ title: gw.deleteProfile, message: gw.confirmDelete, danger: true }))) return;
+      if (!(await confirm({ title: t('gw.deleteProfile'), message: t('gw.confirmDelete'), danger: true }))) return;
       const next = profiles.filter((p) => p.id !== id);
       if (next.length === 0) {
-        toast('error', '至少保留一个网关');
+        toast('error', t('gw.keepOneGateway'));
         return;
       }
       if (!next.some((p) => p.is_active)) next[0] = { ...next[0], is_active: true };
@@ -694,7 +547,7 @@ export const GatewayMonitoringView: React.FC = () => {
     if (action === 'stop' || action === 'restart' || action === 'kill') {
       const ok = await confirm({
         title: gw[action],
-        message: action === 'kill' ? gw.confirmKill : `${gw.confirmAction} ${gw[action]}?`,
+        message: action === 'kill' ? t('gw.confirmKill') : `${t('gw.confirmAction')} ${gw[action]}?`,
         danger: action === 'kill',
       });
       if (!ok) return;
@@ -702,14 +555,14 @@ export const GatewayMonitoringView: React.FC = () => {
     setActionLoading(action);
     try {
       await hostApiFetch(`/api/gateway/${action}`, { method: 'POST' });
-      toast('success', `${gw[action]} ${gw.ok}`);
+      toast('success', `${gw[action]} ${t('gw.ok')}`);
       setTimeout(() => {
         fetchStatus();
         fetchHealthCheck();
         fetchChannels();
       }, 1000);
     } catch (err: any) {
-      toast('error', `${gw[action]} ${gw.failed}: ${err?.message || ''}`);
+      toast('error', `${gw[action]} ${t('gw.failed')}: ${err?.message || ''}`);
     } finally {
       setTimeout(() => setActionLoading(null), 1500);
     }
@@ -728,7 +581,7 @@ export const GatewayMonitoringView: React.FC = () => {
         }),
       });
       setHealthCheckEnabled(!healthCheckEnabled);
-      toast('success', gw.patchOk);
+      toast('success', t('gw.patchOk'));
     } catch (err: any) {
       toast('error', err?.message || '');
     }
@@ -747,7 +600,7 @@ export const GatewayMonitoringView: React.FC = () => {
           reconnect_backoff_cap_ms: parseInt(watchdogBackoffCapMs, 10) || 30000,
         }),
       });
-      toast('success', gw.patchOk);
+      toast('success', t('gw.patchOk'));
     } catch (err: any) {
       toast('error', err?.message || '');
     } finally {
@@ -758,7 +611,7 @@ export const GatewayMonitoringView: React.FC = () => {
   // 复制日志
   const copyLogLine = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
-    toast('success', gw.copied);
+    toast('success', t('gw.copied'));
   }, [toast]);
 
   // 清空日志
@@ -827,28 +680,28 @@ export const GatewayMonitoringView: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({ event: sysEventText.trim() }),
       });
-      setSysEventResult({ ok: true, text: gw.systemEventOk });
+      setSysEventResult({ ok: true, text: t('gw.systemEventOk') });
       setSysEventText('');
       setTimeout(() => setSysEventResult(null), 3000);
     } catch (err: any) {
-      setSysEventResult({ ok: false, text: gw.systemEventFailed + ': ' + (err?.message || '') });
+      setSysEventResult({ ok: false, text: t('gw.systemEventFailed') + ': ' + (err?.message || '') });
     }
     setSysEventSending(false);
   }, [sysEventText, sysEventSending]);
 
   // 通道登出
   const handleChannelLogout = useCallback(async (channel: string) => {
-    if (!window.confirm(`${gw.channelLogoutConfirm}`)) return;
+    if (!window.confirm(`${t('gw.channelLogoutConfirm')}`)) return;
     setChannelLogoutLoading(channel);
     try {
       await hostApiFetch('/api/gateway/channels/logout', {
         method: 'POST',
         body: JSON.stringify({ channel }),
       });
-      toast('success', gw.channelLoggedOut);
+      toast('success', t('gw.channelLoggedOut'));
       fetchChannels();
     } catch {
-      toast('error', gw.channelLogoutFailed);
+      toast('error', t('gw.channelLogoutFailed'));
     } finally {
       setChannelLogoutLoading(null);
     }
@@ -916,22 +769,22 @@ export const GatewayMonitoringView: React.FC = () => {
       <Dialog open={showProfilePanel} onOpenChange={setShowProfilePanel}>
         <DialogContent className="sm:max-w-md bg-[#1e293b] border-white/10 text-white">
           <DialogHeader>
-            <DialogTitle>{editingProfile ? gw.editGateway : gw.addGateway}</DialogTitle>
+            <DialogTitle>{editingProfile ? t('gw.editGateway') : t('gw.addGateway')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <label className="text-[10px] text-white/50 block mb-1">{gw.gwName}</label>
+              <label className="text-[10px] text-white/50 block mb-1">{t('gw.gwName')}</label>
               <input
                 value={formData.name}
                 onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                placeholder={gw.namePlaceholder}
+                placeholder={t('gw.namePlaceholder')}
                 className="w-full h-9 px-3 rounded-lg bg-black/20 border border-white/10 text-sm text-white"
               />
               {formErrors.name && <p className="text-[10px] text-red-400 mt-0.5">{formErrors.name}</p>}
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <label className="text-[10px] text-white/50 block mb-1">{gw.gwHost}</label>
+                <label className="text-[10px] text-white/50 block mb-1">{t('gw.gwHost')}</label>
                 <input
                   value={formData.host}
                   onChange={(e) =>
@@ -940,13 +793,13 @@ export const GatewayMonitoringView: React.FC = () => {
                       host: e.target.value.replace(/^https?:\/\//i, '').replace(/\/+$/, ''),
                     }))
                   }
-                  placeholder={gw.hostPlaceholder}
+                  placeholder={t('gw.hostPlaceholder')}
                   className="w-full h-9 px-3 rounded-lg bg-black/20 border border-white/10 text-sm font-mono text-white"
                 />
                 {formErrors.host && <p className="text-[10px] text-red-400 mt-0.5">{formErrors.host}</p>}
               </div>
               <div>
-                <label className="text-[10px] text-white/50 block mb-1">{gw.gwPort}</label>
+                <label className="text-[10px] text-white/50 block mb-1">{t('gw.gwPort')}</label>
                 <input
                   type="number"
                   value={formData.port}
@@ -962,22 +815,22 @@ export const GatewayMonitoringView: React.FC = () => {
               </div>
             </div>
             <div>
-              <label className="text-[10px] text-white/50 block mb-1">{gw.gwToken}</label>
+              <label className="text-[10px] text-white/50 block mb-1">{t('gw.gwToken')}</label>
               <input
                 type="password"
                 value={formData.token}
                 onChange={(e) => setFormData((f) => ({ ...f, token: e.target.value }))}
-                placeholder={gw.tokenPlaceholder}
+                placeholder={t('gw.tokenPlaceholder')}
                 className="w-full h-9 px-3 rounded-lg bg-black/20 border border-white/10 text-sm font-mono text-white"
               />
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="ghost" className="text-white/70" onClick={() => setShowProfilePanel(false)}>
-              {gw.cancel}
+              {t('gw.cancel')}
             </Button>
             <Button onClick={() => void handleSaveProfile()} disabled={savingProfile}>
-              {savingProfile ? '…' : gw.save}
+              {savingProfile ? t('gw.saving') : t('gw.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -985,11 +838,11 @@ export const GatewayMonitoringView: React.FC = () => {
 
       <div className="w-full shrink-0 flex flex-col px-4 py-3 space-y-3 border-b border-white/5">
         <PageHeader
-          title="网关监控"
-          subtitle="日志、事件、渠道、服务、调试"
+          title={t('gw.monitorTitle')}
+          subtitle={t('gw.monitorSubtitle')}
           stats={[
-            { label: '状态', value: isOnline ? gw.running : gw.stopped },
-            { label: 'WS', value: status?.ws_connected ? gw.wsConnected : gw.wsDisconnected },
+            { label: t('gw.status'), value: isOnline ? t('gw.running') : t('gw.stopped') },
+            { label: t('gw.wsStatus'), value: status?.ws_connected ? t('gw.wsConnected') : t('gw.wsDisconnected') },
           ]}
           onRefresh={() => {
             fetchStatus();
@@ -1009,14 +862,14 @@ export const GatewayMonitoringView: React.FC = () => {
               className="gap-1 shrink-0 border-2 border-primary/50 bg-primary/15 text-primary hover:bg-primary/25 hover:text-primary"
             >
               <Plus className="w-4 h-4 shrink-0" />
-              <span className="whitespace-nowrap">{gw.addGateway}</span>
+              <span className="whitespace-nowrap">{t('gw.addGateway')}</span>
             </Button>
           }
         />
 
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
           <div className="flex items-center justify-between gap-2 mb-2">
-            <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest shrink-0">{gw.gwListTitle}</h3>
+            <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest shrink-0">{t('gw.gwListTitle')}</h3>
             <Button
               type="button"
               variant="outline"
@@ -1025,13 +878,13 @@ export const GatewayMonitoringView: React.FC = () => {
               className="gap-1 h-8 shrink-0 border-primary/40 text-primary bg-primary/10 hover:bg-primary/20"
             >
               <Plus className="w-3.5 h-3.5" />
-              {gw.addGateway}
+              {t('gw.addGateway')}
             </Button>
           </div>
           {profilesLoading && profiles.length === 0 ? (
             <div className="py-6 flex items-center justify-center gap-2 text-white/40 text-xs">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              {gw.loading}
+              {t('gw.loading')}
             </div>
           ) : profiles.length === 0 ? (
             <button
@@ -1039,7 +892,7 @@ export const GatewayMonitoringView: React.FC = () => {
               onClick={openAddForm}
               className="w-full py-6 border-2 border-dashed border-white/10 rounded-xl text-white/40 text-xs hover:border-primary/40 hover:text-primary/80"
             >
-              {gw.noProfiles}
+              {t('gw.noProfiles')}
             </button>
           ) : (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -1071,7 +924,7 @@ export const GatewayMonitoringView: React.FC = () => {
                           p.is_active && isOnline ? 'text-emerald-400' : p.is_active ? 'text-amber-400' : 'text-white/40',
                         )}
                       >
-                        {p.is_active ? (isOnline ? gw.running : gw.stopped) : gw.inactive}
+                        {p.is_active ? (isOnline ? t('gw.running') : t('gw.stopped')) : t('gw.inactive')}
                       </span>
                       {p.is_active && isOnline && (
                         <span
@@ -1097,16 +950,16 @@ export const GatewayMonitoringView: React.FC = () => {
                           isLocal(p.host) ? 'bg-blue-500/15 text-blue-400' : 'bg-violet-500/15 text-violet-400',
                         )}
                       >
-                        {isLocal(p.host) ? gw.local : gw.remote}
+                        {isLocal(p.host) ? t('gw.local') : t('gw.remote')}
                       </span>
                       {p.is_active && isOnline && status?.runtime && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-white/45">{gw.runtimeProcess}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-white/45">{t('gw.runtimeProcess')}</span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <h4 className="text-xs font-bold text-white truncate">
-                      {isLocal(p.host) && (p.name === '本地网关' || p.name === 'Local Gateway') ? gw.localGateway : p.name}
+                      {isLocal(p.host) && (p.name === t('gw.localGateway') || p.name === 'Local Gateway') ? t('gw.localGateway') : p.name}
                     </h4>
                     {p.is_active && isOnline && uptimeDisplay !== na && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold shrink-0">
@@ -1152,9 +1005,9 @@ export const GatewayMonitoringView: React.FC = () => {
         <div className="rounded-xl border-2 p-3 mb-4 shrink-0 bg-amber-500/5" style={{ borderColor: 'rgba(245, 158, 11, 0.3)' }}>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <span className="text-[11px] font-bold text-amber-400">{gw.wsDisconnected}</span>
+            <span className="text-[11px] font-bold text-amber-400">{t('gw.wsDisconnected')}</span>
           </div>
-          <p className="text-[10px] text-white/50 mt-1 ml-6 leading-relaxed">{gw.wsDisconnectedHint}</p>
+          <p className="text-[10px] text-white/50 mt-1 ml-6 leading-relaxed">{t('gw.wsDisconnectedHint')}</p>
           {status?.ws_error && (
             <p className="text-[10px] text-red-400/80 mt-1 ml-6 font-mono break-all">{status.ws_error}</p>
           )}
@@ -1182,16 +1035,16 @@ export const GatewayMonitoringView: React.FC = () => {
                 <h2 className="text-lg font-bold text-white">
                   {activeProfile
                     ? isLocal(activeProfile.host) &&
-                      (activeProfile.name === '本地网关' || activeProfile.name === 'Local Gateway')
-                      ? gw.localGateway
+                      (activeProfile.name === t('gw.localGateway') || activeProfile.name === 'Local Gateway')
+                      ? t('gw.localGateway')
                       : activeProfile.name
-                    : gw.localGateway}
+                    : t('gw.localGateway')}
                 </h2>
                 <span className={cn(
                   'text-[11px] font-bold px-2 py-0.5 rounded-full',
                   isOnline ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
                 )}>
-                  {isOnline ? gw.running : gw.stopped}
+                  {isOnline ? t('gw.running') : t('gw.stopped')}
                 </span>
               </div>
               
@@ -1199,14 +1052,14 @@ export const GatewayMonitoringView: React.FC = () => {
                 {/* 运行时间 */}
                 <div className="flex items-center gap-1.5">
                   <Timer className="w-3.5 h-3.5" />
-                  <span>{gw.uptime}: <span className="text-white/80 font-mono">{uptimeDisplay}</span></span>
+                  <span>{t('gw.uptime')}: <span className="text-white/80 font-mono">{uptimeDisplay}</span></span>
                 </div>
                 
                 {/* 运行模式 */}
                 {status?.runtime && (
                   <div className="flex items-center gap-1.5">
                     <Gauge className="w-3.5 h-3.5" />
-                    <span>{gw.mode}: <span className="text-white/80">{status.runtime}</span></span>
+                    <span>{t('gw.mode')}: <span className="text-white/80">{status.runtime}</span></span>
                   </div>
                 )}
                 
@@ -1217,7 +1070,7 @@ export const GatewayMonitoringView: React.FC = () => {
                   ) : (
                     <WifiOff className="w-3.5 h-3.5 text-red-400" />
                   )}
-                  <span>{status?.ws_connected ? gw.wsConnected : gw.wsDisconnected}</span>
+                  <span>{status?.ws_connected ? t('gw.wsConnected') : t('gw.wsDisconnected')}</span>
                 </div>
 
                 {/* 看门狗探测状态 */}
@@ -1236,10 +1089,10 @@ export const GatewayMonitoringView: React.FC = () => {
                       healthStatus?.fail_count && healthStatus.fail_count > 0 ? 'text-red-400' : 'text-emerald-400'
                     )} />
                     {!healthStatus?.last_ok
-                      ? gw.hbProbing
+                      ? t('gw.hbProbing')
                       : healthStatus?.fail_count && healthStatus.fail_count > 0
-                        ? `${gw.hbUnhealthy} (${healthStatus.fail_count})`
-                        : gw.hbHealthy}
+                        ? `${t('gw.hbUnhealthy')} (${healthStatus.fail_count})`
+                        : t('gw.hbHealthy')}
                   </div>
                 )}
               </div>
@@ -1257,7 +1110,7 @@ export const GatewayMonitoringView: React.FC = () => {
               className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25"
             >
               {actionLoading === 'start' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              <span className="ml-1.5">{gw.start}</span>
+              <span className="ml-1.5">{t('gw.start')}</span>
             </Button>
             )}
             {(!activeProfile || isLocal(activeProfile.host)) && (
@@ -1269,7 +1122,7 @@ export const GatewayMonitoringView: React.FC = () => {
               className="bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25"
             >
               {actionLoading === 'stop' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
-              <span className="ml-1.5">{gw.stop}</span>
+              <span className="ml-1.5">{t('gw.stop')}</span>
             </Button>
             )}
             
@@ -1280,7 +1133,7 @@ export const GatewayMonitoringView: React.FC = () => {
               disabled={!!actionLoading}
             >
               {actionLoading === 'restart' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-              <span className="ml-1.5">{gw.restart}</span>
+              <span className="ml-1.5">{t('gw.restart')}</span>
             </Button>
 
             <div className="w-px h-6 bg-white/10 mx-1" />
@@ -1295,7 +1148,7 @@ export const GatewayMonitoringView: React.FC = () => {
               )}
             >
               <Heart className={cn('w-4 h-4', healthCheckEnabled && 'animate-pulse')} />
-              <span className="ml-1.5">{gw.healthCheck}</span>
+              <span className="ml-1.5">{t('gw.healthCheck')}</span>
             </Button>
 
             {/* 看门狗高级设置 */}
@@ -1309,7 +1162,7 @@ export const GatewayMonitoringView: React.FC = () => {
               )}
             >
               <Settings2 className="w-4 h-4" />
-              <span className="hidden sm:inline">{gw.watchdogAdvanced}</span>
+              <span className="hidden sm:inline">{t('gw.watchdogAdvanced')}</span>
             </Button>
           </div>
         </div>
@@ -1319,7 +1172,7 @@ export const GatewayMonitoringView: React.FC = () => {
           <div className="mt-3 p-3 rounded-lg border border-white/10 bg-white/[0.02]">
             <div className="grid grid-cols-3 gap-3">
               <label className="text-[10px] text-white/50">
-                {gw.watchdogInterval}
+                {t('gw.watchdogInterval')}
                 <input
                   type="number"
                   value={watchdogIntervalSec}
@@ -1330,7 +1183,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 />
               </label>
               <label className="text-[10px] text-white/50">
-                {gw.watchdogMaxFails}
+                {t('gw.watchdogMaxFails')}
                 <input
                   type="number"
                   value={watchdogMaxFails}
@@ -1341,7 +1194,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 />
               </label>
               <label className="text-[10px] text-white/50">
-                {gw.watchdogBackoffCap}
+                {t('gw.watchdogBackoffCap')}
                 <input
                   type="number"
                   value={watchdogBackoffCapMs}
@@ -1364,7 +1217,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 }}
                 className="text-white/50"
               >
-                {gw.watchdogResetDefaults}
+                {t('gw.watchdogResetDefaults')}
               </Button>
               <Button
                 variant="default"
@@ -1372,7 +1225,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 onClick={saveWatchdogAdvanced}
                 disabled={watchdogSaving}
               >
-                {watchdogSaving ? '...' : gw.watchdogApply}
+                {watchdogSaving ? '...' : t('gw.watchdogApply')}
               </Button>
             </div>
           </div>
@@ -1394,11 +1247,11 @@ export const GatewayMonitoringView: React.FC = () => {
               debug: <Bug className="w-3.5 h-3.5" />,
             };
             const labels: Record<string, string> = {
-              logs: gw.logs,
-              events: gw.events,
-              channels: gw.channels,
-              service: gw.service,
-              debug: gw.debug,
+              logs: t('gw.logs'),
+              events: t('gw.events'),
+              channels: t('gw.channels'),
+              service: t('gw.service'),
+              debug: t('gw.debug'),
             };
             return (
               <button
@@ -1429,7 +1282,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 <input
                   value={logSearch}
                   onChange={(e) => setLogSearch(e.target.value)}
-                  placeholder={gw.searchLogs}
+                  placeholder={t('gw.searchLogs')}
                   className="w-full h-7 pl-8 pr-2 bg-white/5 border border-white/5 rounded-lg text-[11px] text-white placeholder:text-white/20 focus:ring-1 focus:ring-primary/50 outline-none"
                 />
               </div>
@@ -1468,16 +1321,16 @@ export const GatewayMonitoringView: React.FC = () => {
                   );
                 })}
               </div>
-              <button onClick={handleClearLogs} className="p-1.5 text-white/30 hover:text-white transition-colors" title={gw.clear}>
+              <button onClick={handleClearLogs} className="p-1.5 text-white/30 hover:text-white transition-colors" title={t('gw.clear')}>
                 <Trash2 className="w-4 h-4" />
               </button>
-              <button onClick={exportLogs} className="p-1.5 text-white/30 hover:text-white transition-colors" title={gw.export}>
+              <button onClick={exportLogs} className="p-1.5 text-white/30 hover:text-white transition-colors" title={t('gw.export')}>
                 <Download className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setAutoFollow(!autoFollow)}
                 className={cn('p-1.5 rounded transition-all', autoFollow ? 'text-primary' : 'text-white/30')}
-                title={gw.autoFollow}
+                title={t('gw.autoFollow')}
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -1493,7 +1346,7 @@ export const GatewayMonitoringView: React.FC = () => {
                 {filteredLogs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-white/15">
                     <Terminal className="w-8 h-8 mb-2" />
-                    <span className="text-[10px]">{gw.noLogs}</span>
+                    <span className="text-[10px]">{t('gw.noLogs')}</span>
                   </div>
                 ) : (
                   renderedLogs.map(({ line: log, parsed }, idx) => {
@@ -1575,7 +1428,7 @@ export const GatewayMonitoringView: React.FC = () => {
               </div>
               <div className="h-7 bg-black/40 px-4 flex items-center justify-between text-[11px] text-white/30 font-bold uppercase shrink-0">
                 <div className="flex items-center gap-4">
-                  <span>{filteredLogs.length} {gw.lines}</span>
+                  <span>{filteredLogs.length} {t('gw.lines')}</span>
                   {omittedLogCount > 0 && <span>+{omittedLogCount}</span>}
                   {logStats.errors > 0 && <span className="text-red-400">{logStats.errors} ERR</span>}
                   {logStats.warns > 0 && <span className="text-yellow-400">{logStats.warns} WARN</span>}
@@ -1588,7 +1441,7 @@ export const GatewayMonitoringView: React.FC = () => {
                   )}
                   <div className="flex items-center gap-1">
                     <Info className="w-3 h-3" />
-                    <span>{gw.secureSession}</span>
+                    <span>{t('gw.secureSession')}</span>
                   </div>
                 </div>
               </div>
@@ -1639,7 +1492,7 @@ export const GatewayMonitoringView: React.FC = () => {
               gw={gw}
               onCopy={(text) => {
                 navigator.clipboard.writeText(text);
-                toast('success', gw.serviceCopied);
+                toast('success', t('gw.serviceCopied'));
               }}
               toast={toast}
               remote={activeProfile ? !isLocal(activeProfile.host) : false}
