@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageSquare, Plus, RefreshCw } from 'lucide-react';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -18,6 +19,7 @@ interface SessionsViewProps {
 }
 
 const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) => {
+  const { t, i18n } = useTranslation();
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
@@ -49,7 +51,7 @@ const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) =
     onNavigateTo?.('chat');
   };
 
-  const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  const timeFormatter = new Intl.DateTimeFormat(i18n.language === 'zh' ? 'zh-CN' : i18n.language, {
     hour: '2-digit',
     minute: '2-digit',
     month: 'numeric',
@@ -71,24 +73,24 @@ const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) =
     >
       <div className="w-full flex flex-col h-full py-6">
         <PageHeader
-          title="会话管理"
-          subtitle="查看和管理所有会话，点击打开进入对话"
+          title={t('sessions.title')}
+          subtitle={t('sessions.subtitle')}
           stats={[
-            { label: '会话数', value: sessions.length },
-            { label: 'Gateway', value: isOnline ? '在线' : '离线' },
+            { label: t('sessions.count'), value: sessions.length },
+            { label: 'Gateway', value: isOnline ? t('sessions.gatewayOnline') : t('sessions.gatewayOffline') },
           ]}
           onRefresh={refresh}
           refreshing={false}
           statsBorderColor="border-indigo-500/40"
           actions={
             <button
-              aria-label="新会话"
+              aria-label={t('sessions.newSession')}
               onClick={handleNewSession}
               disabled={!isOnline}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/20 border-2 border-indigo-500/40 text-foreground/80 text-sm font-medium hover:bg-indigo-500/30 transition-colors disabled:opacity-40"
             >
               <Plus className="w-4 h-4" />
-              新会话
+              {t('sessions.newSession')}
             </button>
           }
         />
@@ -96,18 +98,18 @@ const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) =
         <div className="flex-1 overflow-y-auto min-h-0">
           {!isOnline ? (
             <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 text-center">
-              <p className="text-muted-foreground text-sm">请先启动 Gateway 以加载会话</p>
-              <p className="text-muted-foreground/70 text-xs mt-1">点击上方「启动 Gateway」按钮</p>
+              <p className="text-muted-foreground text-sm">{t('sessions.gatewayRequired')}</p>
+              <p className="text-muted-foreground/70 text-xs mt-1">{t('sessions.clickStartGateway')}</p>
             </div>
           ) : sortedSessions.length === 0 ? (
             <div className="rounded-xl border-2 border-indigo-500/40 bg-[#1e293b] p-8 flex flex-col items-center justify-center">
               <MessageSquare className="w-10 h-10 text-muted-foreground/50 mb-3" />
-              <p className="text-muted-foreground text-sm">暂无会话</p>
+              <p className="text-muted-foreground text-sm">{t('sessions.noSessions')}</p>
               <button
                 onClick={handleNewSession}
                 className="mt-3 px-4 py-2 rounded-xl bg-primary/15 text-primary hover:bg-primary/25 transition-colors text-sm font-medium"
               >
-                新建会话
+                {t('sessions.createSession')}
               </button>
             </div>
           ) : (
@@ -149,7 +151,7 @@ const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) =
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium text-foreground truncate">
-                          {label || '未命名会话'}
+                          {label || t('sessions.unnamed')}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {lastAt
@@ -165,7 +167,7 @@ const SessionsView: React.FC<SessionsViewProps> = ({ onNavigateTo, embedded }) =
                       }}
                       className="ml-3 px-3 py-1.5 rounded-lg bg-[#334155] text-foreground/80 text-xs font-medium hover:bg-[#475569] transition-colors shrink-0"
                     >
-                      打开
+                      {t('sessions.open')}
                     </button>
                   </div>
                 );
