@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import {
   RefreshCw,
   CheckCircle2,
@@ -131,13 +132,13 @@ function filterTrendByRange(trend: OverviewPoint[], range: TimeRange): OverviewP
   return trend.filter((p) => new Date(p.timestamp).getTime() >= now - ms);
 }
 
-function fmtRelativeTime(ts: string | undefined): string {
+function fmtRelativeTime(ts: string | undefined, t: (k: string, o?: any) => string, locale: string): string {
   if (!ts) return '—';
   const diff = Date.now() - new Date(ts).getTime();
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
-  return new Date(ts).toLocaleString('zh-CN');
+  if (diff < 60_000) return t('diagnostics.justNow');
+  if (diff < 3600_000) return t('diagnostics.minutesAgo', { count: Math.floor(diff / 60_000) });
+  if (diff < 86400_000) return t('diagnostics.hoursAgo', { count: Math.floor(diff / 3600_000) });
+  return new Date(ts).toLocaleString(locale === 'zh' ? 'zh-CN' : locale);
 }
 
 function detectSummarySourceKey(source?: string, category?: string): string {
@@ -153,14 +154,14 @@ function detectSummarySourceKey(source?: string, category?: string): string {
 }
 
 const SOURCE_META: Record<string, { label: string; color: string }> = {
-  security: { label: '安全审计', color: '#6366f1' },
-  alert: { label: '告警', color: '#ef4444' },
-  gateway: { label: '网关', color: '#10b981' },
-  cron: { label: '定时', color: '#06b6d4' },
-  chat: { label: '会话', color: '#3b82f6' },
-  tool: { label: '工具', color: '#8b5cf6' },
-  doctor: { label: '诊断', color: '#f59e0b' },
-  system: { label: '系统', color: '#64748b' },
+  security: { label: 'diagnostics.source.security', color: '#6366f1' },
+  alert: { label: 'diagnostics.source.alert', color: '#ef4444' },
+  gateway: { label: 'diagnostics.source.gateway', color: '#10b981' },
+  cron: { label: 'diagnostics.source.cron', color: '#06b6d4' },
+  chat: { label: 'diagnostics.source.chat', color: '#3b82f6' },
+  tool: { label: 'diagnostics.source.tool', color: '#8b5cf6' },
+  doctor: { label: 'diagnostics.source.doctor', color: '#f59e0b' },
+  system: { label: 'diagnostics.source.system', color: '#64748b' },
 };
 
 interface DiagnosticsViewProps {
@@ -171,6 +172,7 @@ interface DiagnosticsViewProps {
 }
 
 const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone, onNavigateTo }) => {
+  const { t, i18n } = useTranslation();
   const gatewayStatus = useGatewayStore((s) => s.status);
   const channels = useChannelsStore((s) => s.channels);
   const skills = useSkillsStore((s) => s.skills);
@@ -329,9 +331,9 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       });
       setDoctorCli(res);
       if (res.success) {
-        toast.success(mode === 'fix' ? 'OpenClaw 修复已完成' : 'OpenClaw 诊断已完成');
+        toast.success(mode === 'fix' ? t('diagnostics.toast.fixDone') : t('diagnostics.toast.diagnoseDone'));
       } else {
-        toast.error(res.error || 'OpenClaw Doctor 执行失败');
+        toast.error(res.error || t('diagnostics.toast.doctorFailed'));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -368,9 +370,9 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     ].join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      toast.success('已复制输出');
+      toast.success(t('diagnostics.toast.copyOk'));
     } catch {
-      toast.error('复制失败');
+      toast.error(t('diagnostics.toast.copyFailed'));
     }
   }, [doctorCli]);
 
@@ -397,26 +399,26 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     const extras: CheckItem[] = [
       {
         id: 'channels',
-        name: '渠道状态',
+        name: t('diagnostics.items.channelStatus'),
         status: activeChannels > 0 ? 'ok' : totalChannels > 0 ? 'warn' : 'ok',
         category: 'channel',
-        detail: `${activeChannels}/${totalChannels} 已连接`,
+        detail: t('diagnostics.items.channelDetail', { active: activeChannels, total: totalChannels }),
         fixable: false,
       },
       {
         id: 'skills',
-        name: '技能加载',
+        name: t('diagnostics.items.skillLoad'),
         status: totalSkills > 0 ? 'ok' : 'warn',
         category: 'skill',
-        detail: `${eligibleSkills}/${totalSkills} 已启用`,
+        detail: t('diagnostics.items.skillDetail', { enabled: eligibleSkills, total: totalSkills }),
         fixable: false,
       },
       {
         id: 'cron',
-        name: '定时任务',
+        name: t('diagnostics.items.cronJobs'),
         status: (cronJobs?.length ?? 0) > 0 ? 'ok' : 'warn',
         category: 'cron',
-        detail: `${cronJobs?.length ?? 0} 个定时任务`,
+        detail: t('diagnostics.items.cronDetail', { count: cronJobs?.length ?? 0 }),
         fixable: false,
       },
       {
@@ -424,7 +426,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         name: 'Agent',
         status: (agents?.length ?? 0) > 0 ? 'ok' : 'warn',
         category: 'agent',
-        detail: `${agents?.length ?? 0} 个 Agent`,
+        detail: t('diagnostics.items.agentDetail', { count: agents?.length ?? 0 }),
         fixable: false,
       },
     ];
@@ -440,7 +442,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
   const scoreLevel =
     numericScore >= 90 ? 'excellent' : numericScore >= 75 ? 'good' : numericScore >= 60 ? 'watch' : 'risk';
   const scoreLabel =
-    numericScore >= 90 ? '极佳' : numericScore >= 75 ? '良好' : numericScore >= 60 ? '需关注' : '风险';
+    numericScore >= 90 ? t('diagnostics.score.excellent') : numericScore >= 75 ? t('diagnostics.score.good') : numericScore >= 60 ? t('diagnostics.score.attention') : t('diagnostics.score.risk');
   const scoreBorderClass =
     scoreLevel === 'excellent'
       ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.07] via-[#0f172a] to-[#0f172a]'
@@ -508,26 +510,26 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     const gw = summary.gateway;
     const hc = summary.healthCheck;
     const items: Array<{ key: string; label: string; points: number; maxPoints: number; color: string }> = [];
-    if (!gw?.running) items.push({ key: 'gateway', label: 'Gateway 离线', points: 35, maxPoints: 35, color: '#ef4444' });
+    if (!gw?.running) items.push({ key: 'gateway', label: t('diagnostics.deductions.gatewayOffline'), points: 35, maxPoints: 35, color: '#ef4444' });
     const critPts = Math.min(50, (stats.critical5m || 0) * 25);
     if (critPts > 0)
-      items.push({ key: 'critical', label: '严重异常 (5m)', points: critPts, maxPoints: 50, color: '#ef4444' });
+      items.push({ key: 'critical', label: t('diagnostics.deductions.critical5m'), points: critPts, maxPoints: 50, color: '#ef4444' });
     const highPts = Math.min(30, (stats.high5m || 0) * 10);
-    if (highPts > 0) items.push({ key: 'high', label: '高级异常 (5m)', points: highPts, maxPoints: 30, color: '#f97316' });
+    if (highPts > 0) items.push({ key: 'high', label: t('diagnostics.deductions.high5m'), points: highPts, maxPoints: 30, color: '#f97316' });
     const medPts = Math.min(10, (stats.medium5m || 0) * 2);
-    if (medPts > 0) items.push({ key: 'medium', label: '中级异常 (5m)', points: medPts, maxPoints: 10, color: '#f59e0b' });
+    if (medPts > 0) items.push({ key: 'medium', label: t('diagnostics.deductions.medium5m'), points: medPts, maxPoints: 10, color: '#f59e0b' });
     if (hc?.enabled && (hc.failCount || 0) > 0) {
       const hcPts = Math.min(25, (hc.failCount || 0) * 10);
-      items.push({ key: 'healthcheck', label: '看门狗失败', points: hcPts, maxPoints: 25, color: '#8b5cf6' });
+      items.push({ key: 'healthcheck', label: t('diagnostics.deductions.watchdogFail'), points: hcPts, maxPoints: 25, color: '#8b5cf6' });
     }
     if (chatSessionErrors.totalErrors > 0) {
       const sessPts = Math.min(10, (chatSessionErrors.errorSessions || 1) * 3);
-      items.push({ key: 'session', label: '会话错误', points: sessPts, maxPoints: 10, color: '#ec4899' });
+      items.push({ key: 'session', label: t('diagnostics.deductions.sessionErrors'), points: sessPts, maxPoints: 10, color: '#ec4899' });
     }
     const sec = summary.securityAudit;
     if (sec && sec.critical > 0) {
       const secPts = Math.min(40, sec.critical * 15);
-      items.push({ key: 'security', label: '安全审计', points: secPts, maxPoints: 40, color: '#6366f1' });
+      items.push({ key: 'security', label: t('diagnostics.summary.securityAudit'), points: secPts, maxPoints: 40, color: '#6366f1' });
     }
     return items.sort((a, b) => b.points - a.points);
   }, [summary, chatSessionErrors]);
@@ -545,27 +547,27 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       .map(([key, count]) => ({
         key,
         count,
-        label: SOURCE_META[key]?.label || key,
+        label: t(SOURCE_META[key]?.label || key),
         color: SOURCE_META[key]?.color || '#64748b',
       }));
   }, [summary?.recentIssues]);
 
   const sourceTotal = sourceDistribution.reduce((s, d) => s + d.count, 0);
 
-  /** 建议动作（AxonClawX）：根据扣分和问题动态生成 */
+  /** {t('diagnostics.suggestedActions')}（AxonClawX）：根据扣分和问题动态生成 */
   const suggestedActions = useMemo(() => {
     const actions: Array<{ label: string; risk: string; onClick?: () => void }> = [];
     if ((summary?.recentIssues?.length ?? 0) > 0) {
-      actions.push({ label: '查看告警', risk: 'medium', onClick: () => onNavigateTo?.('alerts') });
+      actions.push({ label: t('diagnostics.actions.viewAlerts'), risk: 'medium', onClick: () => onNavigateTo?.('alerts') });
     }
     if (!summary?.gateway?.running || deductions.some((d) => d.key === 'gateway')) {
-      actions.push({ label: '打开网关事件', risk: 'low', onClick: () => onNavigateTo?.('gateway-monitor') });
+      actions.push({ label: t('diagnostics.actions.openGatewayEvents'), risk: 'low', onClick: () => onNavigateTo?.('gateway-monitor') });
     }
     if (deductions.some((d) => d.key === 'healthcheck')) {
-      actions.push({ label: '检查健康看门狗', risk: 'high', onClick: () => onNavigateTo?.('gateway-monitor') });
+      actions.push({ label: t('diagnostics.actions.checkWatchdog'), risk: 'high', onClick: () => onNavigateTo?.('gateway-monitor') });
     }
     if (actions.length === 0) {
-      actions.push({ label: '查看告警', risk: 'low', onClick: () => onNavigateTo?.('alerts') });
+      actions.push({ label: t('diagnostics.actions.viewAlerts'), risk: 'low', onClick: () => onNavigateTo?.('alerts') });
     }
     return actions;
   }, [summary?.recentIssues?.length, summary?.gateway?.running, deductions, onNavigateTo]);
@@ -605,11 +607,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       row[h] += 1;
     });
     const rows = Array.from(grid.entries())
-      .map(([key, buckets]) => ({ key, label: SOURCE_META[key]?.label || key, color: SOURCE_META[key]?.color || '#64748b', buckets }))
+      .map(([key, buckets]) => ({ key, label: t(SOURCE_META[key]?.label || key), color: SOURCE_META[key]?.color || '#64748b', buckets }))
       .sort((a, b) => b.buckets.reduce((s, v) => s + v, 0) - a.buckets.reduce((s, v) => s + v, 0));
     const maxVal = Math.max(1, ...rows.flatMap((r) => r.buckets));
     if (rows.length === 0) {
-      return { rows: [{ key: 'gateway', label: '网关', color: '#10b981', buckets: initRow() }, { key: 'security', label: '安全审计', color: '#6366f1', buckets: initRow() }], maxVal: 1 };
+      return { rows: [{ key: 'gateway', label: t('diagnostics.summary.gateway'), color: '#10b981', buckets: initRow() }, { key: 'security', label: t('diagnostics.summary.securityAudit'), color: '#6366f1', buckets: initRow() }], maxVal: 1 };
     }
     return { rows, maxVal };
   }, [summary?.recentIssues]);
@@ -627,7 +629,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       >
         {scoreLabel} · {numericScore}
       </span>
-      {summaryLoading && <span className="text-xs text-muted-foreground animate-pulse">同步中…</span>}
+      {summaryLoading && <span className="text-xs text-muted-foreground animate-pulse">{t('diagnostics.syncing')}</span>}
       {activeTab === 'diagnose' && (
         <>
           <button
@@ -637,7 +639,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             className="h-8 px-3 rounded-lg text-xs font-bold border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:border-amber-500/50 disabled:opacity-50 flex items-center gap-1.5"
           >
             <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-            {loading ? '体检中…' : '立即诊断'}
+            {loading ? t('diagnostics.diagnosing') : t('diagnostics.diagnoseNow')}
           </button>
           <button
             type="button"
@@ -645,7 +647,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             disabled={fixing || fixableCount === 0}
             className="h-8 px-3 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40"
           >
-            {fixing ? '修复中…' : '一键修复'}
+            {fixing ? t('diagnostics.fixing') : t('diagnostics.fixNow')}
           </button>
         </>
       )}
@@ -656,8 +658,8 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     <div className="flex items-center gap-2 overflow-x-auto pt-3 pb-2 shrink-0">
       {(
         [
-          { id: 'diagnose' as TabId, icon: Activity, label: '系统诊断' },
-          { id: 'testing' as TabId, icon: FlaskConical, label: '测试中心' },
+          { id: 'diagnose' as TabId, icon: Activity, label: t('diagnostics.tabs.diagnose') },
+          { id: 'testing' as TabId, icon: FlaskConical, label: t('diagnostics.tabs.testing') },
         ] as const
       ).map((tab) => (
         <button
@@ -690,10 +692,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
           >
             <div className="flex flex-col lg:flex-row items-start gap-6">
             <div className="shrink-0 flex flex-col items-center mx-auto lg:mx-0">
-              {/* 评分置于健康快照上方 */}
+              {/* 评分置于{t('diagnostics.snapshot.title')}上方 */}
               <p className={cn('text-2xl font-black tabular-nums mb-0.5', scoreTextClass)}>{numericScore}</p>
               <p className={cn('text-[10px] font-bold mb-2', scoreTextClass)}>{scoreLabel}</p>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">健康快照</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{t('diagnostics.snapshot.title')}</p>
               <svg viewBox="0 0 120 72" className="w-36 h-auto">
                 <path
                   d="M 10 65 A 52 52 0 0 1 110 65"
@@ -717,7 +719,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             </div>
             <div className="flex-1 min-w-0 space-y-3">
               <p className="text-sm font-semibold text-foreground leading-relaxed">{summary.summary}</p>
-              <p className="text-[10px] text-muted-foreground">最近更新: {summary.updatedAt ? new Date(summary.updatedAt).toLocaleString('zh-CN') : '—'}</p>
+              <p className="text-[10px] text-muted-foreground">{t('diagnostics.snapshot.updatedAt')}: {summary.updatedAt ? new Date(summary.updatedAt).toLocaleString(i18n.language === 'zh' ? 'zh-CN' : i18n.language) : '—'}</p>
               <div className="flex items-center gap-1 mt-2 flex-wrap">
                 {(['1h', '6h', '24h'] as TimeRange[]).map((r) => (
                   <button
@@ -729,10 +731,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                       timeRange === r ? 'bg-sky-600 text-white' : 'bg-white/5 text-muted-foreground hover:bg-white/10',
                     )}
                   >
-                    {r === '1h' ? '1小时' : r === '6h' ? '6小时' : '24小时'}
+                    {r === '1h' ? t('diagnostics.range.1h') : r === '6h' ? t('diagnostics.range.6h') : t('diagnostics.range.24h')}
                   </button>
                 ))}
-                <span className="text-[10px] text-muted-foreground/70 ml-1.5">异常统计窗口固定为 5分钟/1小时/24小时</span>
+                <span className="text-[10px] text-muted-foreground/70 ml-1.5">{t('diagnostics.snapshot.windowHint')}</span>
               </div>
             </div>
             </div>
@@ -743,10 +745,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               onClick={() => onNavigateTo?.('gateway-monitor')}
               className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start hover:border-emerald-500/35 transition-colors"
             >
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">网关</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('diagnostics.gateway.title')}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 <p className={cn('text-sm font-bold', summary.gateway?.running ? 'text-emerald-400' : 'text-red-400')}>
-                  {summary.gateway?.running ? '正常' : '离线'}
+                  {summary.gateway?.running ? t('diagnostics.gateway.ok') : t('diagnostics.gateway.offline')}
                 </p>
                 {summary.gateway?.running ? <ArrowUp className="w-3.5 h-3.5 text-emerald-400" /> : <ArrowDown className="w-3.5 h-3.5 text-red-400" />}
               </div>
@@ -759,11 +761,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             >
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Heart className="w-3 h-3 text-violet-400" />
-                健康检查
+                {t('diagnostics.healthCheck.title')}
               </p>
               <div className="flex items-center gap-1.5 mt-1">
                 <p className={cn('text-sm font-bold', summary.healthCheck?.enabled ? 'text-violet-300' : 'text-white/70')}>
-                  {summary.healthCheck?.enabled ? `${summary.healthCheck.failCount || 0}/${summary.healthCheck.maxFails || 3}` : '关闭'}
+                  {summary.healthCheck?.enabled ? `${summary.healthCheck.failCount || 0}/${summary.healthCheck.maxFails || 3}` : t('diagnostics.healthCheck.off')}
                 </p>
                 {summary.healthCheck?.enabled && (summary.healthCheck.failCount || 0) > 0 && (
                   <ArrowUp className="w-3.5 h-3.5 text-red-400" />
@@ -774,7 +776,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               </p>
             </button>
             <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">近5分钟异常</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('diagnostics.recent5m')}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 <p className="text-sm font-bold text-foreground">
                   {summary.exceptionStats?.critical5m ?? 0} / {summary.exceptionStats?.high5m ?? 0} /{' '}
@@ -784,22 +786,22 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                   <ArrowUp className="w-3.5 h-3.5 text-red-400" />
                 )}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">严重 / 高 / 中</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{t('diagnostics.severityLegend')}</p>
             </div>
             <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">近期总量</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('diagnostics.recentTotal')}</p>
               <p className="text-sm font-bold text-foreground mt-1">
                 {summary.exceptionStats?.total1h ?? 0} <span className="text-white/30">/</span>{' '}
                 {summary.exceptionStats?.total24h ?? 0}
               </p>
-              <p className="text-[10px] text-muted-foreground mt-1">1小时 / 24小时</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{t('diagnostics.windowLegend')}</p>
             </div>
             <button
               type="button"
               onClick={() => onNavigateTo?.('alerts')}
               className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start hover:border-amber-500/35"
             >
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">会话错误</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('diagnostics.sessionErrors')}</p>
               <p
                 className={cn(
                   'text-sm font-bold mt-1',
@@ -809,13 +811,13 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                 {summary.sessionErrors?.totalErrors ?? 0}
               </p>
               <p className="text-[10px] text-muted-foreground mt-1">
-                {summary.sessionErrors?.totalErrors ?? 0} 个错误 / {summary.sessionErrors?.errorSessions ?? 0} 个会话
+                {t('diagnostics.sessionErrorsDetail', { errors: summary.sessionErrors?.totalErrors ?? 0, sessions: summary.sessionErrors?.errorSessions ?? 0 })}
               </p>
             </button>
             <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-start">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Brain className="w-3 h-3 text-slate-400" />
-                记忆系统
+                {t('diagnostics.memory.title')}
               </p>
               {memoryLoading ? (
                 <div className="flex items-center gap-1 mt-1">
@@ -827,7 +829,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                   <p className="text-[10px] text-muted-foreground mt-1 truncate">{memoryStatus.provider || '—'}</p>
                 </>
               ) : (
-                <p className="text-sm font-bold text-amber-400 mt-1">记忆系统不可用</p>
+                <p className="text-sm font-bold text-amber-400 mt-1">{t('diagnostics.memory.unavailable')}</p>
               )}
             </div>
           </div>
@@ -835,11 +837,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       )}
 
-      {/* 异常来源（AxonClawX 环形图风格） */}
+      {/* {t('diagnostics.anomalySource')}（AxonClawX 环形图风格） */}
       <div className="rounded-xl border border-white/10 bg-black/15 p-4">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <LayoutGrid className="w-3.5 h-3.5" />
-          异常来源
+          {t('diagnostics.anomalySource')}
         </h4>
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-28 h-28 shrink-0">
@@ -874,7 +876,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-sm font-bold text-foreground">{sourceTotal}</span>
-              <span className="text-[10px] text-muted-foreground ml-0.5">总计</span>
+              <span className="text-[10px] text-muted-foreground ml-0.5">{t('diagnostics.total')}</span>
             </div>
           </div>
           <div className="flex-1 min-w-0 space-y-1.5">
@@ -888,14 +890,14 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       </div>
 
-      {/* 异常频率热力图（AxonClawX 风格：source × hour 二维网格） */}
+      {/* {t('diagnostics.heatmap.title')}（AxonClawX 风格：source × hour 二维网格） */}
       <div className="rounded-xl border border-white/10 bg-black/15 p-4">
         <div className="flex items-center justify-between gap-2 mb-3">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <Grid3X3 className="w-3.5 h-3.5" />
-            异常频率热力图
+            {t('diagnostics.heatmap.title')}
           </h4>
-          <p className="text-[10px] text-muted-foreground/70">颜色越深代表该时段异常越密集</p>
+          <p className="text-[10px] text-muted-foreground/70">{t('diagnostics.heatmap.hint')}</p>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[480px]">
@@ -921,7 +923,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                           backgroundColor: intensity > 0 ? `${row.color}` : 'rgba(255,255,255,0.03)',
                           opacity: intensity > 0 ? 0.2 + intensity * 0.8 : 0.1,
                         }}
-                        title={`${row.label} ${i}:00 — ${v} 异常`}
+                        title={`${row.label} ${i}:00 — ${v} ${t('diagnostics.anomaly')}`}
                       />
                     );
                   })}
@@ -936,7 +938,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
             <Activity className="w-3.5 h-3.5" />
-            健康趋势
+            {t('diagnostics.trend.title')}
           </h4>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-28">
             <defs>
@@ -954,7 +956,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               points={trendPolyline}
             />
           </svg>
-          <p className="text-[10px] text-muted-foreground text-center mt-1">评分随时间（越高越好）</p>
+          <p className="text-[10px] text-muted-foreground text-center mt-1">{t('diagnostics.trend.hint')}</p>
         </div>
       )}
 
@@ -963,9 +965,9 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
               <BarChart3 className="w-3 h-3" />
-              扣分归因 <span className="font-bold text-red-400">-{deductions.reduce((s, d) => s + d.points, 0)}</span>
+              {t('diagnostics.deductions.title')} <span className="font-bold text-red-400">-{deductions.reduce((s, d) => s + d.points, 0)}</span>
             </p>
-            <p className="text-[10px] text-muted-foreground/70">修复扣分最高的项可最快提升分数</p>
+            <p className="text-[10px] text-muted-foreground/70">{t('diagnostics.deductions.hint')}</p>
           </div>
           <div className="flex flex-wrap gap-4">
             {deductions.map((d) => {
@@ -1001,7 +1003,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       <div className="rounded-2xl border-2 border-slate-600/40 bg-[#1e293b]/80 p-4 backdrop-blur-sm">
         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
           <Wrench className="w-3.5 h-3.5" />
-          诊断检查项
+          {t('diagnostics.checkItems')}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {allCheckItems.map((item) => (
@@ -1033,18 +1035,18 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
       </div>
 
-      {/* 底部区域（AxonClawX）：左侧问题时间线 + 右侧 2x2 指标 + 建议动作 */}
+      {/* 底部区域（AxonClawX）：左侧{t('diagnostics.issues.title')} + 右侧 2x2 指标 + {t('diagnostics.suggestedActions')} */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
         <div className="rounded-xl border border-white/10 bg-black/15 p-4">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
             <ListOrdered className="w-3.5 h-3.5" />
-            问题时间线
+            {t('diagnostics.issues.title')}
           </h4>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {[
-              { id: 'all', icon: Filter, label: '全部' },
-              { id: 'gateway', icon: Network, label: '网关' },
-              { id: 'security', icon: Shield, label: '安全审计' },
+              { id: 'all', icon: Filter, label: t('diagnostics.filter.all') },
+              { id: 'gateway', icon: Network, label: t('diagnostics.summary.gateway') },
+              { id: 'security', icon: Shield, label: t('diagnostics.summary.securityAudit') },
             ].map((f) => (
               <button
                 key={f.id}
@@ -1063,10 +1065,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             ))}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[10px]">
-            <span className="text-muted-foreground">全部 <span className="font-mono font-semibold text-foreground">{filteredIssues.length}</span></span>
-            <span className="text-red-400">严重 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'critical').length}</span></span>
-            <span className="text-orange-400">高 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'high').length}</span></span>
-            <span className="text-amber-400">中 <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'medium').length}</span></span>
+            <span className="text-muted-foreground">{t('diagnostics.count.all')} <span className="font-mono font-semibold text-foreground">{filteredIssues.length}</span></span>
+            <span className="text-red-400">{t('diagnostics.risk.critical')} <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'critical').length}</span></span>
+            <span className="text-orange-400">{t('diagnostics.risk.high')} <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'high').length}</span></span>
+            <span className="text-amber-400">{t('diagnostics.risk.medium')} <span className="font-mono">{filteredIssues.filter((i) => i.risk === 'medium').length}</span></span>
           </div>
           <div className="relative pl-4 border-l border-dashed border-white/20 space-y-3 max-h-64 overflow-y-auto">
             {filteredIssues.slice(0, 12).map((issue) => (
@@ -1096,7 +1098,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                     issue.risk === 'medium' && 'bg-amber-500/30 text-amber-300',
                     issue.risk === 'low' && 'bg-blue-500/30 text-blue-300',
                   )}>
-                    {issue.risk === 'critical' ? '严重' : issue.risk === 'high' ? '高' : issue.risk === 'medium' ? '中' : '低'}
+                    {issue.risk === 'critical' ? t('diagnostics.risk.critical') : issue.risk === 'high' ? t('diagnostics.risk.high') : issue.risk === 'medium' ? t('diagnostics.risk.medium') : t('diagnostics.risk.low')}
                   </span>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5">{fmtRelativeTime(issue.timestamp)}</p>
@@ -1104,7 +1106,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             ))}
             
             {filteredIssues.length === 0 && (
-              <p className="text-xs text-muted-foreground py-4">暂无近期问题</p>
+              <p className="text-xs text-muted-foreground py-4">{t('diagnostics.noIssues')}</p>
             )}
           </div>
         </div>
@@ -1113,7 +1115,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             <div className="rounded-xl border border-white/10 bg-black/15 p-4">
               <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Gauge className="w-3 h-3" />
-                网关可用性
+                {t('diagnostics.cards.gatewayAvailability')}
               </h4>
               <p className={cn(
                 'text-3xl font-black tabular-nums',
@@ -1122,51 +1124,51 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                 {summary?.gateway?.running ? '100' : '0'}%
               </p>
               <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', summary?.gateway?.running ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400')}>
-                {summary?.gateway?.running ? '正常' : '异常'}
+                {summary?.gateway?.running ? t('diagnostics.status.ok') : t('diagnostics.status.bad')}
               </span>
-              <p className="text-[9px] text-muted-foreground mt-1">网关诊断检查通过率</p>
+              <p className="text-[9px] text-muted-foreground mt-1">{t('diagnostics.cards.gatewayPassRate')}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/15 p-4">
               <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Hash className="w-3 h-3" />
-                24小时事件数
+                {t('diagnostics.cards.events24h')}
               </h4>
               <p className="text-2xl font-black tabular-nums text-foreground">{summary?.exceptionStats?.total24h ?? 0}</p>
               <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', ((summary?.exceptionStats?.high5m ?? 0) + (summary?.exceptionStats?.critical5m ?? 0)) > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
-                {((summary?.exceptionStats?.high5m ?? 0) + (summary?.exceptionStats?.critical5m ?? 0)) > 0 ? '异常' : '正常'}
+                {((summary?.exceptionStats?.high5m ?? 0) + (summary?.exceptionStats?.critical5m ?? 0)) > 0 ? t('diagnostics.status.bad') : t('diagnostics.status.ok')}
               </span>
-              <p className="text-[9px] text-muted-foreground mt-1">活动事件总数，状态基于高级+严重事件数判定</p>
+              <p className="text-[9px] text-muted-foreground mt-1">{t('diagnostics.cards.eventsHint')}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/15 p-4">
               <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <AlertTriangle className="w-3 h-3" />
-                1小时异常
+                {t('diagnostics.cards.anomalies1h')}
               </h4>
               <p className="text-2xl font-black tabular-nums text-foreground">{summary?.exceptionStats?.total1h ?? 0}</p>
               <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', (summary?.exceptionStats?.total1h ?? 0) > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
-                {(summary?.exceptionStats?.total1h ?? 0) > 0 ? '异常' : '正常'}
+                {(summary?.exceptionStats?.total1h ?? 0) > 0 ? t('diagnostics.status.bad') : t('diagnostics.status.ok')}
               </span>
-              <p className="text-[9px] text-muted-foreground mt-1">1小时内高级+严重异常事件数</p>
+              <p className="text-[9px] text-muted-foreground mt-1">{t('diagnostics.cards.anomaliesHint')}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/15 p-4">
               <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Cpu className="w-3 h-3" />
-                内存压力
+                {t('diagnostics.cards.memoryPressure')}
               </h4>
               <p className={cn('text-2xl font-black tabular-nums', (hostInfo?.sysMem?.usedPct ?? 0) > 90 ? 'text-red-400' : 'text-emerald-400')}>
                 {hostInfo?.sysMem?.usedPct != null ? Math.round(hostInfo.sysMem.usedPct) : '—'}
                 {hostInfo?.sysMem?.usedPct != null ? '%' : ''}
               </p>
               <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold', (hostInfo?.sysMem?.usedPct ?? 0) > 90 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
-                {(hostInfo?.sysMem?.usedPct ?? 0) > 90 ? '异常' : '正常'}
+                {(hostInfo?.sysMem?.usedPct ?? 0) > 90 ? t('diagnostics.status.bad') : t('diagnostics.status.ok')}
               </span>
-              <p className="text-[9px] text-muted-foreground mt-1">系统内存使用率</p>
+              <p className="text-[9px] text-muted-foreground mt-1">{t('diagnostics.cards.memoryHint')}</p>
             </div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/15 p-4">
             <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
               <Lightbulb className="w-3.5 h-3.5" />
-              建议动作
+              {t('diagnostics.suggestedActions')}
             </h4>
             <div className="space-y-2">
               {suggestedActions.slice(0, 4).map((action, i) => (
@@ -1184,7 +1186,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                     action.risk === 'medium' && 'bg-amber-500/30 text-amber-300',
                     (action.risk === 'low' || !action.risk) && 'bg-slate-500/30 text-slate-300',
                   )}>
-                    {action.risk === 'critical' ? '严重' : action.risk === 'high' ? '高' : action.risk === 'medium' ? '中' : '低'}
+                    {action.risk === 'critical' ? t('diagnostics.risk.critical') : action.risk === 'high' ? t('diagnostics.risk.high') : action.risk === 'medium' ? t('diagnostics.risk.medium') : t('diagnostics.risk.low')}
                   </span>
                 </button>
               ))}
@@ -1198,14 +1200,14 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 text-orange-400" />
-              最近问题
+              {t('diagnostics.recentIssues')}
             </h3>
             <button
               type="button"
               onClick={() => onNavigateTo?.('alerts')}
               className="text-xs text-sky-400 font-bold hover:underline flex items-center gap-1"
             >
-              告警中心
+              {t('diagnostics.alertsCenter')}
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -1215,11 +1217,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               onChange={(e) => setSummarySourceFilter(e.target.value)}
               className="text-[11px] rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-foreground"
             >
-              <option value="all">全部来源</option>
+              <option value="all">{t('diagnostics.filter.allSources')}</option>
               {Array.from(new Set((summary?.recentIssues ?? []).map((i) => detectSummarySourceKey(i.source, i.category)))).map(
                 (k) => (
                   <option key={k} value={k}>
-                    {SOURCE_META[k]?.label || k}
+                    {t(SOURCE_META[k]?.label || k)}
                   </option>
                 ),
               )}
@@ -1229,11 +1231,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               onChange={(e) => setSummaryRiskFilter(e.target.value)}
               className="text-[11px] rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-foreground"
             >
-              <option value="all">全部等级</option>
-              <option value="critical">严重</option>
-              <option value="high">高</option>
-              <option value="medium">中</option>
-              <option value="low">低</option>
+              <option value="all">{t('diagnostics.filter.allRisks')}</option>
+              <option value="critical">{t('diagnostics.risk.critical')}</option>
+              <option value="high">{t('diagnostics.risk.high')}</option>
+              <option value="medium">{t('diagnostics.risk.medium')}</option>
+              <option value="low">{t('diagnostics.risk.low')}</option>
             </select>
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1252,14 +1254,14 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
                 <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{issue.title}</p>
                   <p className="text-[10px] text-white/50 truncate">
-                    {SOURCE_META[detectSummarySourceKey(issue.source, issue.category)]?.label || issue.source} ·{' '}
+                    {t(SOURCE_META[detectSummarySourceKey(issue.source, issue.category)]?.label || issue.source)} ·{' '}
                     {issue.timestamp ? new Date(issue.timestamp).toLocaleString('zh-CN') : ''}
                   </p>
                 </div>
               </div>
             ))}
             {filteredIssues.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">当前筛选无匹配项</p>
+              <p className="text-xs text-muted-foreground text-center py-4">{t('diagnostics.noMatch')}</p>
             )}
           </div>
         </div>
@@ -1275,8 +1277,8 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
           OpenClaw Doctor（CLI）
         </h3>
         <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-          与设置 → 开发者中相同：在本机执行 <code className="text-violet-300">openclaw doctor</code>，输出 JSON
-          诊断结果。适合与网关内建诊断交叉验证。
+          <code className="text-violet-300">openclaw doctor</code>
+          
         </p>
         <div className="flex flex-wrap gap-2 mb-4">
           <button
@@ -1285,7 +1287,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             onClick={() => void runOpenClawDoctor('diagnose')}
             className="h-9 px-4 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-500 disabled:opacity-50"
           >
-            {doctorCliRunning === 'diagnose' ? '运行中…' : '运行诊断'}
+            {doctorCliRunning === 'diagnose' ? t('diagnostics.running') : t('diagnostics.runDiagnose')}
           </button>
           <button
             type="button"
@@ -1293,7 +1295,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             onClick={() => void runOpenClawDoctor('fix')}
             className="h-9 px-4 rounded-lg text-xs font-bold border border-violet-500/50 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50"
           >
-            {doctorCliRunning === 'fix' ? '运行中…' : '执行修复'}
+            {doctorCliRunning === 'fix' ? t('diagnostics.running') : t('diagnostics.runFix')}
           </button>
           {doctorCli && (
             <button
@@ -1302,7 +1304,7 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               className="h-9 px-3 rounded-lg text-xs font-bold border border-white/15 flex items-center gap-1.5 hover:bg-white/5"
             >
               <Copy className="w-3.5 h-3.5" />
-              复制输出
+              {t('diagnostics.copyOutput')}
             </button>
           )}
         </div>
@@ -1312,11 +1314,11 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
               <span>exit: {doctorCli.exitCode ?? '—'}</span>
               <span>{doctorCli.durationMs} ms</span>
               <span className={doctorCli.success ? 'text-emerald-400' : 'text-red-400'}>
-                {doctorCli.success ? 'success' : 'failed'}
+                {doctorCli.success ? t('diagnostics.success') : t('diagnostics.failed')}
               </span>
             </div>
             <pre className="p-3 text-[10px] font-mono text-white/80 max-h-64 overflow-auto whitespace-pre-wrap break-all">
-              {(doctorCli.stdout || doctorCli.stderr || doctorCli.error || '(无输出)').slice(0, 12000)}
+              {(doctorCli.stdout || doctorCli.stderr || doctorCli.error || t('diagnostics.noOutput')).slice(0, 12000)}
             </pre>
           </div>
         )}
@@ -1328,13 +1330,13 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     return (
       <div className="flex flex-col flex-1 min-h-0 bg-[#0f172a] overflow-hidden">
         <PageHeader
-          title="健康维护"
-          subtitle="系统诊断、命令测试"
+          title={t('diagnostics.title')}
+          subtitle={t('diagnostics.subtitle')}
           dividerClassName={scoreBarClass}
           dividerUnderSubtitle
           onRefresh={() => void fetchAll()}
           refreshing={summaryLoading}
-          refreshLabel="刷新摘要"
+          refreshLabel={t('diagnostics.refreshSummary')}
           actions={headerActions}
         />
         <div className="px-4 shrink-0 pt-4">{tabRow}</div>
@@ -1344,10 +1346,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
         </div>
         <ConfirmDialog
           open={showFixConfirm}
-          title="一键修复"
-          message="将尝试自动修复可修复项。部分问题需手动处理。"
-          confirmLabel="确认"
-          cancelLabel="取消"
+          title={t('diagnostics.fixTitle')}
+          message={t('diagnostics.fixMessage')}
+          confirmLabel={t('common.confirm')}
+          cancelLabel={t('common.cancel')}
           variant="default"
           onConfirm={handleFix}
           onCancel={() => setShowFixConfirm(false)}
@@ -1360,8 +1362,8 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
     <div className={cn('flex flex-col bg-[#0f172a]', embedded ? 'flex-1 min-h-0 overflow-hidden' : 'h-full min-h-0 overflow-hidden')}>
       {!embedded && (
         <div className="sticky top-0 z-10 shrink-0 bg-[#0f172a] pt-3 pb-0 px-4">
-          <h2 className="text-base font-bold text-foreground">健康维护</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">系统诊断、命令测试</p>
+          <h2 className="text-base font-bold text-foreground">{t('diagnostics.title')}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('diagnostics.subtitle')}</p>
           <div className={cn('h-[3px] w-full rounded-full transition-all duration-700 mt-2 mb-2', scoreBarClass)} />
         </div>
       )}
@@ -1373,10 +1375,10 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       </div>
       <ConfirmDialog
         open={showFixConfirm}
-        title="一键修复"
-        message="将尝试自动修复可修复项，是否继续？"
-        confirmLabel="确认"
-        cancelLabel="取消"
+        title={t('diagnostics.fixTitle')}
+        message={t('diagnostics.fixConfirmMessage')}
+        confirmLabel={t('common.confirm')}
+        cancelLabel={t('common.cancel')}
         variant="default"
         onConfirm={handleFix}
         onCancel={() => setShowFixConfirm(false)}
