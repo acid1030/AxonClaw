@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   MessageSquare,
   RefreshCw,
@@ -131,6 +132,7 @@ interface DashboardViewProps {
 const FAST_INTERVAL = 25000;
 
 const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
+  const { t } = useTranslation();
   const gatewayStatus = useGatewayStore((s) => s.status);
   const lastError = useGatewayStore((s) => s.lastError);
   const initGateway = useGatewayStore((s) => s.init);
@@ -404,9 +406,9 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     setLogContent('');
     try {
       const data = await hostApiFetch<{ content?: string }>('/api/logs?tailLines=100');
-      setLogContent(data?.content ?? '(无日志内容)');
+      setLogContent(data?.content ?? t('dashboard.noLogContent'));
     } catch {
-      setLogContent('(加载日志失败)');
+      setLogContent(t('dashboard.loadLogsFailed'));
     } finally {
       setLoadingLogs(false);
     }
@@ -476,14 +478,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   })();
 
   const kpiCards = [
-    { icon: MessageSquare, label: '会话', value: loading ? '--' : `${sessions.length}`, color: '#6366f1', borderClass: 'border-indigo-500/40', target: 'run' },
-    { icon: Zap, label: '今日 Token', value: todayTokens > 0 ? fmtTokens(todayTokens) : '--', color: '#f59e0b', borderClass: 'border-amber-500/40', target: 'usage' },
-    { icon: DollarSign, label: '总成本', value: totalCost > 0 ? `$${totalCost.toFixed(2)}` : '--', color: '#10b981', borderClass: 'border-emerald-500/40', target: 'usage' },
-    { icon: MessageCircle, label: '渠道', value: `${activeChannels}/${totalChannels}`, color: '#06b6d4', borderClass: 'border-cyan-500/40', target: 'channel' },
+    { icon: MessageSquare, label: t('dashboard.kpi.sessions'), value: loading ? '--' : `${sessions.length}`, color: '#6366f1', borderClass: 'border-indigo-500/40', target: 'run' },
+    { icon: Zap, label: t('dashboard.kpi.todayToken'), value: todayTokens > 0 ? fmtTokens(todayTokens) : '--', color: '#f59e0b', borderClass: 'border-amber-500/40', target: 'usage' },
+    { icon: DollarSign, label: t('dashboard.kpi.totalCost'), value: totalCost > 0 ? `$${totalCost.toFixed(2)}` : '--', color: '#10b981', borderClass: 'border-emerald-500/40', target: 'usage' },
+    { icon: MessageCircle, label: t('dashboard.kpi.channels'), value: `${activeChannels}/${totalChannels}`, color: '#06b6d4', borderClass: 'border-cyan-500/40', target: 'channel' },
     { icon: Bot, label: 'Agent', value: `${safeAgents.length}`, color: '#14b8a6', borderClass: 'border-teal-500/40', target: 'agent' },
-    { icon: Puzzle, label: '技能', value: skillCount > 0 ? `${eligibleSkills}/${skillCount}` : '0', color: '#ec4899', borderClass: 'border-pink-500/40', target: 'skill' },
-    { icon: Calendar, label: '定时任务', value: `${safeCronJobs.length}`, color: '#0ea5e9', borderClass: 'border-sky-500/40', target: 'cron' },
-    { icon: FileText, label: '日志', value: isOnline ? '在线' : '离线', color: isOnline ? '#22c55e' : '#94a3b8', borderClass: isOnline ? 'border-green-500/40' : 'border-slate-500/40', target: 'run' },
+    { icon: Puzzle, label: t('dashboard.kpi.skills'), value: skillCount > 0 ? `${eligibleSkills}/${skillCount}` : '0', color: '#ec4899', borderClass: 'border-pink-500/40', target: 'skill' },
+    { icon: Calendar, label: t('dashboard.kpi.cronJobs'), value: `${safeCronJobs.length}`, color: '#0ea5e9', borderClass: 'border-sky-500/40', target: 'cron' },
+    { icon: FileText, label: t('dashboard.kpi.logs'), value: isOnline ? t('dashboard.online') : t('dashboard.offline'), color: isOnline ? '#22c55e' : '#94a3b8', borderClass: isOnline ? 'border-green-500/40' : 'border-slate-500/40', target: 'run' },
   ];
 
   return (
@@ -494,22 +496,22 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
         <div className="sticky top-0 z-10 shrink-0 pb-4 bg-[#0f172a]">
           <div className="flex items-start sm:items-center justify-between gap-2 mb-2">
             <div>
-              <h1 className="text-base font-bold text-foreground">概览</h1>
+              <h1 className="text-base font-bold text-foreground">{t('dashboard.title')}</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 {lastUpdate && (
                   <p className="text-xs text-muted-foreground">
-                    更新: {timeFormatter.format(lastUpdate)}
+                    {t('dashboard.updatedAt')}: {timeFormatter.format(lastUpdate)}
                   </p>
                 )}
                 {refreshCountdown > 0 && refreshCountdown < FAST_INTERVAL / 1000 && (
                   <span className="text-xs text-muted-foreground/70 tabular-nums">
-                    {refreshCountdown}s 后刷新
+                    {refreshCountdown}s {t('dashboard.refreshIn')}
                   </span>
                 )}
               </div>
             </div>
             <button
-              aria-label="刷新"
+              aria-label={t('common.refresh')}
               onClick={refreshAll}
               disabled={loading}
               className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-all disabled:opacity-40 shrink-0"
@@ -576,11 +578,11 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                         isOnline ? 'text-green-500' : 'text-muted-foreground'
                       )}
                     >
-                      {isOnline ? '运行中' : '已停止'}
+                      {isOnline ? t('dashboard.running') : t('dashboard.stopped')}
                     </span>
                   </div>
                   {connectionVerified === null && (
-                    <span className="text-xs text-amber-500">检测中…</span>
+                    <span className="text-xs text-amber-500">{t('dashboard.detecting')}</span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1.5 text-xs text-muted-foreground items-center">
@@ -591,7 +593,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   )}
                   {isOnline && (
                     <span className="flex items-center gap-1.5">
-                      今日成本
+                      {t('dashboard.todayCost')}
                       <MiniSparkline data={sparklineData} color="#f59e0b" width={64} height={20} />
                       <span className="font-semibold text-amber-500">
                         ${(todayCost || 0).toFixed(2)}
@@ -629,7 +631,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                           启动中…
                         </>
                       ) : (
-                        '启动'
+                        t('dashboard.start')
                       )}
                     </button>
                   ) : (
@@ -639,14 +641,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                         disabled={restarting}
                         className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
                       >
-                        {restarting ? '重启中…' : '重启'}
+                        {restarting ? t('dashboard.restarting') : t('dashboard.restart')}
                       </button>
                       <button
                         onClick={() => setShowStopConfirm(true)}
                         disabled={stopping}
                         className="px-2 py-1 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-500/20 disabled:opacity-40 transition-colors"
                       >
-                        {stopping ? '停止中…' : '停止'}
+                        {stopping ? t('dashboard.stopping') : t('dashboard.stop')}
                       </button>
                       <button
                         onClick={handleShowLogs}
@@ -760,7 +762,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               <div>
                 <h3 className="text-sm font-bold text-foreground">宿主机信息</h3>
                 <p className="text-xs text-muted-foreground font-mono truncate">
-                  {hostInfo?.hostname || (loadingHostInfo ? '加载中...' : '--')}
+                  {hostInfo?.hostname || (loadingHostInfo ? t('dashboard.loading') : '--')}
                 </p>
               </div>
             </div>
@@ -782,7 +784,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
             <GaugeCard
               pct={hostInfo?.cpuUsage ?? 0}
-              label="CPU 使用率"
+              label={t('dashboard.cpuUsage')}
               color="#3b82f6"
               gradient="bg-[#1e293b]"
               borderColor="border-blue-500/40"
@@ -796,7 +798,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </GaugeCard>
             <GaugeCard
               pct={hostInfo?.sysMem?.usedPct ?? 0}
-              label="系统内存"
+              label={t('dashboard.systemMemory')}
               color="#8b5cf6"
               gradient="bg-[#1e293b]"
               borderColor="border-violet-500/40"
@@ -809,7 +811,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
             </GaugeCard>
             <GaugeCard
               pct={hostInfo?.diskUsage?.[0]?.usedPct ?? 0}
-              label="磁盘空间"
+              label={t('dashboard.diskSpace')}
               color="#10b981"
               gradient="bg-[#1e293b]"
               borderColor="border-emerald-500/40"
@@ -878,7 +880,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 'text-2xl font-black tabular-nums',
                 isOnline ? 'text-emerald-400' : 'text-slate-400'
               )}>
-                {hostInfo?.gatewayUptime != null ? formatUptime(hostInfo.gatewayUptime * 1000) : (isOnline ? '运行中' : '0小时')}
+                {hostInfo?.gatewayUptime != null ? formatUptime(hostInfo.gatewayUptime * 1000) : (isOnline ? t('dashboard.running') : t('dashboard.zeroHours'))}
               </p>
               <p className="text-xs text-slate-400 mt-1">服务器运行</p>
             </div>
@@ -957,7 +959,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                     <HealthDot ok={isOnline} />
                     <span className="text-xs text-muted-foreground">网关状态</span>
                   </div>
-                  <p className={cn('text-sm font-semibold', isOnline ? 'text-emerald-500' : 'text-slate-400')}>{isOnline ? '健康' : '离线'}</p>
+                  <p className={cn('text-sm font-semibold', isOnline ? 'text-emerald-500' : 'text-slate-400')}>{isOnline ? t('dashboard.healthy') : t('dashboard.offline')}</p>
                 </div>
                 <div className="rounded-lg border border-slate-600/40 bg-slate-800/30 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -992,7 +994,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                           {p.name || p.id}
                         </span>
                         <span className={cn('text-[10px]', p.hasKey ? 'text-emerald-500' : 'text-slate-500')}>
-                          {p.hasKey ? '已配置' : '未配置'}
+                          {p.hasKey ? t('dashboard.configured') : t('dashboard.notConfigured')}
                         </span>
                       </span>
                     ))}
@@ -1109,7 +1111,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               {sessions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                   <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                  <span className="text-xs">{loading ? '加载中…' : '暂无会话'}</span>
+                  <span className="text-xs">{loading ? t('dashboard.loadingEllipsis') : t('dashboard.noSessions')}</span>
                 </div>
               ) : (
                 sessions.slice(0, 6).map((session, i) => (
@@ -1142,10 +1144,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
       {/* 重启确认 */}
       <ConfirmDialog
         open={showRestartConfirm}
-        title="重启 Gateway"
-        message="确定要重启 Gateway 吗？重启期间将短暂断开连接。"
-        confirmLabel="重启"
-        cancelLabel="取消"
+        title={t('dashboard.restartGateway')}
+        message={t('dashboard.restartConfirmMessage')}
+        confirmLabel={t('dashboard.restart')}
+        cancelLabel={t('common.cancel')}
         variant="default"
         onConfirm={handleRestartGateway}
         onCancel={() => setShowRestartConfirm(false)}
@@ -1154,10 +1156,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
       {/* 停止确认 */}
       <ConfirmDialog
         open={showStopConfirm}
-        title="停止 Gateway"
-        message="确定要停止 Gateway 吗？停止后需手动重新启动。"
-        confirmLabel="停止"
-        cancelLabel="取消"
+        title={t('dashboard.stopGateway')}
+        message={t('dashboard.stopConfirmMessage')}
+        confirmLabel={t('dashboard.stop')}
+        cancelLabel={t('common.cancel')}
         variant="destructive"
         onConfirm={handleStopGateway}
         onCancel={() => setShowStopConfirm(false)}
@@ -1195,7 +1197,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               </Button>
             </div>
             <pre className="flex-1 overflow-auto rounded-xl border border-slate-600/30 bg-slate-900/40 p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words max-h-[50vh]">
-              {loadingLogs ? '加载中…' : logContent || '(无日志)'}
+              {loadingLogs ? t('dashboard.loadingEllipsis') : logContent || t('dashboard.noLogs')}
             </pre>
           </div>
         </DialogContent>
