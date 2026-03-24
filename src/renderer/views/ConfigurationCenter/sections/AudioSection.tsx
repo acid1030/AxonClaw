@@ -11,6 +11,7 @@ import {
   NumberField,
 } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
+import i18n from '@/i18n';
 
 export const AudioSection: React.FC<SectionProps> = ({ setField, getField }) => {
   const g = (path: string[]) => getField(path);
@@ -18,7 +19,7 @@ export const AudioSection: React.FC<SectionProps> = ({ setField, getField }) => 
 
   return (
     <div className="space-y-4">
-      <ConfigSection title="语音 (Talk)" icon={Volume2} iconColor="text-fuchsia-500">
+      <ConfigSection title={i18n.t('configCenter.audio.talkTitle')} icon={Volume2} iconColor="text-fuchsia-500">
         <SelectField
           label="Provider"
           value={String(g(['talk', 'provider']) ?? '')}
@@ -41,20 +42,20 @@ export const AudioSection: React.FC<SectionProps> = ({ setField, getField }) => 
           onChange={(v) => s(['talk', 'modelId'], v)}
         />
         <SwitchField
-          label="说话时打断"
+          label={i18n.t('configCenter.audio.interruptOnSpeech')}
           value={g(['talk', 'interruptOnSpeech']) === true}
           onChange={(v) => s(['talk', 'interruptOnSpeech'], v)}
         />
       </ConfigSection>
 
-      <ConfigSection title="语音转写" icon={Mic} iconColor="text-fuchsia-500" defaultOpen={false}>
+      <ConfigSection title={i18n.t('configCenter.audio.transcriptionTitle')} icon={Mic} iconColor="text-fuchsia-500" defaultOpen={false}>
         <TextField
-          label="命令"
+          label={i18n.t('configCenter.audio.command')}
           value={String(g(['audio', 'transcription', 'command']) ?? '')}
           onChange={(v) => s(['audio', 'transcription', 'command'], v)}
         />
         <NumberField
-          label="超时(秒)"
+          label={i18n.t('configCenter.audio.timeoutSeconds')}
           value={g(['audio', 'transcription', 'timeoutSeconds']) as number | undefined}
           onChange={(v) => s(['audio', 'transcription', 'timeoutSeconds'], v)}
           min={0}

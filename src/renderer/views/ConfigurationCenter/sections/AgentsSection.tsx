@@ -4,9 +4,10 @@
  */
 import React, { useState } from 'react';
 import { Bot, Plus, Settings, Trash2 } from 'lucide-react';
-import { ConfigSection, TextField, SelectField, ArrayField } from '@/components/config-editor';
+import { ConfigSection, TextField } from '@/components/config-editor';
 import type { SectionProps } from '../sectionTypes';
 import { cn } from '@/lib/utils';
+import i18n from '@/i18n';
 
 const AGENT_ICONS = ['🛠', '🔍', '💻', '📊', '✏️', '🎯'];
 
@@ -29,6 +30,7 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
     : listRaw && typeof listRaw === 'object' && !Array.isArray(listRaw)
       ? Object.entries(listRaw as Record<string, AgentEntry>).map(([id, c]) => ({ ...c, id }))
       : [];
+
   const defaults = (g(['defaults']) as Record<string, unknown>) ?? {};
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -51,25 +53,28 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
     s(['list'], next);
   };
 
-  const toolsFromAgent = (a: AgentEntry): string[] => {
-    const t = a.tools;
-    if (Array.isArray(t)) return t;
-    if (t && typeof t === 'object' && 'deny' in t) return (t as { deny?: string[] }).deny ?? [];
-    return [];
-  };
-
   return (
     <div className="space-y-4">
-      <ConfigSection title="默认配置" icon={Bot} iconColor="text-emerald-500" desc="新建 Agent 的默认 model、tools">
+      <ConfigSection
+        title={i18n.t('configCenter.agents.defaultsTitle')}
+        icon={Bot}
+        iconColor="text-emerald-500"
+        desc={i18n.t('configCenter.agents.defaultsDesc')}
+      >
         <TextField
-          label="默认模型"
+          label={i18n.t('configCenter.agents.defaultModel')}
           value={String(defaults.model ?? '')}
           onChange={(v) => s(['defaults', 'model'], v)}
           placeholder="anthropic/claude-sonnet-4"
         />
       </ConfigSection>
 
-      <ConfigSection title="Agent 列表" icon={Bot} iconColor="text-indigo-500" desc="创建、配置、分配任务">
+      <ConfigSection
+        title={i18n.t('configCenter.agents.listTitle')}
+        icon={Bot}
+        iconColor="text-indigo-500"
+        desc={i18n.t('configCenter.agents.listDesc')}
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {list.map((agent, idx) => {
             const icon = AGENT_ICONS[idx % AGENT_ICONS.length];
@@ -110,9 +115,11 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
                     </button>
                   </div>
                 </div>
+
                 <p className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                  {(agent.role as string) || '通用 Agent'}
+                  {(agent.role as string) || i18n.t('configCenter.agents.genericRole')}
                 </p>
+
                 {agent.model && (
                   <div className="px-3 pb-1">
                     <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 font-mono">
@@ -120,21 +127,22 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
                     </span>
                   </div>
                 )}
+
                 {isEditing && (
                   <div className="p-3 space-y-2 border-t border-slate-100 dark:border-white/[0.04]">
                     <TextField
-                      label="名称"
+                      label={i18n.t('configCenter.agents.name')}
                       value={String(agent.name ?? agent.id ?? '')}
                       onChange={(v) => updateAgent(idx, 'name', v)}
                     />
                     <TextField
-                      label="模型"
+                      label={i18n.t('configCenter.agents.model')}
                       value={String(agent.model ?? '')}
                       onChange={(v) => updateAgent(idx, 'model', v)}
-                      placeholder="继承默认"
+                      placeholder={i18n.t('configCenter.agents.inheritDefault')}
                     />
                     <TextField
-                      label="角色描述"
+                      label={i18n.t('configCenter.agents.roleDesc')}
                       value={String(agent.role ?? '')}
                       onChange={(v) => updateAgent(idx, 'role', v)}
                       multiline
@@ -144,6 +152,7 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
               </div>
             );
           })}
+
           <button
             onClick={addAgent}
             className={cn(
@@ -155,7 +164,7 @@ export const AgentsSection: React.FC<SectionProps> = ({ setField, getField }) =>
             )}
           >
             <Plus className="h-8 w-8" />
-            <span className="text-sm">新建 Agent</span>
+            <span className="text-sm">{i18n.t('configCenter.agents.createAgent')}</span>
           </button>
         </div>
       </ConfigSection>

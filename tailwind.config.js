@@ -5,6 +5,7 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    "!./src/skills/**/*",
     "./src/renderer/data/official-multi-agent/**/*.json",
   ],
   theme: {
@@ -42,6 +43,9 @@ export default {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
         },
+        "mac-green": "#28c840",
+        "mac-red": "#ff5f57",
+        "mac-yellow": "#febc2e",
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",

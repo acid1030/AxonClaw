@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import i18n from '@/i18n';
 import {
   BookOpen,
   Lightbulb,
@@ -73,29 +74,29 @@ const DIFFICULTY_COLORS: Record<string, string> = {
 };
 
 const KB_CATEGORY_TABS: { id: 'all' | KnowledgeBaseCategory; label: string }[] = [
-  { id: 'all', label: '全部' },
-  { id: 'decision', label: '技术决策' },
-  { id: 'project', label: '项目文档' },
-  { id: 'preference', label: '用户偏好' },
-  { id: 'learning', label: '学习笔记' },
+  { id: 'all', label: i18n.t('knowledge.kbCategory.all') },
+  { id: 'decision', label: i18n.t('knowledge.kbCategory.decision') },
+  { id: 'project', label: i18n.t('knowledge.kbCategory.project') },
+  { id: 'preference', label: i18n.t('knowledge.kbCategory.preference') },
+  { id: 'learning', label: i18n.t('knowledge.kbCategory.learning') },
 ];
 
 type FilterType = 'all' | KnowledgeItemType;
 
 const filterTabs: { id: FilterType; label: string; icon: typeof LayoutGrid; activeColor: string }[] = [
-  { id: 'all', label: '全部', icon: LayoutGrid, activeColor: 'bg-primary/15 text-primary' },
-  { id: 'recipe', label: '配方', icon: BookOpen, activeColor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
-  { id: 'tip', label: '技巧', icon: Lightbulb, activeColor: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  { id: 'snippet', label: '片段', icon: Code, activeColor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
-  { id: 'faq', label: 'FAQ', icon: HelpCircle, activeColor: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' },
+  { id: 'all', label: i18n.t('knowledge.filter.all'), icon: LayoutGrid, activeColor: 'bg-primary/15 text-primary' },
+  { id: 'recipe', label: i18n.t('knowledge.filter.recipe'), icon: BookOpen, activeColor: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+  { id: 'tip', label: i18n.t('knowledge.filter.tip'), icon: Lightbulb, activeColor: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+  { id: 'snippet', label: i18n.t('knowledge.filter.snippet'), icon: Code, activeColor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+  { id: 'faq', label: i18n.t('knowledge.filter.faq'), icon: HelpCircle, activeColor: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' },
 ];
 
 function getTypeLabel(type: KnowledgeItemType): string {
   const labels: Record<KnowledgeItemType, string> = {
-    recipe: '配方',
-    tip: '技巧',
-    snippet: '片段',
-    faq: 'FAQ',
+    recipe: i18n.t('knowledge.types.recipe'),
+    tip: i18n.t('knowledge.types.tip'),
+    snippet: i18n.t('knowledge.types.snippet'),
+    faq: i18n.t('knowledge.types.faq'),
   };
   return labels[type] || type;
 }
@@ -151,7 +152,7 @@ function KnowledgeCard({ item, typeConfig, onClick }: {
             </span>
             {item.metadata.difficulty && (
               <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold', DIFFICULTY_COLORS[item.metadata.difficulty] || '')}>
-                {item.metadata.difficulty === 'easy' ? '入门' : item.metadata.difficulty === 'medium' ? '进阶' : '高级'}
+                {item.metadata.difficulty === 'easy' ? i18n.t('knowledge.difficulty.easy') : item.metadata.difficulty === 'medium' ? i18n.t('knowledge.difficulty.medium') : i18n.t('knowledge.difficulty.advanced')}
               </span>
             )}
           </div>
@@ -235,7 +236,7 @@ function KnowledgeDetailModal({ item, typeConfig, onClose }: {
           {item.type === 'recipe' && item.content.steps && item.content.steps.length > 0 && (
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-bold">
-                步骤 ({item.content.steps.length})
+                {i18n.t('knowledge.steps')} ({item.content.steps.length})
               </p>
               <div className="space-y-3">
                 {item.content.steps.map((step, i) => (
@@ -259,7 +260,7 @@ function KnowledgeDetailModal({ item, typeConfig, onClose }: {
                             className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-primary/10 text-primary hover:bg-primary/20"
                           >
                             {copiedStepIdx === i ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                            {copiedStepIdx === i ? '已复制' : '复制'}
+                            {copiedStepIdx === i ? i18n.t('common.copied') : i18n.t('common.copy')}
                           </button>
                         </div>
                         <pre className="text-[11px] text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed bg-black/20 rounded-lg p-3 max-h-40 overflow-y-auto">
@@ -289,7 +290,7 @@ function KnowledgeDetailModal({ item, typeConfig, onClose }: {
                   onClick={handleCopySnippet}
                   className="absolute top-2 right-2 px-2 py-1 rounded-md bg-white/10 text-[10px] font-bold text-muted-foreground hover:text-primary"
                 >
-                  {copied ? '已复制' : '复制'}
+                  {copied ? i18n.t('common.copied') : i18n.t('common.copy')}
                 </button>
               </div>
               {item.content.targetFile && (
@@ -351,8 +352,8 @@ function ScenePreviewModal({
       >
         <div className="flex items-center justify-between py-4 px-4 border-b border-white/10">
           <div>
-            <h3 className="text-base font-bold text-foreground">预览配置 · {scene.name}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">以下配置将应用于「{scene.name}」场景</p>
+            <h3 className="text-base font-bold text-foreground">{i18n.t('knowledge.scene.previewConfig')} · {scene.name}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{i18n.t('knowledge.scene.previewDesc', { name: scene.name })}</p>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
             <X className="w-5 h-5" />
@@ -369,14 +370,14 @@ function ScenePreviewModal({
             onClick={onClose}
             className="flex-1 py-2 rounded-lg text-sm font-bold bg-white/5 hover:bg-white/10 text-foreground"
           >
-            取消
+            {i18n.t('common.cancel')}
           </button>
           <button
             type="button"
             onClick={onApply}
             className="flex-1 py-2 rounded-lg text-sm font-bold bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center gap-1.5"
           >
-            <Zap className="w-4 h-4" /> 一键设置
+            <Zap className="w-4 h-4" /> {i18n.t('knowledge.scene.oneClickSetup')}
           </button>
         </div>
       </div>
@@ -393,7 +394,7 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
 
   const handleOneClickSetup = useCallback(
     (scene: SceneTemplate) => {
-      toast.success(`「${scene.name}」场景已应用，请前往配置中心确认`);
+      toast.success(i18n.t('knowledge.scene.applied', { name: scene.name }));
       onNavigateTo?.('config');
     },
     [onNavigateTo]
@@ -403,14 +404,14 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-bold text-foreground">场景库</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">选择适合你的使用场景，一键配置</p>
+          <h3 className="text-sm font-bold text-foreground">{i18n.t('knowledge.scene.library')}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{i18n.t('knowledge.scene.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#1e293b] px-3 py-2 w-48">
           <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           <input
             type="text"
-            placeholder="搜索场景..."
+            placeholder={i18n.t('knowledge.scene.searchPlaceholder')}
             value={sceneSearch}
             onChange={(e) => setSceneSearch(e.target.value)}
             className="flex-1 bg-transparent border-none outline-none text-xs text-foreground placeholder-muted-foreground"
@@ -463,10 +464,10 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
                         scene.difficulty === 'hard' && 'bg-red-500/20 text-red-400'
                       )}
                     >
-                      {scene.difficulty === 'simple' ? '简单' : scene.difficulty === 'medium' ? '中等' : '高级'}
+                      {scene.difficulty === 'simple' ? i18n.t('knowledge.level.simple') : scene.difficulty === 'medium' ? i18n.t('knowledge.level.medium') : i18n.t('knowledge.level.hard')}
                     </span>
                     {scene.recommended && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-400">推荐</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-400">{i18n.t('knowledge.level.recommended')}</span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{scene.description}</p>
@@ -484,12 +485,12 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
               <div className="flex items-center gap-2 mb-4">
                 <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-400 text-[10px] font-bold flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
-                  {scene.skillsCount} 技能
+                  {scene.skillsCount} {i18n.t('knowledge.skills')}
                 </span>
                 {scene.cronCount > 0 && (
                   <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    {scene.cronCount} 定时任务
+                    {scene.cronCount} {i18n.t('knowledge.cronJobs')}
                   </span>
                 )}
               </div>
@@ -499,14 +500,14 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
                   onClick={() => setPreviewScene(scene)}
                   className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-white/5 hover:bg-white/10 text-foreground"
                 >
-                  <Eye className="w-3.5 h-3.5" /> 预览配置
+                  <Eye className="w-3.5 h-3.5" /> {i18n.t('knowledge.scene.previewConfig')}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleOneClickSetup(scene)}
                   className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-600 text-white"
                 >
-                  <Zap className="w-3.5 h-3.5" /> 一键设置
+                  <Zap className="w-3.5 h-3.5" /> {i18n.t('knowledge.scene.oneClickSetup')}
                 </button>
               </div>
             </div>
@@ -528,8 +529,8 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
       {scenes.length === 0 && (
         <div className="text-center py-12 rounded-xl border border-white/10 bg-[#1e293b]">
           <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">没有匹配的场景</p>
-          <p className="text-xs text-muted-foreground mt-1">尝试调整筛选条件或搜索关键词</p>
+          <p className="text-sm font-medium text-muted-foreground">{i18n.t('knowledge.scene.noMatch')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{i18n.t('knowledge.scene.noMatchHint')}</p>
         </div>
       )}
     </div>
@@ -540,7 +541,7 @@ function SceneLibraryTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
 function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void }) {
   const handleApplyWorkflow = useCallback(
     (w: (typeof WORKFLOW_TEMPLATES)[0]) => {
-      toast.success(`「${w.name}」工作流已应用，请前往配置中心或智能代理确认`);
+      toast.success(i18n.t('knowledge.workflow.applied', { name: w.name }));
       onNavigateTo?.('config');
     },
     [onNavigateTo]
@@ -549,8 +550,8 @@ function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-bold text-foreground">多代理工作流</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">多个 Agent 分工协作，完成复杂任务</p>
+        <h3 className="text-sm font-bold text-foreground">{i18n.t('knowledge.workflow.title')}</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">{i18n.t('knowledge.workflow.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -573,7 +574,7 @@ function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 text-[10px] font-bold">
-                {w.agentCount} 个代理
+                {w.agentCount} {i18n.t('knowledge.workflow.agents')}
               </span>
               {w.tags.map((tag) => (
                 <span key={tag} className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-muted-foreground">
@@ -586,7 +587,7 @@ function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void
               onClick={() => handleApplyWorkflow(w)}
               className="mt-4 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-600 text-white"
             >
-              <Zap className="w-3.5 h-3.5" /> 应用工作流
+              <Zap className="w-3.5 h-3.5" /> {i18n.t('knowledge.workflow.apply')}
             </button>
           </div>
         ))}
@@ -594,12 +595,12 @@ function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void
 
       <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
-          <Users className="w-4 h-4" /> 如何配置多代理
+          <Users className="w-4 h-4" /> {i18n.t('knowledge.workflow.howTo')}
         </h4>
         <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
-          <li>前往「配置中心 → 代理」创建多个 Agent，设置不同角色与技能</li>
-          <li>使用子代理（subagents）让主 Agent 按需召唤专家 Agent</li>
-          <li>或在工作流编辑器中编排多 Agent 协作流程</li>
+          <li>{i18n.t('knowledge.workflow.step1')}</li>
+          <li>{i18n.t('knowledge.workflow.step2')}</li>
+          <li>{i18n.t('knowledge.workflow.step3')}</li>
         </ul>
       </div>
     </div>
@@ -610,7 +611,7 @@ function MultiAgentTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void
 function AgentPresetsTab({ onNavigateTo }: { onNavigateTo?: (view: string) => void }) {
   const handleUsePreset = useCallback(
     (p: (typeof AGENT_PRESETS)[0]) => {
-      toast.success(`「${p.name}」预设已应用，请前往智能代理创建或编辑 Agent`);
+      toast.success(i18n.t('knowledge.preset.applied', { name: p.name }));
       onNavigateTo?.('agent');
     },
     [onNavigateTo]
@@ -619,8 +620,8 @@ function AgentPresetsTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-bold text-foreground">代理预设</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">选择预设人格快速创建 Agent</p>
+        <h3 className="text-sm font-bold text-foreground">{i18n.t('knowledge.preset.title')}</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">{i18n.t('knowledge.preset.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -639,7 +640,7 @@ function AgentPresetsTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
               <div className="flex-1 min-w-0">
                 <h4 className="text-sm font-bold text-foreground">{p.name}</h4>
                 <p className="text-xs text-muted-foreground mt-1">{p.description}</p>
-                <p className="text-[10px] text-muted-foreground mt-1.5 italic">人格：{p.personality}</p>
+                <p className="text-[10px] text-muted-foreground mt-1.5 italic">{i18n.t('knowledge.preset.personality')}: {p.personality}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-1 mb-3">
@@ -654,7 +655,7 @@ function AgentPresetsTab({ onNavigateTo }: { onNavigateTo?: (view: string) => vo
               onClick={() => handleUsePreset(p)}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-white/5 hover:bg-white/10 text-foreground"
             >
-              <User className="w-3.5 h-3.5" /> 使用此预设
+              <User className="w-3.5 h-3.5" /> {i18n.t('knowledge.preset.use')}
             </button>
           </div>
         ))}
@@ -721,7 +722,7 @@ function SearchTab({
         <Search className="w-5 h-5 text-muted-foreground shrink-0" />
         <input
           type="text"
-          placeholder="搜索场景、工作流、代理预设、知识条目..."
+          placeholder={i18n.t('knowledge.search.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder-muted-foreground"
@@ -730,10 +731,10 @@ function SearchTab({
 
       <div className="flex items-center gap-1.5 flex-wrap">
         {[
-          { id: 'all' as const, label: '全部' },
-          { id: 'scenes' as const, label: '场景' },
-          { id: 'knowledge' as const, label: '知识' },
-          { id: 'agents' as const, label: '代理' },
+          { id: 'all' as const, label: i18n.t('knowledge.filter.all') },
+          { id: 'scenes' as const, label: i18n.t('knowledge.search.scenes') },
+          { id: 'knowledge' as const, label: i18n.t('knowledge.search.knowledge') },
+          { id: 'agents' as const, label: i18n.t('knowledge.search.agents') },
         ].map((s) => (
           <button
             key={s.id}
@@ -751,8 +752,8 @@ function SearchTab({
       {!hasResults && query && (
         <div className="text-center py-16 rounded-xl border border-white/10 bg-[#1e293b]">
           <Search className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">未找到相关结果</p>
-          <p className="text-xs text-muted-foreground mt-1">尝试其他关键词</p>
+          <p className="text-sm font-medium text-muted-foreground">{i18n.t('knowledge.search.noResults')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{i18n.t('knowledge.search.tryOther')}</p>
         </div>
       )}
 
@@ -761,7 +762,7 @@ function SearchTab({
           {(scope === 'all' || scope === 'scenes') && scenes.length > 0 && (
             <div>
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" /> 场景模板 ({scenes.length})
+                <Sparkles className="w-4 h-4" /> {i18n.t('knowledge.search.sceneTemplates')} ({scenes.length})
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {scenes.slice(0, 8).map((s) => (
@@ -780,7 +781,7 @@ function SearchTab({
           {(scope === 'all' || scope === 'agents') && (workflows.length > 0 || presets.length > 0) && (
             <div>
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Users className="w-4 h-4" /> 代理与工作流 ({workflows.length + presets.length})
+                <Users className="w-4 h-4" /> {i18n.t('knowledge.search.agentWorkflows')} ({workflows.length + presets.length})
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {workflows.slice(0, 4).map((w) => (
@@ -802,7 +803,7 @@ function SearchTab({
           {(scope === 'all' || scope === 'knowledge') && knowledgeItems.length > 0 && (
             <div>
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                <BookOpen className="w-4 h-4" /> 知识百科 ({knowledgeItems.length})
+                <BookOpen className="w-4 h-4" /> {i18n.t('knowledge.search.encyclopedia')} ({knowledgeItems.length})
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {knowledgeItems.slice(0, 8).map((item) => (
@@ -827,8 +828,8 @@ function SearchTab({
       {!query && (
         <div className="text-center py-12 rounded-xl border border-white/10 bg-[#1e293b]">
           <Search className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">输入关键词开始搜索</p>
-          <p className="text-xs text-muted-foreground mt-1">支持搜索场景、工作流、代理预设、知识条目</p>
+          <p className="text-sm font-medium text-muted-foreground">{i18n.t('knowledge.search.start')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{i18n.t('knowledge.search.supported')}</p>
         </div>
       )}
     </div>
@@ -865,7 +866,7 @@ function KnowledgeLibrarySubPage({
             subTab === 'library' ? 'bg-sky-500/15 text-sky-400' : 'bg-white/5 text-muted-foreground hover:bg-white/10'
           )}
         >
-          <Database className="w-3.5 h-3.5" /> 知识库
+          <Database className="w-3.5 h-3.5" /> {i18n.t('knowledge.tabs.knowledge')}
         </button>
         <button
           onClick={() => setSubTab('encyclopedia')}
@@ -874,7 +875,7 @@ function KnowledgeLibrarySubPage({
             subTab === 'encyclopedia' ? 'bg-amber-500/15 text-amber-400' : 'bg-white/5 text-muted-foreground hover:bg-white/10'
           )}
         >
-          <BookOpen className="w-3.5 h-3.5" /> 知识百科
+          <BookOpen className="w-3.5 h-3.5" /> {i18n.t('knowledge.encyclopedia.title')}
         </button>
       </div>
 
@@ -947,9 +948,9 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
       a.download = `axonclaw-knowledge-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('知识库已导出');
+      toast.success(i18n.t('knowledge.toast.exportSuccess'));
     } catch {
-      toast.error('导出失败');
+      toast.error(i18n.t('knowledge.toast.exportFailed'));
     }
   }, []);
 
@@ -964,13 +965,13 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
         try {
           const data = JSON.parse(reader.result as string);
           if (data.entries || data.stats) {
-            toast.success(`已导入 ${data.entries?.length ?? 0} 条知识，请前往配置中心确认`);
+            toast.success(i18n.t('knowledge.toast.imported', { count: data.entries?.length ?? 0 }));
             onNavigateTo?.('config');
           } else {
-            toast.error('文件格式无效');
+            toast.error(i18n.t('knowledge.toast.invalidFormat'));
           }
         } catch {
-          toast.error('解析失败，请确保为有效 JSON');
+          toast.error(i18n.t('knowledge.toast.parseFailed'));
         }
       };
       reader.readAsText(file);
@@ -980,15 +981,15 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
   );
 
   const handleRebuildIndex = useCallback(() => {
-    if (window.confirm('确定要重建向量索引吗？这可能需要几分钟。')) {
-      toast.success('已提交重建索引任务，请稍后查看配置中心');
+    if (window.confirm(i18n.t('knowledge.confirm.rebuild'))) {
+      toast.success(i18n.t('knowledge.toast.rebuildSubmitted'));
       onNavigateTo?.('config');
     }
   }, [onNavigateTo]);
 
   const handleCleanDuplicates = useCallback(() => {
-    if (window.confirm('确定要清理重复条目吗？')) {
-      toast.success('已清理重复条目');
+    if (window.confirm(i18n.t('knowledge.confirm.cleanDuplicates'))) {
+      toast.success(i18n.t('knowledge.toast.cleaned'));
     }
   }, []);
 
@@ -1005,7 +1006,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
         <Search className="w-4 h-4 text-muted-foreground shrink-0" />
         <input
           type="text"
-          placeholder="语义搜索知识库..."
+          placeholder={i18n.t('knowledge.library.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder-muted-foreground"
@@ -1030,8 +1031,8 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         <div className="rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-white/10">
-            <span className="text-sm font-bold text-foreground">最近更新</span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">实时</span>
+            <span className="text-sm font-bold text-foreground">{i18n.t('knowledge.library.recentUpdates')}</span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">{i18n.t('knowledge.library.live')}</span>
           </div>
           <div className="p-2">
             {loading ? (
@@ -1039,7 +1040,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                 <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
             ) : recentItems.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-8 text-center">暂无知识条目</p>
+              <p className="text-xs text-muted-foreground py-8 text-center">{i18n.t('knowledge.library.noItems')}</p>
             ) : (
               <div className="space-y-1">
                 {recentItems.map((item) => {
@@ -1077,23 +1078,23 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
             <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Database className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-bold text-foreground">知识统计</span>
+                <span className="text-sm font-bold text-foreground">{i18n.t('knowledge.stats.title')}</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-black/20">
-                  <span className="text-[10px] text-muted-foreground block">总条目</span>
+                  <span className="text-[10px] text-muted-foreground block">{i18n.t('knowledge.stats.total')}</span>
                   <span className="text-lg font-black text-foreground">{stats.total}</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/20">
-                  <span className="text-[10px] text-muted-foreground block">本周新增</span>
+                  <span className="text-[10px] text-muted-foreground block">{i18n.t('knowledge.stats.weeklyAdded')}</span>
                   <span className="text-lg font-black text-emerald-400">+{stats.weeklyAdded}</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/20">
-                  <span className="text-[10px] text-muted-foreground block">搜索次数</span>
+                  <span className="text-[10px] text-muted-foreground block">{i18n.t('knowledge.stats.searchCount')}</span>
                   <span className="text-lg font-black text-foreground">{stats.searchCount}</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/20">
-                  <span className="text-[10px] text-muted-foreground block">命中率</span>
+                  <span className="text-[10px] text-muted-foreground block">{i18n.t('knowledge.stats.hitRate')}</span>
                   <span className="text-lg font-black text-foreground">{stats.hitRate}%</span>
                 </div>
               </div>
@@ -1103,7 +1104,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
           <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4">
             <div className="flex items-center gap-2 mb-3">
               <Zap className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-bold text-foreground">快捷操作</span>
+              <span className="text-sm font-bold text-foreground">{i18n.t('knowledge.shortcuts.title')}</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1111,28 +1112,28 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                 onClick={handleExport}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-foreground flex items-center gap-1"
               >
-                <Download className="w-3 h-3" /> 导出知识库
+                <Download className="w-3 h-3" /> {i18n.t('knowledge.shortcuts.export')}
               </button>
               <button
                 type="button"
                 onClick={handleImport}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-foreground flex items-center gap-1"
               >
-                <Upload className="w-3 h-3" /> 导入数据
+                <Upload className="w-3 h-3" /> {i18n.t('knowledge.shortcuts.import')}
               </button>
               <button
                 type="button"
                 onClick={handleRebuildIndex}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-foreground flex items-center gap-1"
               >
-                <RotateCcw className="w-3 h-3" /> 重建索引
+                <RotateCcw className="w-3 h-3" /> {i18n.t('knowledge.shortcuts.rebuild')}
               </button>
               <button
                 type="button"
                 onClick={handleCleanDuplicates}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-foreground flex items-center gap-1"
               >
-                <Trash2 className="w-3 h-3" /> 清理重复
+                <Trash2 className="w-3 h-3" /> {i18n.t('knowledge.shortcuts.clean')}
               </button>
             </div>
           </div>
@@ -1140,12 +1141,12 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
           <div className="rounded-xl border border-white/10 bg-[#1e293b] p-4">
             <div className="flex items-center gap-2 mb-3">
               <Settings2 className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-bold text-foreground">记忆设置</span>
+              <span className="text-sm font-bold text-foreground">{i18n.t('knowledge.memory.title')}</span>
             </div>
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-foreground">自动保存对话</span>
+                  <span className="text-xs text-foreground">{i18n.t('knowledge.memory.autoSave')}</span>
                   <button
                     type="button"
                     role="switch"
@@ -1164,11 +1165,11 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                     />
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">对话结束后自动提取关键信息并保存</p>
+                <p className="text-[11px] text-muted-foreground">{i18n.t('knowledge.memory.autoSaveHint')}</p>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-foreground">语义检索</span>
+                  <span className="text-xs text-foreground">{i18n.t('knowledge.memory.semanticSearch')}</span>
                   <button
                     type="button"
                     role="switch"
@@ -1187,11 +1188,11 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                     />
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">使用向量搜索提供语义检索能力</p>
+                <p className="text-[11px] text-muted-foreground">{i18n.t('knowledge.memory.semanticHint')}</p>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-foreground">相似度阈值</span>
+                  <span className="text-xs text-foreground">{i18n.t('knowledge.memory.similarityThreshold')}</span>
                   <span className="text-xs font-mono text-foreground">{similarityThreshold.toFixed(2)}</span>
                 </div>
                 <input
@@ -1203,7 +1204,7 @@ function KnowledgeBaseTab({ onNavigateTo }: { onNavigateTo?: (view: string) => v
                   onChange={(e) => setSimilarityThreshold(Number(e.target.value))}
                   className="w-full"
                 />
-                <p className="text-[11px] text-muted-foreground mt-0.5">控制检索结果的相关性阈值</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{i18n.t('knowledge.memory.thresholdHint')}</p>
               </div>
             </div>
           </div>
@@ -1269,8 +1270,8 @@ function KnowledgeEncyclopediaTab({
           <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
             <BookOpen className="w-8 h-8 text-muted-foreground" />
           </div>
-          <p className="text-sm font-bold text-muted-foreground">暂无知识条目</p>
-          <p className="text-xs text-muted-foreground mt-1">知识内容将在此展示</p>
+          <p className="text-sm font-bold text-muted-foreground">{i18n.t('knowledge.encyclopedia.noItems')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{i18n.t('knowledge.encyclopedia.noItemsHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1289,11 +1290,11 @@ function KnowledgeEncyclopediaTab({
 }
 
 const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'scenes', label: '场景模板', icon: Sparkles },
-  { id: 'multi-agent', label: '多代理协作', icon: Users },
-  { id: 'agent-presets', label: '代理预设', icon: User },
-  { id: 'knowledge', label: '知识库', icon: BookOpen },
-  { id: 'search', label: '搜索', icon: Search },
+  { id: 'scenes', label: i18n.t('knowledge.primaryTabs.scenes'), icon: Sparkles },
+  { id: 'multi-agent', label: i18n.t('knowledge.primaryTabs.multiAgent'), icon: Users },
+  { id: 'agent-presets', label: i18n.t('knowledge.primaryTabs.agentPresets'), icon: User },
+  { id: 'knowledge', label: i18n.t('knowledge.primaryTabs.knowledge'), icon: BookOpen },
+  { id: 'search', label: i18n.t('knowledge.primaryTabs.search'), icon: Search },
 ];
 
 const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ onNavigateTo }) => {
@@ -1320,21 +1321,21 @@ const KnowledgeView: React.FC<{ onNavigateTo?: (view: string) => void }> = ({ on
         {/* Header - AxonClawX 风格 */}
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-base font-bold text-foreground">知识中心</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">场景、代理、知识库与模板</p>
+            <h2 className="text-base font-bold text-foreground">{i18n.t('knowledge.title')}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{i18n.t('knowledge.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               className="h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-white/10 bg-white/5 hover:bg-white/10 text-foreground"
             >
-              <Settings2 className="w-3.5 h-3.5" /> 管理库
+              <Settings2 className="w-3.5 h-3.5" /> {i18n.t('knowledge.manageLibrary')}
             </button>
             <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#1e293b] px-3 py-2 w-56">
               <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <input
                 type="text"
-                placeholder="搜索所有模板..."
+                placeholder={i18n.t('knowledge.globalSearchPlaceholder')}
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 className="flex-1 bg-transparent border-none outline-none text-xs text-foreground placeholder-muted-foreground"

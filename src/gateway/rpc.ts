@@ -4,8 +4,7 @@
  */
 
 import { getResolvedGatewayPort, resolveGatewayPort, setResolvedGatewayPort } from './port';
-
-const GATEWAY_TOKEN = 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7';
+import { GATEWAY_TOKEN } from './constants';
 
 function getGatewayWsUrl(): string {
   return `ws://127.0.0.1:${getResolvedGatewayPort()}/ws`;

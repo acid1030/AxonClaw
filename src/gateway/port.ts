@@ -10,11 +10,12 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { GATEWAY_TOKEN } from './constants';
 
 const execAsync = promisify(exec);
 const DEFAULT_PORT = 18789;
 const FALLBACK_PORTS = [18789, 18791, 18792, 18080]; // OpenClaw 18789/18791/18792，ClawDeckX Web UI 18080
-const CHECK_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || 'clawx-8c07bcf5f6eb617faee8f9b4c01be4a7';
+const CHECK_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || GATEWAY_TOKEN;
 
 /** 从 ~/.openclaw/openclaw.json 读取 gateway.port */
 export function readGatewayPortFromConfig(): number {
