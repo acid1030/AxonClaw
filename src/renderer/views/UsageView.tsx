@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   DollarSign,
   ChevronLeft,
@@ -66,6 +67,7 @@ function formatUsageTimestamp(timestamp: string): string {
 }
 
 const UsageView: React.FC = () => {
+  const { t } = useTranslation();
   const initGateway = useGatewayStore((s) => s.init);
   const setStatus = useGatewayStore((s) => s.setStatus);
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -206,8 +208,8 @@ const UsageView: React.FC = () => {
         {/* 头部：标题 + 日期范围 + 下载/刷新 */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
-            <h1 className="text-lg font-bold text-foreground">用量统计</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Token 消耗与费用追踪</p>
+            <h1 className="text-lg font-bold text-foreground">{t('usage.title')}</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('usage.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-[#1e293b]">
@@ -221,18 +223,18 @@ const UsageView: React.FC = () => {
                     dateRange === r ? 'bg-blue-500/30 text-blue-400' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  {r === 'today' ? '今天' : r === '7d' ? '近 7 天' : '近 30 天'}
+                  {r === 'today' ? t('usage.range.today') : r === '7d' ? t('usage.range.last7d') : t('usage.range.last30d')}
                 </button>
               ))}
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="下载">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title={t('usage.download')}>
               <Download className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground"
-              title="刷新"
+              title={t('usage.refresh')}
               onClick={handleRefresh}
               disabled={combinedLoading}
             >
@@ -245,11 +247,11 @@ const UsageView: React.FC = () => {
         <div className="flex gap-1 border-b border-slate-700/50 mb-4">
           {(
             [
-              { id: 'overview' as const, label: '用量统计' },
-              { id: 'by-model' as const, label: '按模型' },
-              { id: 'by-session' as const, label: '按会话' },
-              { id: 'timeseries' as const, label: '时间序列' },
-              { id: 'logs' as const, label: '用量日志' },
+              { id: 'overview' as const, label: t('usage.tabs.overview') },
+              { id: 'by-model' as const, label: t('usage.tabs.byModel') },
+              { id: 'by-session' as const, label: t('usage.tabs.bySession') },
+              { id: 'timeseries' as const, label: t('usage.tabs.timeseries') },
+              { id: 'logs' as const, label: t('usage.tabs.logs') },
             ] as const
           ).map((t) => (
             <button
@@ -270,7 +272,7 @@ const UsageView: React.FC = () => {
 
         {!isOnline && (
           <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
-            Gateway 未连接，请确保 Gateway 已启动。点击刷新可重新检测连接。
+            {t('usage.gatewayOfflineHint')}
           </div>
         )}
 
@@ -281,7 +283,7 @@ const UsageView: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">总 TOKEN</span>
+              <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
               <Hexagon className="w-5 h-5 text-purple-500" />
             </div>
             <div className="text-xl font-bold text-foreground">{formatTokenCount(totalTokens)}</div>
@@ -291,7 +293,7 @@ const UsageView: React.FC = () => {
           </div>
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">总费用</span>
+              <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
               <Wallet className="w-5 h-5 text-orange-500" />
             </div>
             <div className="text-xl font-bold text-foreground">${totalCost.toFixed(2)}</div>
@@ -301,21 +303,21 @@ const UsageView: React.FC = () => {
           </div>
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">消息数</span>
+              <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
               <MessageSquare className="w-5 h-5 text-emerald-500" />
             </div>
             <div className="text-xl font-bold text-foreground">{msgCount}</div>
             <div className="text-[11px] text-muted-foreground mt-1">
-              会话数: {uniqueSessions}
+              {t('usage.kpi.sessionsCount', { count: uniqueSessions })}
             </div>
           </div>
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">平均延迟</span>
+              <span className="text-xs text-muted-foreground">{t('usage.kpi.avgLatency')}</span>
               <Gauge className="w-5 h-5 text-purple-500" />
             </div>
             <div className="text-xl font-bold text-foreground">—</div>
-            <div className="text-[11px] text-muted-foreground mt-1">会话数: {uniqueSessions}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{t('usage.kpi.sessionsCount', { count: uniqueSessions })}</div>
           </div>
         </div>
 
@@ -323,7 +325,7 @@ const UsageView: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex justify-between text-xs mb-2">
-              <span className="text-muted-foreground">缓存命中率</span>
+              <span className="text-muted-foreground">{t('usage.cache.hitRate')}</span>
               <span className="font-medium">{cacheHitRate.toFixed(1)}%</span>
             </div>
             <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden">
@@ -335,7 +337,7 @@ const UsageView: React.FC = () => {
           </div>
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex justify-between text-xs mb-2">
-              <span className="text-muted-foreground">输入/输出比</span>
+              <span className="text-muted-foreground">{t('usage.cache.ioRatio')}</span>
               <span className="font-medium">
                 {formatTokenCount(inputTokens)} / {formatTokenCount(outputTokens)}
               </span>
@@ -364,21 +366,21 @@ const UsageView: React.FC = () => {
               <BarChart2 className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
-              <h3 className="text-sm font-medium text-foreground">预算</h3>
-              <p className="text-xs text-muted-foreground">未设置预算限额</p>
+              <h3 className="text-sm font-medium text-foreground">{t('usage.budget.title')}</h3>
+              <p className="text-xs text-muted-foreground">{t('usage.budget.notSet')}</p>
             </div>
           </div>
           <Button size="sm" className="gap-1.5">
             <Settings className="h-4 w-4" />
-            设置预算
+            {t('usage.budget.set')}
           </Button>
         </div>
 
-        {/* 费用趋势 + 按模型 */}
+        {/* 费用趋势 + {t('usage.group.byModel')} */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <div className="lg:col-span-2 rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-foreground">费用趋势</h3>
+              <h3 className="text-sm font-medium text-foreground">{t('usage.trend.title')}</h3>
               <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-slate-800/50">
                 {(['day', 'week', 'month'] as const).map((g) => (
                   <button
@@ -390,7 +392,7 @@ const UsageView: React.FC = () => {
                       trendGranularity === g ? 'bg-slate-600 text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                    {g === 'day' ? '日' : g === 'week' ? '周' : '月'}
+                    {g === 'day' ? t('usage.trend.day') : g === 'week' ? t('usage.trend.week') : t('usage.trend.month')}
                   </button>
                 ))}
               </div>
@@ -416,11 +418,11 @@ const UsageView: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">暂无趋势数据</p>
+              <p className="text-sm text-muted-foreground">{t('usage.empty.noTrend')}</p>
             )}
           </div>
           <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-            <h3 className="text-sm font-medium text-foreground mb-3">按模型</h3>
+            <h3 className="text-sm font-medium text-foreground mb-3">{t('usage.byModel.title')}</h3>
             {usageGroups.length > 0 ? (
               <div className="space-y-2">
                 {usageGroups.slice(0, 5).map((g) => (
@@ -431,25 +433,25 @@ const UsageView: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">暂无数据</p>
+              <p className="text-sm text-muted-foreground">{t('usage.empty.noData')}</p>
             )}
           </div>
         </div>
 
         {/* Token 使用历史 */}
         <div>
-          <h3 className="text-base font-semibold text-foreground mb-4">Token 使用记录</h3>
+          <h3 className="text-base font-semibold text-foreground mb-4">{t('usage.logs.tokenUsageTitle')}</h3>
           {historyLoading && usageHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="loading" title="加载中…" />
+              <FeedbackState state="loading" title={t('usage.loading')} />
             </div>
           ) : usageHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="empty" title="暂无使用记录" />
+              <FeedbackState state="empty" title={t('usage.empty.noUsageRecords')} />
             </div>
           ) : filteredHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="empty" title="所选时间范围内无记录" />
+              <FeedbackState state="empty" title={t('usage.empty.noRecordsInRange')} />
             </div>
           ) : (
             <div className="space-y-4">
@@ -469,7 +471,7 @@ const UsageView: React.FC = () => {
                           : 'rounded-md text-muted-foreground'
                       }
                     >
-                      按模型
+                      {t('usage.group.byModel')}
                     </Button>
                     <Button
                       variant={usageGroupBy === 'day' ? 'secondary' : 'ghost'}
@@ -484,7 +486,7 @@ const UsageView: React.FC = () => {
                           : 'rounded-md text-muted-foreground'
                       }
                     >
-                      按日期
+                      {t('usage.group.byDate')}
                     </Button>
                   </div>
                   <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
@@ -501,7 +503,7 @@ const UsageView: React.FC = () => {
                           : 'rounded-md text-muted-foreground'
                       }
                     >
-                      7 天
+                      {t('usage.range.7dShort')}
                     </Button>
                     <Button
                       variant={usageWindow === '30d' ? 'secondary' : 'ghost'}
@@ -516,7 +518,7 @@ const UsageView: React.FC = () => {
                           : 'rounded-md text-muted-foreground'
                       }
                     >
-                      30 天
+                      {t('usage.range.30dShort')}
                     </Button>
                     <Button
                       variant={usageWindow === 'all' ? 'secondary' : 'ghost'}
@@ -531,22 +533,22 @@ const UsageView: React.FC = () => {
                           : 'rounded-md text-muted-foreground'
                       }
                     >
-                      全部
+                      {t('usage.range.all')}
                     </Button>
                   </div>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  共 {filteredHistory.length} 条
+                  {t('usage.totalCount', { count: filteredHistory.length })}
                 </span>
               </div>
 
               <UsageBarChart
                 groups={usageGroups}
-                emptyLabel="暂无数据"
-                totalLabel="总量"
-                inputLabel="输入"
-                outputLabel="输出"
-                cacheLabel="缓存"
+                emptyLabel={t('usage.empty.noData')}
+                totalLabel={t('usage.labels.total')}
+                inputLabel={t('usage.labels.input')}
+                outputLabel={t('usage.labels.output')}
+                cacheLabel={t('usage.labels.cache')}
               />
 
               <div className="space-y-3">
@@ -558,7 +560,7 @@ const UsageView: React.FC = () => {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-semibold text-sm text-foreground truncate">
-                          {entry.model || '未知模型'}
+                          {entry.model || t('usage.unknownModel')}
                         </p>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                           {[entry.provider, entry.agentId, entry.sessionId].filter(Boolean).join(' • ')}
@@ -574,16 +576,16 @@ const UsageView: React.FC = () => {
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] font-medium text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-sky-500" />
-                        输入 {formatTokenCount(entry.inputTokens)}
+                        {t('usage.labels.input')} {formatTokenCount(entry.inputTokens)}
                       </span>
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-violet-500" />
-                        输出 {formatTokenCount(entry.outputTokens)}
+                        {t('usage.labels.output')} {formatTokenCount(entry.outputTokens)}
                       </span>
                       {(entry.cacheReadTokens > 0 || entry.cacheWriteTokens > 0) && (
                         <span className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-amber-500" />
-                          缓存{' '}
+                          {t('usage.labels.cache')}{' '}
                           {formatTokenCount(entry.cacheReadTokens + entry.cacheWriteTokens)}
                         </span>
                       )}
@@ -599,7 +601,7 @@ const UsageView: React.FC = () => {
 
               <div className="flex items-center justify-between pt-2">
                 <span className="text-xs text-muted-foreground">
-                  第 {safePage} / {totalPages} 页
+                  {t('usage.page', { current: safePage, total: totalPages })}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -610,7 +612,7 @@ const UsageView: React.FC = () => {
                     className="h-8 border-indigo-500/40"
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" />
-                    上一页
+                    {t('usage.prevPage')}
                   </Button>
                   <Button
                     variant="outline"
@@ -619,7 +621,7 @@ const UsageView: React.FC = () => {
                     disabled={safePage >= totalPages}
                     className="h-8 border-indigo-500/40"
                   >
-                    下一页
+                    {t('usage.nextPage')}
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
@@ -634,50 +636,50 @@ const UsageView: React.FC = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">总 TOKEN</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
                 <div className="text-xl font-bold mt-1">{formatTokenCount(totalTokens)}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">总费用</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
                 <div className="text-xl font-bold mt-1">${totalCost.toFixed(2)}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">模型数</span>
+                <span className="text-xs text-muted-foreground">{t('usage.modelCount')}</span>
                 <div className="text-xl font-bold mt-1">{modelGroups.length}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">消息数</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
                 <div className="text-xl font-bold mt-1">{msgCount}</div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="text-sm font-medium mb-4">按模型分布</h3>
+              <h3 className="text-sm font-medium mb-4">{t('usage.byModel.distribution')}</h3>
               <UsageBarChart
                 groups={modelGroups}
-                emptyLabel="暂无数据"
-                totalLabel="总量"
-                inputLabel="输入"
-                outputLabel="输出"
-                cacheLabel="缓存"
+                emptyLabel={t('usage.empty.noData')}
+                totalLabel={t('usage.labels.total')}
+                inputLabel={t('usage.labels.input')}
+                outputLabel={t('usage.labels.output')}
+                cacheLabel={t('usage.labels.cache')}
               />
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="text-sm font-medium mb-3">模型明细</h3>
+              <h3 className="text-sm font-medium mb-3">{t('usage.byModel.details')}</h3>
               {modelGroups.length > 0 ? (
                 <div className="space-y-2">
                   {modelGroups.map((g) => (
                     <div key={g.label} className="flex justify-between items-center py-2 border-b border-slate-700/50 last:border-0">
                       <span className="text-sm truncate max-w-[70%]">{g.label}</span>
                       <div className="flex gap-4 text-xs">
-                        <span>输入 {formatTokenCount(g.inputTokens)}</span>
-                        <span>输出 {formatTokenCount(g.outputTokens)}</span>
-                        <span className="font-medium">总 {formatTokenCount(g.totalTokens)}</span>
+                        <span>{t('usage.labels.input')} {formatTokenCount(g.inputTokens)}</span>
+                        <span>{t('usage.labels.output')} {formatTokenCount(g.outputTokens)}</span>
+                        <span className="font-medium">{t('usage.labels.total')} {formatTokenCount(g.totalTokens)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <FeedbackState state="empty" title="暂无模型数据" />
+                <FeedbackState state="empty" title={t('usage.empty.noModelData')} />
               )}
             </div>
           </div>
@@ -687,35 +689,35 @@ const UsageView: React.FC = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">总 TOKEN</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
                 <div className="text-xl font-bold mt-1">{formatTokenCount(totalTokens)}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">会话数</span>
+                <span className="text-xs text-muted-foreground">{t('usage.sessionCount')}</span>
                 <div className="text-xl font-bold mt-1">{uniqueSessions}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">总费用</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
                 <div className="text-xl font-bold mt-1">${totalCost.toFixed(2)}</div>
               </div>
               <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-                <span className="text-xs text-muted-foreground">消息数</span>
+                <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
                 <div className="text-xl font-bold mt-1">{msgCount}</div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="text-sm font-medium mb-4">按会话分布</h3>
+              <h3 className="text-sm font-medium mb-4">{t('usage.bySession.distribution')}</h3>
               <UsageBarChart
                 groups={sessionGroups}
-                emptyLabel="暂无数据"
-                totalLabel="总量"
-                inputLabel="输入"
-                outputLabel="输出"
-                cacheLabel="缓存"
+                emptyLabel={t('usage.empty.noData')}
+                totalLabel={t('usage.labels.total')}
+                inputLabel={t('usage.labels.input')}
+                outputLabel={t('usage.labels.output')}
+                cacheLabel={t('usage.labels.cache')}
               />
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="text-sm font-medium mb-3">会话明细</h3>
+              <h3 className="text-sm font-medium mb-3">{t('usage.bySession.details')}</h3>
               {sessionGroups.length > 0 ? (
                 <div className="space-y-2">
                   {sessionGroups.map((g) => (
@@ -726,7 +728,7 @@ const UsageView: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <FeedbackState state="empty" title="暂无会话数据" />
+                <FeedbackState state="empty" title={t('usage.empty.noSessionData')} />
               )}
             </div>
           </div>
@@ -735,19 +737,19 @@ const UsageView: React.FC = () => {
         {activeTab === 'timeseries' && (
           <div className="space-y-6">
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
-              <h3 className="text-sm font-medium mb-3">Token 时间序列（按日期）</h3>
+              <h3 className="text-sm font-medium mb-3">{t('usage.timeseries.tokenByDate')}</h3>
               <UsageBarChart
                 groups={dayGroups}
-                emptyLabel="暂无数据"
-                totalLabel="总量"
-                inputLabel="输入"
-                outputLabel="输出"
-                cacheLabel="缓存"
+                emptyLabel={t('usage.empty.noData')}
+                totalLabel={t('usage.labels.total')}
+                inputLabel={t('usage.labels.input')}
+                outputLabel={t('usage.labels.output')}
+                cacheLabel={t('usage.labels.cache')}
               />
             </div>
             <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium">费用趋势</h3>
+                <h3 className="text-sm font-medium">{t('usage.trend.title')}</h3>
                 <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-slate-800/50">
                   {(['day', 'week', 'month'] as const).map((g) => (
                     <button
@@ -759,7 +761,7 @@ const UsageView: React.FC = () => {
                         trendGranularity === g ? 'bg-slate-600 text-foreground' : 'text-muted-foreground'
                       )}
                     >
-                      {g === 'day' ? '日' : g === 'week' ? '周' : '月'}
+                      {g === 'day' ? t('usage.trend.day') : g === 'week' ? t('usage.trend.week') : t('usage.trend.month')}
                     </button>
                   ))}
                 </div>
@@ -788,7 +790,7 @@ const UsageView: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <FeedbackState state="empty" title="暂无趋势数据" />
+                <FeedbackState state="empty" title={t('usage.empty.noTrend')} />
               )}
             </div>
           </div>
@@ -796,18 +798,18 @@ const UsageView: React.FC = () => {
 
         {activeTab === 'logs' && (
           <div>
-            <h3 className="text-base font-semibold text-foreground mb-4">用量日志</h3>
+            <h3 className="text-base font-semibold text-foreground mb-4">{t('usage.tabs.logs')}</h3>
           {historyLoading && usageHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="loading" title="加载中…" />
+              <FeedbackState state="loading" title={t('usage.loading')} />
             </div>
           ) : usageHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="empty" title="暂无使用记录" />
+              <FeedbackState state="empty" title={t('usage.empty.noUsageRecords')} />
             </div>
           ) : filteredHistory.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
-              <FeedbackState state="empty" title="所选时间范围内无记录" />
+              <FeedbackState state="empty" title={t('usage.empty.noRecordsInRange')} />
             </div>
           ) : (
             <div className="space-y-4">
@@ -820,7 +822,7 @@ const UsageView: React.FC = () => {
                       onClick={() => { setUsageGroupBy('model'); setUsagePage(1); }}
                       className={usageGroupBy === 'model' ? 'rounded-md bg-indigo-500/20 text-indigo-400' : 'rounded-md text-muted-foreground'}
                     >
-                      按模型
+                      {t('usage.group.byModel')}
                     </Button>
                     <Button
                       variant={usageGroupBy === 'day' ? 'secondary' : 'ghost'}
@@ -828,7 +830,7 @@ const UsageView: React.FC = () => {
                       onClick={() => { setUsageGroupBy('day'); setUsagePage(1); }}
                       className={usageGroupBy === 'day' ? 'rounded-md bg-indigo-500/20 text-indigo-400' : 'rounded-md text-muted-foreground'}
                     >
-                      按日期
+                      {t('usage.group.byDate')}
                     </Button>
                   </div>
                   <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
@@ -838,7 +840,7 @@ const UsageView: React.FC = () => {
                       onClick={() => { setUsageWindow('7d'); setUsagePage(1); }}
                       className={usageWindow === '7d' ? 'rounded-md bg-indigo-500/20 text-indigo-400' : 'rounded-md text-muted-foreground'}
                     >
-                      7 天
+                      {t('usage.range.7dShort')}
                     </Button>
                     <Button
                       variant={usageWindow === '30d' ? 'secondary' : 'ghost'}
@@ -846,7 +848,7 @@ const UsageView: React.FC = () => {
                       onClick={() => { setUsageWindow('30d'); setUsagePage(1); }}
                       className={usageWindow === '30d' ? 'rounded-md bg-indigo-500/20 text-indigo-400' : 'rounded-md text-muted-foreground'}
                     >
-                      30 天
+                      {t('usage.range.30dShort')}
                     </Button>
                     <Button
                       variant={usageWindow === 'all' ? 'secondary' : 'ghost'}
@@ -854,11 +856,11 @@ const UsageView: React.FC = () => {
                       onClick={() => { setUsageWindow('all'); setUsagePage(1); }}
                       className={usageWindow === 'all' ? 'rounded-md bg-indigo-500/20 text-indigo-400' : 'rounded-md text-muted-foreground'}
                     >
-                      全部
+                      {t('usage.range.all')}
                     </Button>
                   </div>
                 </div>
-                <span className="text-xs text-muted-foreground">共 {filteredHistory.length} 条</span>
+                <span className="text-xs text-muted-foreground">{t('usage.totalCount', { count: filteredHistory.length })}</span>
               </div>
 
               <div className="space-y-3">
@@ -869,7 +871,7 @@ const UsageView: React.FC = () => {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-semibold text-sm text-foreground truncate">{entry.model || '未知模型'}</p>
+                        <p className="font-semibold text-sm text-foreground truncate">{entry.model || t('usage.unknownModel')}</p>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                           {[entry.provider, entry.agentId, entry.sessionId].filter(Boolean).join(' • ')}
                         </p>
@@ -882,16 +884,16 @@ const UsageView: React.FC = () => {
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] font-medium text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-sky-500" />
-                        输入 {formatTokenCount(entry.inputTokens)}
+                        {t('usage.labels.input')} {formatTokenCount(entry.inputTokens)}
                       </span>
                       <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-violet-500" />
-                        输出 {formatTokenCount(entry.outputTokens)}
+                        {t('usage.labels.output')} {formatTokenCount(entry.outputTokens)}
                       </span>
                       {(entry.cacheReadTokens > 0 || entry.cacheWriteTokens > 0) && (
                         <span className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-amber-500" />
-                          缓存 {formatTokenCount(entry.cacheReadTokens + entry.cacheWriteTokens)}
+                          {t('usage.labels.cache')} {formatTokenCount(entry.cacheReadTokens + entry.cacheWriteTokens)}
                         </span>
                       )}
                       {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) && (
@@ -905,7 +907,7 @@ const UsageView: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <span className="text-xs text-muted-foreground">第 {safePage} / {totalPages} 页</span>
+                <span className="text-xs text-muted-foreground">{t('usage.page', { current: safePage, total: totalPages })}</span>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -915,7 +917,7 @@ const UsageView: React.FC = () => {
                     className="h-8 border-indigo-500/40"
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" />
-                    上一页
+                    {t('usage.prevPage')}
                   </Button>
                   <Button
                     variant="outline"
@@ -924,7 +926,7 @@ const UsageView: React.FC = () => {
                     disabled={safePage >= totalPages}
                     className="h-8 border-indigo-500/40"
                   >
-                    下一页
+                    {t('usage.nextPage')}
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
