@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { motion } from 'framer-motion';
@@ -65,6 +66,7 @@ function imageSrc(img: { url?: string; data?: string; mimeType: string }): strin
 }
 
 export const ChatView: React.FC = () => {
+  const { t, i18n } = useTranslation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loadHistoryOpen, setLoadHistoryOpen] = useState(false);
   const [loadHistoryDate, setLoadHistoryDate] = useState('');
@@ -188,7 +190,7 @@ export const ChatView: React.FC = () => {
         await checkHealth();
       }, { scanFromTop: true });
     } catch (err) {
-      console.error('刷新失败:', err);
+      console.error(t('chatView.refreshFailed'), err);
     }
   };
 
@@ -478,7 +480,7 @@ export const ChatView: React.FC = () => {
   };
 
   const fmtTime = (ts?: number) =>
-    ts ? new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+    ts ? new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleTimeString(i18n.language === 'zh' ? 'zh-CN' : i18n.language, { hour: '2-digit', minute: '2-digit' }) : '';
 
   return (
     <div className="chat-page h-full flex flex-col bg-[#0f172a]">
@@ -494,11 +496,11 @@ export const ChatView: React.FC = () => {
               title={gatewayStatus.state}
             />
             <span className="text-[#94a3b8]">
-              {isConnected ? '已连接' : gatewayStatus.state}
+              {isConnected ? t('chatView.connected') : gatewayStatus.state}
             </span>
             {health && (
               <span className="text-[#64748b]">
-                | {health.ok ? '✓ 健康' : `✗ ${health.error || '异常'}`}
+                | {health.ok ? `✓ ${t('chatView.healthy')}` : `✗ ${health.error || t('chatView.error')}`}
                 {health.uptime != null ? ` (${Math.round(health.uptime)}s)` : ''}
               </span>
             )}
@@ -508,7 +510,7 @@ export const ChatView: React.FC = () => {
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="btn-outline flex items-center gap-2 min-w-[200px] justify-between"
             >
-              <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || '选择对话'}</span>
+              <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || t('chatView.selectChat')}</span>
               <ChevronDown className="w-4 h-4" />
             </button>
             {dropdownOpen && (
@@ -534,7 +536,7 @@ export const ChatView: React.FC = () => {
                       type="button"
                       onClick={(e) => handleEditSessionLabel(e, s.key)}
                       className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#334155] transition-opacity"
-                      title="设置别名"
+                      title={t('chatView.setAlias')}
                     >
                       <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" />
                     </button>
@@ -550,7 +552,7 @@ export const ChatView: React.FC = () => {
                   }}
                   className="px-4 py-3 cursor-pointer text-sm text-[#6366f1] hover:bg-[#334155]"
                 >
-                  ＋ 新建对话
+                  ＋ {t('chatView.newChat')}
                 </div>
               </motion.div>
             )}
@@ -561,7 +563,7 @@ export const ChatView: React.FC = () => {
               handleRefresh();
             }}
             className="btn-outline flex items-center justify-center p-2"
-            title="刷新会话列表"
+            title={t('chatView.refreshSessions')}
             disabled={sessionLoadingAnim}
           >
             <RefreshCw className={`w-4 h-4 ${sessionLoadingAnim ? 'animate-spin' : ''}`} />
@@ -569,7 +571,7 @@ export const ChatView: React.FC = () => {
           <button
             onClick={toggleThinking}
             className={`btn-outline flex items-center justify-center p-2 ${showThinking ? 'border-[#6366f1] text-[#6366f1]' : ''}`}
-            title={showThinking ? '隐藏思考过程' : '显示思考过程'}
+            title={showThinking ? t('chatView.hideThinking') : t('chatView.showThinking')}
           >
             {showThinking ? <Lightbulb className="w-4 h-4" /> : <LightbulbOff className="w-4 h-4" />}
           </button>
@@ -580,7 +582,7 @@ export const ChatView: React.FC = () => {
                 setLoadHistoryOpen(!loadHistoryOpen);
               }}
               className="btn-outline flex items-center justify-center p-2"
-              title="加载历史会话数据"
+              title={t('chatView.loadHistoryData')}
               disabled={loading}
             >
               <History className="w-4 h-4" />
@@ -592,7 +594,7 @@ export const ChatView: React.FC = () => {
                 onClick={(e) => e.stopPropagation()}
                 className="absolute top-full right-0 mt-1 w-64 max-h-80 overflow-y-auto bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50 p-3"
               >
-                <div className="text-xs text-[#94a3b8] mb-2">加载历史会话</div>
+                <div className="text-xs text-[#94a3b8] mb-2">{t('chatView.loadHistory')}</div>
                 <button
                   onClick={() => {
                     void runWithSessionLoading(async () => {
@@ -602,10 +604,10 @@ export const ChatView: React.FC = () => {
                   }}
                   className="w-full px-3 py-2 text-left text-sm text-[#e2e8f0] hover:bg-[#334155] rounded-lg transition-colors"
                 >
-                  加载更多（最近 500 条）
+                  {t('chatView.loadMore500')}
                 </button>
                 <div className="border-t border-[#334155] my-2" />
-                <div className="text-xs text-[#94a3b8] mb-2">加载到指定日期</div>
+                <div className="text-xs text-[#94a3b8] mb-2">{t('chatView.loadToDate')}</div>
                 <div className="flex gap-2">
                   <input
                     type="date"
@@ -628,7 +630,7 @@ export const ChatView: React.FC = () => {
                     disabled={!loadHistoryDate}
                     className="px-3 py-2 bg-[#6366f1] text-white text-sm rounded-lg hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    加载
+                    {t('chatView.load')}
                   </button>
                 </div>
               </motion.div>
@@ -639,7 +641,7 @@ export const ChatView: React.FC = () => {
           <button
             onClick={() => openAliasEdit(currentSessionKey)}
             className="btn-outline flex items-center justify-center p-2"
-            title="给当前会话设置别名"
+            title={t('chatView.setCurrentAlias')}
           >
             <Pencil className="w-4 h-4" />
           </button>
@@ -651,7 +653,7 @@ export const ChatView: React.FC = () => {
         <div className="flex-shrink-0 px-6 py-2 bg-red-500/20 border-b border-red-500/30 flex items-center justify-between">
           <span className="text-red-300 text-sm">{error}</span>
           <button onClick={clearError} className="text-red-300 hover:text-white text-xs px-2 py-1 rounded hover:bg-red-500/20">
-            关闭
+            {t('chatView.close')}
           </button>
         </div>
       )}
@@ -669,14 +671,14 @@ export const ChatView: React.FC = () => {
             className="w-[360px] rounded-xl bg-[#1e293b] border border-[#334155] shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-sm font-medium text-[#e2e8f0] mb-3">设置会话别名</div>
+            <div className="text-sm font-medium text-[#e2e8f0] mb-3">{t('chatView.setSessionAlias')}</div>
             <input
               ref={aliasInputRef}
               type="text"
               value={aliasEditValue}
               onChange={(e) => setAliasEditValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && confirmAliasEdit()}
-              placeholder="输入别名"
+              placeholder={t('chatView.enterAlias')}
               className="w-full px-3 py-2.5 bg-[#0f172a] border border-[#334155] rounded-lg text-[#e2e8f0] placeholder-[#64748b] focus:border-[#6366f1] focus:outline-none mb-4"
             />
             <div className="flex justify-end gap-2">
@@ -687,13 +689,13 @@ export const ChatView: React.FC = () => {
                 }}
                 className="px-4 py-2 text-sm text-[#94a3b8] hover:text-[#e2e8f0]"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={confirmAliasEdit}
                 className="px-4 py-2 text-sm bg-[#6366f1] text-white rounded-lg hover:bg-[#4f46e5]"
               >
-                确定
+                {t('common.confirm')}
               </button>
             </div>
           </div>
@@ -760,7 +762,7 @@ export const ChatView: React.FC = () => {
                       try {
                         await invokeIpc('shell:openPath', file.filePath);
                       } catch (e) {
-                        console.error('打开文件失败:', e);
+                        console.error(t('chatView.openFileFailed'), e);
                       }
                     };
                     if (isImage) {
@@ -771,7 +773,7 @@ export const ChatView: React.FC = () => {
                           key={fi}
                           onClick={() => setLightboxSrc(previewSrc)}
                           className="rounded-lg overflow-hidden border border-[#334155]"
-                          title="点击放大"
+                          title={t('chatView.clickToZoom')}
                         >
                           <img
                             src={previewSrc}
@@ -819,7 +821,7 @@ export const ChatView: React.FC = () => {
                           type="button"
                           onClick={() => setLightboxSrc(src)}
                           className="rounded-lg overflow-hidden border border-[#334155]"
-                          title="点击放大"
+                          title={t('chatView.clickToZoom')}
                         >
                           <img
                             src={src}
@@ -842,7 +844,7 @@ export const ChatView: React.FC = () => {
                     <div className="msg-body">
                       <div className="msg-meta">
                         <span className="msg-time">{ts}</span>
-                        <span className="msg-name">我</span>
+                        <span className="msg-name">{t('chatView.me')}</span>
                       </div>
                       {renderImages()}
                       {allFiles.length > 0 && renderAttachments(allFiles)}
@@ -871,7 +873,7 @@ export const ChatView: React.FC = () => {
                     </div>
                     <div className="msg-body">
                       <div className="msg-meta">
-                        <span className="msg-name">Claw</span>
+                        <span className="msg-name">{t('chatView.assistantName')}</span>
                         <span className="msg-time">{ts}</span>
                       </div>
                       {/* Thinking 无气泡包裹，可开关，默认展开 */}
@@ -912,7 +914,7 @@ export const ChatView: React.FC = () => {
           ) : (
             <div className="text-center text-[#64748b] py-20">
               <div className="text-4xl mb-4">💬</div>
-              <div>开始新对话</div>
+              <div>{t('chatView.startNewChat')}</div>
             </div>
           )}
 
@@ -924,7 +926,7 @@ export const ChatView: React.FC = () => {
               </div>
               <div className="msg-body">
                 <div className="msg-meta">
-                  <span className="msg-name">Claw</span>
+                  <span className="msg-name">{t('chatView.assistantName')}</span>
                   <span className="msg-time">{fmtTime(Date.now() / 1000)}</span>
                 </div>
                 <div className="msg-bubble">
@@ -950,7 +952,7 @@ export const ChatView: React.FC = () => {
               </div>
               <div className="msg-body">
                 <div className="msg-meta">
-                  <span className="msg-name">Claw</span>
+                  <span className="msg-name">{t('chatView.assistantName')}</span>
                   <span className="msg-time">{fmtTime(Date.now() / 1000)}</span>
                 </div>
                 {showThinking && streamingThinking && (
@@ -987,7 +989,7 @@ export const ChatView: React.FC = () => {
         </div>
       </div>
 
-      {/* 回到底部 / 新消息提示 */}
+      {/* {t('chatView.backToBottom')} / 新消息提示 */}
       {(showBackToBottom || showNewMessageHint) && (
         <div className="chat-back-to-bottom-wrap">
           {showNewMessageHint && (
@@ -997,20 +999,20 @@ export const ChatView: React.FC = () => {
                 scrollToBottom();
               }}
               className="chat-back-to-bottom mb-2"
-              title="有新消息"
+              title={t('chatView.newMessage')}
             >
               <span className="mr-1">🔔</span>
-              有新消息
+              {t('chatView.newMessage')}
             </button>
           )}
           {showBackToBottom && (
             <button
               onClick={scrollToBottom}
               className="chat-back-to-bottom"
-              title="回到底部"
+              title={t('chatView.backToBottom')}
             >
               <ChevronsDown className="w-5 h-5" />
-              回到底部
+              {t('chatView.backToBottom')}
             </button>
           )}
         </div>
@@ -1063,7 +1065,7 @@ export const ChatView: React.FC = () => {
       <div className="status-bar">
         <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
         <span>
-          gateway {isConnected ? '已连接' : '未连接'} | port: {gatewayStatus.port ?? 18789}
+          gateway {isConnected ? t('chatView.connected') : t('chatView.disconnected')} | port: {gatewayStatus.port ?? 18789}
           {gatewayStatus.pid != null ? ` | pid: ${gatewayStatus.pid}` : ''}
         </span>
       </div>
