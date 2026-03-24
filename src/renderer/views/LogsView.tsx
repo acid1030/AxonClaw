@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   RefreshCw,
   FolderOpen,
@@ -56,6 +57,7 @@ function LogsPanel({
   embedded?: boolean;
   onOpenDir: () => void;
 }) {
+  const { t } = useTranslation();
   const {
     logs,
     addStreamLog,
@@ -102,11 +104,11 @@ function LogsPanel({
     .filter((l) => !search || l.message.toLowerCase().includes(search.toLowerCase()));
 
   const levelFilters: { value: LevelFilter; label: string }[] = [
-    { value: 'ALL', label: '全部' },
-    { value: 'ERROR', label: '错误' },
-    { value: 'WARN', label: '警告' },
-    { value: 'INFO', label: '信息' },
-    { value: 'DEBUG', label: '调试' },
+    { value: 'ALL', label: t('logsView.level.all') },
+    { value: 'ERROR', label: t('logsView.level.error') },
+    { value: 'WARN', label: t('logsView.level.warn') },
+    { value: 'INFO', label: t('logsView.level.info') },
+    { value: 'DEBUG', label: t('logsView.level.debug') },
   ];
 
   const tryParseJson = (msg: string): string | null => {
@@ -129,7 +131,7 @@ function LogsPanel({
           <Search className="w-4 h-4 text-muted-foreground shrink-0" />
           <input
             type="text"
-            placeholder="搜索日志..."
+            placeholder={t('logsView.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-white/5 border border-white/10 text-xs text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-primary/50 outline-none"
@@ -154,7 +156,7 @@ function LogsPanel({
             onChange={(e) => setAutoFollow(e.target.checked)}
             className="rounded"
           />
-          自动跟随
+          {t('logsView.autoFollow')}
         </label>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
           <input
@@ -163,21 +165,21 @@ function LogsPanel({
             onChange={(e) => setParseJson(e.target.checked)}
             className="rounded"
           />
-          JSON 解析
+          {t('logsView.jsonParse')}
         </label>
         <button
           onClick={onOpenDir}
           className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:bg-white/5"
         >
           <FolderOpen className="w-3.5 h-3.5" />
-          打开目录
+          {t('logsView.openDir')}
         </button>
         <button
           onClick={clearLogs}
           className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-red-400 hover:bg-red-500/10"
         >
           <Trash2 className="w-3.5 h-3.5" />
-          清空
+          {t('logsView.clear')}
         </button>
       </div>
       {systemLogsError && (
@@ -192,10 +194,10 @@ function LogsPanel({
         {filteredLogs.length === 0 ? (
           <div className="text-muted-foreground py-8 text-center">
             {systemLogsLoading
-              ? '正在加载...'
+              ? t('logsView.loading')
               : levelFilter !== 'ALL' || search
-                ? '无匹配日志'
-                : '暂无日志。点击刷新或发送消息后查看。'}
+                ? t('logsView.noMatchedLogs')
+                : t('logsView.noLogs')}
           </div>
         ) : (
           filteredLogs.map((log, index) => {
@@ -252,6 +254,7 @@ interface EventItem {
 }
 
 function EventsPanel() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [riskFilter, setRiskFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
@@ -308,7 +311,7 @@ function EventsPanel() {
           className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:bg-white/5 disabled:opacity-50"
         >
           <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-          刷新
+          {t('common.refresh')}
         </button>
         {(['all', 'critical', 'warning', 'info'] as const).map((r) => (
           <button
@@ -319,14 +322,14 @@ function EventsPanel() {
               riskFilter === r ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-white/5'
             )}
           >
-            {r === 'all' ? '全部' : r === 'critical' ? '严重' : r === 'warning' ? '警告' : '信息'}
+            {r === 'all' ? t('logsView.level.all') : r === 'critical' ? t('logsView.risk.critical') : r === 'warning' ? t('logsView.risk.warning') : t('logsView.level.info')}
           </button>
         ))}
       </div>
       <div className="flex-1 overflow-y-auto space-y-2">
         {filtered.length === 0 ? (
           <div className="text-muted-foreground py-8 text-center text-sm">
-            {loading ? '加载中...' : '暂无事件'}
+            {loading ? t('logsView.loading') : t('logsView.noEvents')}
           </div>
         ) : (
           filtered.map((ev, i) => {
@@ -358,7 +361,7 @@ function EventsPanel() {
                     )}
                   </div>
                   <span className="text-[10px] text-muted-foreground shrink-0">
-                    {ev.source === 'alert' ? '告警' : '日志'}
+                    {ev.source === 'alert' ? t('logsView.alert') : t('logsView.log')}
                   </span>
                 </button>
                 {isExpanded && (
@@ -377,6 +380,7 @@ function EventsPanel() {
 
 // ---------- Channels Tab ----------
 function ChannelsPanel() {
+  const { t } = useTranslation();
   const { channels, loading, fetchChannels } = useChannelsStore();
 
   useEffect(() => {
@@ -401,13 +405,13 @@ function ChannelsPanel() {
           className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:bg-white/5 disabled:opacity-50"
         >
           <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-          刷新
+          {t('common.refresh')}
         </button>
       </div>
       <div className="flex-1 overflow-y-auto space-y-2">
         {channels.length === 0 ? (
           <div className="text-muted-foreground py-8 text-center text-sm">
-            {loading ? '加载中...' : '暂无渠道'}
+            {loading ? t('logsView.loading') : t('logsView.noChannels')}
           </div>
         ) : (
           channels.map((ch) => (
@@ -422,12 +426,12 @@ function ChannelsPanel() {
                 </div>
                 <span className={cn('text-xs font-medium', statusColor(ch.status))}>
                   {ch.status === 'connected'
-                    ? '已连接'
+                    ? t('logsView.channel.connected')
                     : ch.status === 'error'
-                      ? '错误'
+                      ? t('logsView.channel.error')
                       : ch.status === 'connecting'
-                        ? '连接中'
-                        : '未连接'}
+                        ? t('logsView.channel.connecting')
+                        : t('logsView.channel.disconnected')}
                 </span>
               </div>
               {ch.error && (
@@ -443,6 +447,7 @@ function ChannelsPanel() {
 
 // ---------- Service Tab ----------
 function ServicePanel() {
+  const { t } = useTranslation();
   const { status, health, start, stop, restart, checkHealth } = useGatewayStore();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -464,7 +469,7 @@ function ServicePanel() {
   return (
     <div className="flex flex-col flex-1 min-h-0 space-y-4">
       <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-        <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3">网关状态</h3>
+        <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3">{t('logsView.gatewayStatus')}</h3>
         <div className="flex items-center gap-3 mb-4">
           <div
             className={cn(
@@ -473,11 +478,11 @@ function ServicePanel() {
             )}
           />
           <span className="text-sm font-medium">
-            {isRunning ? '运行中' : state === 'starting' ? '启动中...' : state === 'stopped' ? '已停止' : state}
+            {isRunning ? t('logsView.running') : state === 'starting' ? t('logsView.starting') : state === 'stopped' ? t('logsView.stopped') : state}
           </span>
         </div>
         {health?.uptime != null && (
-          <p className="text-xs text-muted-foreground">运行时长: {Math.floor(health.uptime / 60)} 分钟</p>
+          <p className="text-xs text-muted-foreground">{t('logsView.uptimeMinutes', { minutes: Math.floor(health.uptime / 60) })}</p>
         )}
         {health?.error && (
           <p className="text-xs text-red-400 mt-1">{health.error}</p>
@@ -490,7 +495,7 @@ function ServicePanel() {
           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Play className="w-4 h-4" />
-          {actionLoading === 'start' ? '启动中...' : '启动'}
+          {actionLoading === 'start' ? t('logsView.starting') : t('logsView.start')}
         </button>
         <button
           onClick={() => void handleAction('stop')}
@@ -498,7 +503,7 @@ function ServicePanel() {
           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Square className="w-4 h-4" />
-          {actionLoading === 'stop' ? '停止中...' : '停止'}
+          {actionLoading === 'stop' ? t('logsView.stopping') : t('logsView.stop')}
         </button>
         <button
           onClick={() => void handleAction('restart')}
@@ -506,7 +511,7 @@ function ServicePanel() {
           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RotateCw className={cn('w-4 h-4', actionLoading === 'restart' && 'animate-spin')} />
-          {actionLoading === 'restart' ? '重启中...' : '重启'}
+          {actionLoading === 'restart' ? t('logsView.restarting') : t('logsView.restart')}
         </button>
       </div>
     </div>
@@ -515,6 +520,7 @@ function ServicePanel() {
 
 // ---------- Debug Tab ----------
 function DebugPanel() {
+  const { t } = useTranslation();
   const { rpc, checkHealth } = useGatewayStore();
   const [rpcMethod, setRpcMethod] = useState('');
   const [rpcParams, setRpcParams] = useState('{}');
@@ -542,7 +548,7 @@ function DebugPanel() {
       try {
         params = rpcParams.trim() ? JSON.parse(rpcParams) : {};
       } catch {
-        setRpcError('RPC 参数格式错误，需为合法 JSON');
+        setRpcError(t('logsView.rpcParamsError'));
         return;
       }
       const result = await rpc(rpcMethod, params);
@@ -580,11 +586,11 @@ function DebugPanel() {
       <div className="rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden">
         <div className="px-4 py-2.5 border-b border-white/5 flex items-center gap-2">
           <Bug className="w-4 h-4 text-primary" />
-          <h3 className="text-xs font-bold text-white/80 uppercase tracking-wider">RPC 调用</h3>
+          <h3 className="text-xs font-bold text-white/80 uppercase tracking-wider">{t('logsView.rpcCall')}</h3>
         </div>
         <div className="p-4 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider mb-1 block">方法</label>
+            <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider mb-1 block">{t('logsView.method')}</label>
             <div className="flex gap-2">
               <input
                 value={rpcMethod}
@@ -601,7 +607,7 @@ function DebugPanel() {
                 }}
                 className="h-8 px-2 bg-white/5 border border-white/5 rounded-lg text-[10px] text-white/50"
               >
-                <option value="">预设 ▼</option>
+                <option value="">{t('logsView.preset')} ▼</option>
                 {RPC_PRESETS.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -616,7 +622,7 @@ function DebugPanel() {
             </div>
           </div>
           <div>
-            <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider mb-1 block">参数 (JSON)</label>
+            <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider mb-1 block">{t('logsView.paramsJson')}</label>
             <textarea
               value={rpcParams}
               onChange={(e) => setRpcParams(e.target.value)}
@@ -629,7 +635,7 @@ function DebugPanel() {
             disabled={rpcLoading || !rpcMethod.trim()}
             className="px-4 py-1.5 bg-primary text-white text-xs font-bold rounded-lg disabled:opacity-40"
           >
-            {rpcLoading ? '调用中...' : '调用'}
+            {rpcLoading ? t('logsView.calling') : t('logsView.call')}
           </button>
           {rpcError && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -648,14 +654,14 @@ function DebugPanel() {
       {/* Snapshots */}
       <div className="rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden">
         <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
-          <h3 className="text-xs font-bold text-white/80 uppercase tracking-wider">状态快照</h3>
+          <h3 className="text-xs font-bold text-white/80 uppercase tracking-wider">{t('logsView.snapshot')}</h3>
           <button
             onClick={() => void fetchDebugData()}
             disabled={debugLoading}
             className="text-white/30 hover:text-white text-[10px] font-bold flex items-center gap-1"
           >
             <RefreshCw className={cn('w-3.5 h-3.5', debugLoading && 'animate-spin')} />
-            刷新
+            {t('common.refresh')}
           </button>
         </div>
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -679,14 +685,15 @@ function DebugPanel() {
 
 // ---------- Main View ----------
 const TABS: { id: GatewayTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'logs', label: '日志', icon: <FileText className="w-4 h-4" /> },
-  { id: 'events', label: '事件', icon: <Activity className="w-4 h-4" /> },
-  { id: 'channels', label: '渠道', icon: <Radio className="w-4 h-4" /> },
-  { id: 'service', label: '服务', icon: <Settings className="w-4 h-4" /> },
-  { id: 'debug', label: '调试', icon: <Bug className="w-4 h-4" /> },
+  { id: 'logs', label: 'logsView.tab.logs', icon: <FileText className="w-4 h-4" /> },
+  { id: 'events', label: 'logsView.tab.events', icon: <Activity className="w-4 h-4" /> },
+  { id: 'channels', label: 'logsView.tab.channels', icon: <Radio className="w-4 h-4" /> },
+  { id: 'service', label: 'logsView.tab.service', icon: <Settings className="w-4 h-4" /> },
+  { id: 'debug', label: 'logsView.tab.debug', icon: <Bug className="w-4 h-4" /> },
 ];
 
 const LogsView: React.FC<LogsViewProps> = ({ embedded }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<GatewayTab>('logs');
   const [refreshLoading, setRefreshLoading] = useState(false);
   const { fetchSystemLogs, systemLogsLoading } = useGatewayLogsStore();
@@ -718,8 +725,8 @@ const LogsView: React.FC<LogsViewProps> = ({ embedded }) => {
     >
       <div className="w-full flex flex-col h-full py-6 min-h-0">
         <PageHeader
-          title="Gateway 监控"
-          subtitle="日志、事件、渠道、服务控制、RPC 调试"
+          title={t('logsView.title')}
+          subtitle={t('logsView.subtitle')}
           stats={[]}
           onRefresh={embedded ? undefined : handleRefresh}
           refreshing={refreshLoading}
@@ -740,7 +747,7 @@ const LogsView: React.FC<LogsViewProps> = ({ embedded }) => {
               )}
             >
               {tab.icon}
-              {tab.label}
+              {t(tab.label)}
             </button>
           ))}
         </div>
@@ -754,7 +761,7 @@ const LogsView: React.FC<LogsViewProps> = ({ embedded }) => {
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:bg-white/5"
             >
               <RefreshCw className={cn('w-3.5 h-3.5', systemLogsLoading && 'animate-spin')} />
-              刷新日志
+              {t('logsView.refreshLogs')}
             </button>
           </div>
         )}
