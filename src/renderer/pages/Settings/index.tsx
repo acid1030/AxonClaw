@@ -732,7 +732,7 @@ export function Settings() {
 
 
           {/* Developer */}
-          {devModeUnlocked && (
+          {(
             <>
               <Separator className="bg-black/5 dark:bg-white/5" />
               <div>
@@ -991,7 +991,6 @@ export function Settings() {
                         type="button"
                         variant="outline"
                         onClick={refreshControlUiInfo}
-                        disabled={!devModeUnlocked}
                         className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
