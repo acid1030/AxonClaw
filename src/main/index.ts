@@ -1348,11 +1348,30 @@ async function detectCodexCli(): Promise<{ installed: boolean; path?: string; ve
   }
 }
 
+function extractChatgptAccessToken(raw?: string): string {
+  const text = (raw || '').trim();
+  if (!text) return '';
+  if (!text.startsWith('{') && !text.startsWith('[')) return text;
+
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const token = typeof parsed.accessToken === 'string' ? parsed.accessToken.trim() : '';
+    if (token) return token;
+  } catch {
+    // ignore
+  }
+
+  const m = text.match(/"accessToken"\s*:\s*"([^"]+)"/);
+  return m?.[1]?.trim() || '';
+}
+
 function applyCodexQuickConnect(options?: {
   providerId?: string;
   providerBaseUrl?: string;
   providerApi?: string;
   apiKey?: string;
+  accessToken?: string;
+  sessionPayload?: string;
   preferredModel?: string;
   fallbackModel?: string;
 }): {
@@ -1388,8 +1407,11 @@ function applyCodexQuickConnect(options?: {
   if (options?.providerApi?.trim()) {
     provider.api = options.providerApi.trim();
   }
-  if (options?.apiKey?.trim()) {
-    provider.apiKey = options.apiKey.trim();
+  const derivedAccessToken = extractChatgptAccessToken(options?.accessToken)
+    || extractChatgptAccessToken(options?.sessionPayload);
+  const finalApiKey = (options?.apiKey?.trim() || derivedAccessToken || '').trim();
+  if (finalApiKey) {
+    provider.apiKey = finalApiKey;
   }
 
   const existingModels = asModelArray(provider.models);
@@ -1664,6 +1686,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
             providerBaseUrl?: string;
             providerApi?: string;
             apiKey?: string;
+            accessToken?: string;
+            sessionPayload?: string;
             preferredModel?: string;
             fallbackModel?: string;
           }))

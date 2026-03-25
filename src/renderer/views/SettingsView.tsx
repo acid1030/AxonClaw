@@ -149,7 +149,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const [codexProviderBaseUrl, setCodexProviderBaseUrl] = useState('https://api.openai.com/v1');
   const [codexPreferredModel, setCodexPreferredModel] = useState('gpt-5.4');
   const [codexFallbackModel, setCodexFallbackModel] = useState('gpt-5.3-codex');
-  const [codexApiKey, setCodexApiKey] = useState('');
+  const [codexSessionPayload, setCodexSessionPayload] = useState('');
   const [codexConnectResult, setCodexConnectResult] = useState<CodexQuickConnectResponse | null>(null);
 
   const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
@@ -286,7 +286,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
           providerBaseUrl: codexProviderBaseUrl.trim() || undefined,
           preferredModel: codexPreferredModel.trim() || undefined,
           fallbackModel: codexFallbackModel.trim() || undefined,
-          apiKey: codexApiKey.trim() || undefined,
+          sessionPayload: codexSessionPayload.trim() || undefined,
         }),
       });
       setCodexConnectResult(res);
@@ -512,12 +512,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                       />
                     </div>
                     <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">API Key（可选）</label>
+                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">Session JSON / AccessToken</label>
                       <input
                         type="password"
-                        value={codexApiKey}
-                        onChange={(e) => setCodexApiKey(e.target.value)}
-                        placeholder="sk-..."
+                        value={codexSessionPayload}
+                        onChange={(e) => setCodexSessionPayload(e.target.value)}
+                        placeholder="粘贴 https://chatgpt.com/api/auth/session 的返回 JSON，或仅粘贴 accessToken"
                         className={cn(inputClass, 'flex-1 min-w-[220px]')}
                       />
                     </div>
