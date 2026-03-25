@@ -1283,7 +1283,248 @@ function readOpenclawConfig(): Record<string, unknown> {
 function writeOpenclawConfig(config: Record<string, unknown>): void {
   const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  try {
+    if (fs.existsSync(OPENCLAW_CFG_PATH)) {
+      const stamp = new Date().toISOString().replace(/[:]/g, '-');
+      const bakPath = `${OPENCLAW_CFG_PATH}.bak.${stamp}`;
+      fs.copyFileSync(OPENCLAW_CFG_PATH, bakPath);
+    }
+  } catch (err) {
+    console.warn('[HostAPI] backup config before write failed:', err);
+  }
   fs.writeFileSync(OPENCLAW_CFG_PATH, JSON.stringify(config, null, 2), 'utf8');
+}
+
+function ensureRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asModelArray(value: unknown): Array<{ id: string; name?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const rec = item as Record<string, unknown>;
+      const id = typeof rec.id === 'string' ? rec.id.trim() : '';
+      if (!id) return null;
+      const name = typeof rec.name === 'string' && rec.name.trim() ? rec.name.trim() : id;
+      return { id, name };
+    })
+    .filter(Boolean) as Array<{ id: string; name?: string }>;
+}
+
+function findCodexLikeProviderId(providers: Record<string, unknown>): string | null {
+  for (const [providerId, providerValue] of Object.entries(providers)) {
+    const provider = ensureRecord(providerValue);
+    const idLower = providerId.toLowerCase();
+    if (idLower.includes('codex')) return providerId;
+
+    const models = asModelArray(provider.models);
+    if (models.some((m) => m.id.toLowerCase().includes('codex'))) {
+      return providerId;
+    }
+  }
+  return null;
+}
+
+async function detectCodexCli(): Promise<{ installed: boolean; path?: string; version?: string }> {
+  try {
+    const { stdout: pathRaw } = await execAsync('command -v codex || true', { timeout: 3000 });
+    const codexPath = pathRaw.trim();
+    if (!codexPath) return { installed: false };
+
+    let version = '';
+    try {
+      const { stdout: verRaw } = await execAsync('codex --version', { timeout: 5000 });
+      version = verRaw.trim();
+    } catch {
+      // ignore version probe failures
+    }
+    return { installed: true, path: codexPath, version };
+  } catch {
+    return { installed: false };
+  }
+}
+
+function applyCodexQuickConnect(options?: {
+  providerId?: string;
+  providerBaseUrl?: string;
+  providerApi?: string;
+  apiKey?: string;
+  preferredModel?: string;
+  fallbackModel?: string;
+}): {
+  providerId: string;
+  primaryModel: string;
+  fallbackModels: string[];
+  createdProvider: boolean;
+  addedModels: string[];
+} {
+  const preferredModel = (options?.preferredModel || 'gpt-5.4').trim();
+  const fallbackModel = (options?.fallbackModel || 'gpt-5.3-codex').trim();
+
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const providers = ensureRecord(models.providers);
+
+  let providerId = options?.providerId?.trim() || findCodexLikeProviderId(providers) || 'custom-codex-plus';
+  let createdProvider = false;
+
+  let provider = ensureRecord(providers[providerId]);
+  if (!Object.keys(provider).length) {
+    createdProvider = true;
+    provider = {
+      baseUrl: options?.providerBaseUrl?.trim() || 'https://api.openai.com/v1',
+      api: options?.providerApi?.trim() || 'openai-completions',
+      models: [],
+    };
+  }
+
+  if (options?.providerBaseUrl?.trim()) {
+    provider.baseUrl = options.providerBaseUrl.trim();
+  }
+  if (options?.providerApi?.trim()) {
+    provider.api = options.providerApi.trim();
+  }
+  if (options?.apiKey?.trim()) {
+    provider.apiKey = options.apiKey.trim();
+  }
+
+  const existingModels = asModelArray(provider.models);
+  const modelSet = new Set(existingModels.map((m) => m.id));
+  const addedModels: string[] = [];
+  for (const mid of [preferredModel, fallbackModel]) {
+    if (!mid) continue;
+    if (!modelSet.has(mid)) {
+      existingModels.push({ id: mid, name: mid });
+      modelSet.add(mid);
+      addedModels.push(mid);
+    }
+  }
+  provider.models = existingModels;
+  providers[providerId] = provider;
+
+  models.providers = providers;
+  if (!models.mode) models.mode = 'merge';
+  cfg.models = models;
+
+  const agents = ensureRecord(cfg.agents);
+  const defaults = ensureRecord(agents.defaults);
+  const modelCfg = ensureRecord(defaults.model);
+
+  const prevPrimary = typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
+  const nextPrimary = `${providerId}/${preferredModel}`;
+  const nextFallbackFromProvider = `${providerId}/${fallbackModel}`;
+
+  const fallbackList = Array.isArray(modelCfg.fallbacks)
+    ? modelCfg.fallbacks.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    : [];
+
+  const nextFallbacks = Array.from(new Set([
+    ...fallbackList,
+    nextFallbackFromProvider,
+    prevPrimary,
+  ].filter((x) => !!x && x !== nextPrimary)));
+
+  modelCfg.primary = nextPrimary;
+  modelCfg.fallbacks = nextFallbacks;
+  defaults.model = modelCfg;
+  agents.defaults = defaults;
+  cfg.agents = agents;
+
+  cfg.meta = {
+    ...ensureRecord(cfg.meta),
+    lastTouchedAt: new Date().toISOString(),
+  };
+
+  writeOpenclawConfig(cfg);
+
+  return {
+    providerId,
+    primaryModel: nextPrimary,
+    fallbackModels: nextFallbacks,
+    createdProvider,
+    addedModels,
+  };
+}
+
+function pickLatestOpenclawBackupPath(configPath: string): string | null {
+  try {
+    const dir = nodePath.dirname(configPath);
+    const base = nodePath.basename(configPath);
+    if (!fs.existsSync(dir)) return null;
+    const candidates = fs
+      .readdirSync(dir)
+      .filter((name) => name.startsWith(`${base}.bak.`))
+      .map((name) => nodePath.join(dir, name))
+      .filter((abs) => {
+        try {
+          return fs.statSync(abs).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => {
+        try {
+          return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+        } catch {
+          return 0;
+        }
+      });
+    return candidates[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length > 0;
+}
+
+function enrichConfigFromLatestBackup(config: Record<string, unknown>, configPath: string): Record<string, unknown> {
+  try {
+    const models = (config.models as Record<string, unknown>) || {};
+    const providers = (models.providers as Record<string, unknown>) || {};
+    const hasProviders = isNonEmptyObject(providers);
+    if (hasProviders) return config;
+
+    const bakPath = pickLatestOpenclawBackupPath(configPath);
+    if (!bakPath) return config;
+    const bakRaw = fs.readFileSync(bakPath, 'utf8');
+    const bakCfg = parseOpenclawConfigText(bakRaw);
+    const bakModels = (bakCfg.models as Record<string, unknown>) || {};
+    const bakProviders = (bakModels.providers as Record<string, unknown>) || {};
+    if (!isNonEmptyObject(bakProviders)) return config;
+
+    const next: Record<string, unknown> = { ...config };
+    next.models = {
+      ...(models || {}),
+      providers: bakProviders,
+    };
+
+    const agents = (next.agents as Record<string, unknown>) || {};
+    const defaults = (agents.defaults as Record<string, unknown>) || {};
+    const bakAgents = (bakCfg.agents as Record<string, unknown>) || {};
+    const bakDefaults = (bakAgents.defaults as Record<string, unknown>) || {};
+
+    if (!isNonEmptyObject(defaults.model) && isNonEmptyObject(bakDefaults.model)) {
+      defaults.model = bakDefaults.model;
+    }
+    if (!isNonEmptyObject(defaults.models) && isNonEmptyObject(bakDefaults.models)) {
+      defaults.models = bakDefaults.models;
+    }
+    if (isNonEmptyObject(defaults)) {
+      next.agents = {
+        ...(agents || {}),
+        defaults,
+      };
+    }
+    return next;
+  } catch {
+    return config;
+  }
 }
 
 function getUiSettingsFromConfig(config: Record<string, unknown>): { language: string; theme: string } {
@@ -1357,6 +1598,112 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         status: 200,
         json: { success: true },
       };
+    }
+
+    // Codex 无感接入：检测本机 codex CLI 与一键写入 OpenClaw 配置
+    if (path === '/api/app/codex/status' && method === 'GET') {
+      try {
+        const codex = await detectCodexCli();
+        const cfg = readOpenclawConfig();
+        const models = ensureRecord(cfg.models);
+        const providers = ensureRecord(models.providers);
+        const codexProviderId = findCodexLikeProviderId(providers);
+        const provider = codexProviderId ? ensureRecord(providers[codexProviderId]) : {};
+        const providerModels = asModelArray(provider.models).map((m) => m.id);
+
+        const defaultPrimary = (() => {
+          const agents = ensureRecord(cfg.agents);
+          const defaults = ensureRecord(agents.defaults);
+          const modelCfg = ensureRecord(defaults.model);
+          return typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
+        })();
+
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              installed: codex.installed,
+              path: codex.path,
+              version: codex.version,
+              configured: !!codexProviderId,
+              providerId: codexProviderId || null,
+              providerModels,
+              defaultPrimary,
+            },
+          },
+          success: true,
+          status: 200,
+          json: {
+            installed: codex.installed,
+            path: codex.path,
+            version: codex.version,
+            configured: !!codexProviderId,
+            providerId: codexProviderId || null,
+            providerModels,
+            defaultPrimary,
+          },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { error: String(err) } },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/app/codex/quick-connect' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string' ? JSON.parse(body) : (body as {
+            providerId?: string;
+            providerBaseUrl?: string;
+            providerApi?: string;
+            apiKey?: string;
+            preferredModel?: string;
+            fallbackModel?: string;
+          }))
+          : {};
+
+        const result = applyCodexQuickConnect(payload);
+        const codex = await detectCodexCli();
+
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              success: true,
+              codexInstalled: codex.installed,
+              codexPath: codex.path,
+              codexVersion: codex.version,
+              ...result,
+            },
+          },
+          success: true,
+          status: 200,
+          json: {
+            success: true,
+            codexInstalled: codex.installed,
+            codexPath: codex.path,
+            codexVersion: codex.version,
+            ...result,
+          },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
     }
 
     // 特殊处理：/api/gateway/start 启动网关子进程（hostApiFetch 调用，非 Gateway 自身 API）
@@ -1584,10 +1931,29 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
 
     // 特殊处理：/api/gateway/profiles 获取网关配置列表
     if (path === '/api/gateway/profiles') {
-      // 简单实现：返回本地网关配置
-      const profiles = [
-        { id: 1, name: '本地网关', host: '127.0.0.1', port: getResolvedGatewayPort(), token: '', is_active: true },
+      // 返回真实连接配置：本地 +（如启用）远程
+      const cfg = getGatewayConnectionSettings();
+      const localPort = getResolvedGatewayPort();
+      const profiles: Array<{ id: number; name: string; host: string; port: number; token: string; is_active: boolean }> = [
+        {
+          id: 1,
+          name: 'Local Gateway',
+          host: '127.0.0.1',
+          port: localPort,
+          token: '',
+          is_active: cfg.mode === 'local',
+        },
       ];
+      if (cfg.mode === 'remote' && cfg.host) {
+        profiles.push({
+          id: 2,
+          name: `Remote Gateway (${cfg.host}:${cfg.port})`,
+          host: cfg.host,
+          port: cfg.port,
+          token: cfg.token || '',
+          is_active: true,
+        });
+      }
       return { ok: true, data: { status: 200, json: profiles, ok: true }, success: true, status: 200, json: profiles };
     }
 
@@ -2046,6 +2412,10 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const sessions = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' && 'sessions' in raw ? (raw as { sessions?: unknown[] }).sessions : null) ?? [];
         const list = Array.isArray(sessions) ? sessions : [];
         let totalMsgs = 0;
+        let totalUserMsgs = 0;
+        let totalAssistantMsgs = 0;
+        let totalToolCalls = 0;
+        let totalErrors = 0;
         const sessionUsages: Array<{ key: string; usage: Record<string, unknown> }> = [];
         for (const s of list) {
           const rec = s as Record<string, unknown>;
@@ -2053,23 +2423,48 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           if (!key) continue;
           const inp = Number(rec.inputTokens ?? 0);
           const out = Number(rec.outputTokens ?? 0);
-          const msgCount = Number(rec.messageCount ?? rec.messages ?? 0);
+          const userMsgs = Number(rec.userMessages ?? rec.userMessageCount ?? 0);
+          const assistantMsgs = Number(rec.assistantMessages ?? rec.assistantMessageCount ?? 0);
+          const toolCalls = Number(rec.toolCalls ?? rec.toolCallCount ?? 0);
+          const errors = Number(rec.errorCount ?? rec.errors ?? 0);
+          const knownMsgSum = userMsgs + assistantMsgs + toolCalls + errors;
+          const msgCountRaw = Number(rec.messageCount ?? rec.messages ?? knownMsgSum);
+          const msgCount = Number.isFinite(msgCountRaw) && msgCountRaw > 0 ? msgCountRaw : Math.max(0, knownMsgSum);
           totalMsgs += msgCount;
-          const half = Math.floor(msgCount / 2);
+          totalUserMsgs += Math.max(0, userMsgs);
+          totalAssistantMsgs += Math.max(0, assistantMsgs);
+          totalToolCalls += Math.max(0, toolCalls);
+          totalErrors += Math.max(0, errors);
           sessionUsages.push({
             key,
             usage: {
-              messageCounts: { total: msgCount, user: half, assistant: half, toolCalls: 0, errors: 0 },
+              messageCounts: {
+                total: msgCount,
+                user: Math.max(0, userMsgs),
+                assistant: Math.max(0, assistantMsgs),
+                toolCalls: Math.max(0, toolCalls),
+                errors: Math.max(0, errors),
+              },
               toolUsage: { totalCalls: 0, tools: [] },
               inputTokens: inp,
               outputTokens: out,
-              latency: rec.avgLatency ? { avgMs: Number(rec.avgLatency), p95Ms: Number(rec.avgLatency) * 1.5 } : undefined,
+              latency: rec.avgLatency
+                ? {
+                    avgMs: Number(rec.avgLatency),
+                    p95Ms: Number(rec.p95Latency ?? rec.avgLatency),
+                  }
+                : undefined,
             },
           });
         }
-        const halfTotal = Math.floor(totalMsgs / 2);
         const aggregates = {
-          messages: { total: totalMsgs, user: halfTotal, assistant: halfTotal, toolCalls: 0, errors: 0 },
+          messages: {
+            total: totalMsgs,
+            user: totalUserMsgs,
+            assistant: totalAssistantMsgs,
+            toolCalls: totalToolCalls,
+            errors: totalErrors,
+          },
           totalInput: list.reduce((sum: number, s) => sum + Number((s as Record<string, unknown>).inputTokens ?? 0), 0),
           totalOutput: list.reduce((sum: number, s) => sum + Number((s as Record<string, unknown>).outputTokens ?? 0), 0),
         };
@@ -2348,7 +2743,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
               ? `看门狗异常 (${healthCheck.failCount} 次) · 1h 内 ${total1h} 项`
               : `近期异常 (1小时内 ${total1h} 项)`;
         }
-        const recentList = isInitialized() ? listAlerts({ page: 1, page_size: 16 }).list : [];
+        const recentList = isInitialized() ? listAlerts({ page: 1, page_size: 500 }).list : [];
         const recentIssues = recentList.map((a) => ({
           id: String(a.id),
           source: 'alert',
@@ -2359,8 +2754,6 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           timestamp: a.created_at,
         }));
 
-        const bump = Math.min(28, (total24h || 0) * 0.45 + (gwRunning ? 0 : 18));
-        const startScore = Math.max(0, Math.min(100, score + bump));
         const trend24h: Array<{
           timestamp: string;
           label: string;
@@ -2372,21 +2765,47 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           errors: number;
         }> = [];
         const nowMs = Date.now();
+        const windowStart = nowMs - 24 * 3600000;
+        const issuesInWindow = recentIssues
+          .map((issue) => {
+            const ts = Date.parse(String(issue.timestamp || ''));
+            return { issue, ts };
+          })
+          .filter((x) => Number.isFinite(x.ts) && x.ts >= windowStart && x.ts <= nowMs);
+        const scoreFromCounts = (mediumCount: number, highCount: number, criticalCount: number): number => {
+          let s = 100;
+          if (!gwRunning) s -= 35;
+          s -= Math.min(10, mediumCount * 2);
+          s -= Math.min(30, highCount * 10);
+          s -= Math.min(50, criticalCount * 25);
+          if (healthCheck.enabled && healthCheck.failCount > 0) {
+            s -= Math.min(25, healthCheck.failCount * 10);
+          }
+          return Math.max(0, Math.min(100, Math.round(s)));
+        };
         for (let i = 0; i <= 24; i++) {
-          const t = i / 24;
-          const wobble = Math.round(Math.sin(i * 0.73) * 4 + Math.cos(i * 0.31) * 2);
-          const healthScore = Math.max(
-            0,
-            Math.min(100, Math.round(startScore + (score - startScore) * t + wobble)),
-          );
+          const pointTs = nowMs - (24 - i) * 3600000;
+          let low = 0;
+          let medium = 0;
+          let high = 0;
+          let critical = 0;
+          for (const item of issuesInWindow) {
+            if (item.ts > pointTs) continue;
+            const risk = String(item.issue.risk || '').toLowerCase();
+            if (risk === 'critical') critical++;
+            else if (risk === 'high') high++;
+            else if (risk === 'medium' || risk === 'warning') medium++;
+            else low++;
+          }
+          const healthScore = scoreFromCounts(medium, high, critical);
           trend24h.push({
-            timestamp: new Date(nowMs - (24 - i) * 3600000).toISOString(),
-            label: '',
+            timestamp: new Date(pointTs).toISOString(),
+            label: new Date(pointTs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
             healthScore,
-            low: 0,
-            medium: Math.max(0, Math.floor(medium5m * (i / 24))),
-            high: Math.max(0, Math.floor(high5m * (i / 28))),
-            critical: i >= 22 ? critical5m : Math.max(0, Math.floor(critical5m * (i / 30))),
+            low,
+            medium,
+            high,
+            critical,
             errors: 0,
           });
         }
@@ -2832,10 +3251,8 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     }
     if (path === '/api/config' && method === 'POST' && body) {
       try {
-        const dir = nodePath.dirname(OPENCLAW_CONFIG_PATH);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const payload = typeof body === 'string' ? JSON.parse(body) : (body as Record<string, unknown>);
-        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf8');
+        writeOpenclawConfig(payload);
         return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
       } catch (err) {
         console.error('[HostAPI] config set error:', err);
@@ -2850,27 +3267,32 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     if (path === '/api/v1/config' && method === 'GET') {
       try {
         let data: { config?: Record<string, unknown>; path?: string; parsed?: boolean; hash?: string } = {};
-        try {
-          const r = await callGatewayRpc('config.get', {}, 8000);
-          if (r.ok && r.result != null) {
-            // 确保 result 是对象而不是字符串（Gateway 可能在配置不存在时返回 "Not Found" 字符串）
-            if (typeof r.result === 'object' && !Array.isArray(r.result)) {
-              const cfg = (r.result as Record<string, unknown>)?.config ?? r.result;
-              if (typeof cfg === 'object' && cfg !== null) {
-                data = { config: cfg as Record<string, unknown>, path: OPENCLAW_CONFIG_PATH, parsed: true };
+        // 1) 本地配置优先：避免被网关返回的裁剪结果覆盖真实配置
+        if (fs.existsSync(OPENCLAW_CONFIG_PATH)) {
+          const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
+          const parsed = parseOpenclawConfigText(raw);
+          if (parsed && typeof parsed === 'object') {
+            data = {
+              config: enrichConfigFromLatestBackup(parsed as Record<string, unknown>, OPENCLAW_CONFIG_PATH),
+              path: OPENCLAW_CONFIG_PATH,
+              parsed: true,
+            };
+          }
+        }
+        // 2) 本地不存在时回退网关
+        if (!data.config || typeof data.config !== 'object') {
+          try {
+            const r = await callGatewayRpc('config.get', {}, 8000);
+            if (r.ok && r.result != null) {
+              if (typeof r.result === 'object' && !Array.isArray(r.result)) {
+                const cfg = (r.result as Record<string, unknown>)?.config ?? r.result;
+                if (typeof cfg === 'object' && cfg !== null) {
+                  data = { config: cfg as Record<string, unknown>, path: OPENCLAW_CONFIG_PATH, parsed: true };
+                }
               }
             }
-          }
-        } catch {
-          /* Gateway 离线，读本地文件 */
-        }
-        if (!data.config || typeof data.config !== 'object') {
-          if (fs.existsSync(OPENCLAW_CONFIG_PATH)) {
-            const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
-            const parsed = parseOpenclawConfigText(raw);
-            if (parsed && typeof parsed === 'object') {
-              data = { config: parsed, path: OPENCLAW_CONFIG_PATH, parsed: true };
-            }
+          } catch {
+            /* ignore */
           }
         }
         if (!data.config || typeof data.config !== 'object') {
@@ -2898,9 +3320,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       try {
         const payload = typeof body === 'string' ? JSON.parse(body) : (body as { config?: Record<string, unknown> });
         const cfg = payload?.config ?? payload;
-        const dir = nodePath.dirname(OPENCLAW_CONFIG_PATH);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+        writeOpenclawConfig(cfg as Record<string, unknown>);
         return { ok: true, data: { status: 200, json: { success: true }, ok: true }, success: true, status: 200, json: { success: true } };
       } catch (err) {
         console.error('[HostAPI] /api/v1/config PUT error:', err);

@@ -46,6 +46,28 @@ type ControlUiInfo = {
   port: number;
 };
 
+type CodexStatusResponse = {
+  installed: boolean;
+  path?: string;
+  version?: string;
+  configured?: boolean;
+  providerId?: string | null;
+  providerModels?: string[];
+  defaultPrimary?: string;
+};
+
+type CodexQuickConnectResponse = {
+  success: boolean;
+  codexInstalled: boolean;
+  codexPath?: string;
+  codexVersion?: string;
+  providerId: string;
+  primaryModel: string;
+  fallbackModels: string[];
+  createdProvider: boolean;
+  addedModels: string[];
+};
+
 export function Settings() {
   const { t } = useTranslation('settings');
   const {
@@ -103,6 +125,14 @@ export function Settings() {
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
   const [dbPathDraft, setDbPathDraft] = useState('');
   const [dbPathSaving, setDbPathSaving] = useState(false);
+  const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
+  const [codexStatusLoading, setCodexStatusLoading] = useState(false);
+  const [codexQuickConnecting, setCodexQuickConnecting] = useState(false);
+  const [codexProviderBaseUrl, setCodexProviderBaseUrl] = useState('');
+  const [codexPreferredModel, setCodexPreferredModel] = useState('gpt-5.4');
+  const [codexFallbackModel, setCodexFallbackModel] = useState('gpt-5.3-codex');
+  const [codexApiKey, setCodexApiKey] = useState('');
+  const [codexConnectResult, setCodexConnectResult] = useState<CodexQuickConnectResponse | null>(null);
   const [doctorResult, setDoctorResult] = useState<{
     mode: 'diagnose' | 'fix';
     success: boolean;
@@ -472,6 +502,48 @@ export function Settings() {
     }
   };
 
+  const refreshCodexStatus = async () => {
+    setCodexStatusLoading(true);
+    try {
+      const res = await hostApiFetch<CodexStatusResponse>('/api/app/codex/status');
+      setCodexStatus(res);
+      if (!codexProviderBaseUrl) setCodexProviderBaseUrl('https://api.openai.com/v1');
+    } catch (error) {
+      toast.error(`Codex status error: ${toUserMessage(error)}`);
+    } finally {
+      setCodexStatusLoading(false);
+    }
+  };
+
+  const handleCodexQuickConnect = async () => {
+    setCodexQuickConnecting(true);
+    setCodexConnectResult(null);
+    try {
+      const res = await hostApiFetch<CodexQuickConnectResponse>('/api/app/codex/quick-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerBaseUrl: codexProviderBaseUrl.trim() || undefined,
+          preferredModel: codexPreferredModel.trim() || undefined,
+          fallbackModel: codexFallbackModel.trim() || undefined,
+          apiKey: codexApiKey.trim() || undefined,
+        }),
+      });
+      setCodexConnectResult(res);
+      toast.success('Codex quick connect completed. 已自动写入模型配置。');
+      await refreshCodexStatus();
+    } catch (error) {
+      toast.error(`Codex quick connect failed: ${toUserMessage(error)}`);
+    } finally {
+      setCodexQuickConnecting(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshCodexStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="flex flex-col w-full h-full min-h-0 dark:bg-background overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
@@ -774,6 +846,111 @@ export function Settings() {
                       </div>
                     )}
                   </div>
+                  <div className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label className="text-[14px] font-medium text-foreground/80">Codex Plus 一键接入</Label>
+                        <p className="text-[13px] text-muted-foreground mt-1">
+                          自动检测 codex CLI，并一键写入 OpenClaw 模型配置（主模型 gpt-5.4，备用 gpt-5.3-codex）。
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void refreshCodexStatus()}
+                        disabled={codexStatusLoading}
+                        className="rounded-xl h-9 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2${codexStatusLoading ? ' animate-spin' : ''}`} />
+                        刷新状态
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12px]">
+                      <div className="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 bg-white dark:bg-card">
+                        <span className="text-muted-foreground">Codex CLI</span>
+                        <div className="font-mono mt-1">
+                          {codexStatus?.installed ? `已安装 ${codexStatus.version || ''}`.trim() : '未检测到'}
+                        </div>
+                        {codexStatus?.path && <div className="text-muted-foreground mt-1 break-all">{codexStatus.path}</div>}
+                      </div>
+                      <div className="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 bg-white dark:bg-card">
+                        <span className="text-muted-foreground">当前配置</span>
+                        <div className="font-mono mt-1">
+                          {codexStatus?.configured ? `已配置 (${codexStatus.providerId || 'unknown'})` : '未配置'}
+                        </div>
+                        {codexStatus?.defaultPrimary && (
+                          <div className="text-muted-foreground mt-1 break-all">主模型：{codexStatus.defaultPrimary}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-[13px] text-foreground/80">Provider Base URL</Label>
+                        <Input
+                          value={codexProviderBaseUrl}
+                          onChange={(e) => setCodexProviderBaseUrl(e.target.value)}
+                          placeholder="https://api.openai.com/v1"
+                          className="h-10 rounded-xl bg-white dark:bg-card border-black/10 dark:border-white/10 font-mono text-[13px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[13px] text-foreground/80">API Key（可选）</Label>
+                        <Input
+                          type="password"
+                          value={codexApiKey}
+                          onChange={(e) => setCodexApiKey(e.target.value)}
+                          placeholder="sk-..."
+                          className="h-10 rounded-xl bg-white dark:bg-card border-black/10 dark:border-white/10 font-mono text-[13px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[13px] text-foreground/80">主模型</Label>
+                        <Input
+                          value={codexPreferredModel}
+                          onChange={(e) => setCodexPreferredModel(e.target.value)}
+                          placeholder="gpt-5.4"
+                          className="h-10 rounded-xl bg-white dark:bg-card border-black/10 dark:border-white/10 font-mono text-[13px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[13px] text-foreground/80">备用模型</Label>
+                        <Input
+                          value={codexFallbackModel}
+                          onChange={(e) => setCodexFallbackModel(e.target.value)}
+                          placeholder="gpt-5.3-codex"
+                          className="h-10 rounded-xl bg-white dark:bg-card border-black/10 dark:border-white/10 font-mono text-[13px]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => void handleCodexQuickConnect()}
+                        disabled={codexQuickConnecting}
+                        className="rounded-xl h-10 px-5"
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2${codexQuickConnecting ? ' animate-spin' : ''}`} />
+                        {codexQuickConnecting ? '正在配置...' : '一键配置并启用'}
+                      </Button>
+                      <p className="text-[12px] text-muted-foreground">
+                        完成后会自动写入 `~/.openclaw/openclaw.json`。
+                      </p>
+                    </div>
+
+                    {codexConnectResult && (
+                      <div className="rounded-xl border border-green-500/20 bg-green-500/10 px-3 py-2 text-[12px] text-green-700 dark:text-green-400 space-y-1">
+                        <div>已完成：{codexConnectResult.primaryModel}</div>
+                        <div>Provider：{codexConnectResult.providerId}</div>
+                        {codexConnectResult.fallbackModels.length > 0 && (
+                          <div className="break-all">Fallbacks：{codexConnectResult.fallbackModels.join(', ')}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="space-y-4">
                     <Label className="text-[14px] font-medium text-foreground/80">{t('developer.database') || 'Database'}</Label>
                     <p className="text-[13px] text-muted-foreground">
