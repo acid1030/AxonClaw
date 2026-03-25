@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AxonClawX · 下一代 OpenClaw 桌面中枢</title>
+    <meta
+      name="description"
+      content="AxonClawX 项目介绍站：从多代理协作、配置中心、技能与知识系统，到网关监控与运维闭环，全栈展示能力与价值。"
+    />
+    <style>
+      :root {
+        --bg: #060816;
+        --bg-soft: #0b1024;
+        --card: rgba(15, 24, 52, 0.72);
+        --text: #e8ecff;
+        --text-dim: #b8c2f0;
+        --line: rgba(140, 160, 255, 0.24);
+        --blue: #77a6ff;
+        --cyan: #4de3ff;
+        --violet: #9b7bff;
+        --green: #40e3b1;
+        --pink: #ff6eb6;
+        --shadow: 0 16px 48px rgba(6, 10, 30, 0.55);
+        --radius-xl: 20px;
+        --radius-lg: 14px;
+        --radius-md: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: radial-gradient(circle at 10% -10%, #182451 0%, transparent 35%),
+          radial-gradient(circle at 90% 0%, #142a4a 0%, transparent 30%),
+          linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 48%, #04050e 100%);
+        color: var(--text);
+        font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+          system-ui, -apple-system, sans-serif;
+        line-height: 1.6;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .container {
+        width: min(1160px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        backdrop-filter: blur(10px);
+        background: rgba(4, 8, 24, 0.68);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .topbar-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 68px;
+        gap: 20px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.1px;
+      }
+
+      .brand-badge {
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        background: conic-gradient(from 145deg, var(--blue), var(--cyan), var(--violet), var(--blue));
+        box-shadow: 0 0 0 3px rgba(88, 128, 255, 0.18), 0 0 26px rgba(77, 180, 255, 0.35);
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .nav a {
+        padding: 8px 12px;
+        border-radius: 999px;
+        color: var(--text-dim);
+        font-size: 14px;
+      }
+
+      .nav a:hover {
+        background: rgba(128, 160, 255, 0.16);
+        color: var(--text);
+      }
+
+      .hero {
+        padding: 76px 0 54px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 28px;
+        align-items: stretch;
+      }
+
+      .hero-card,
+      .panel,
+      .stat,
+      .timeline-item,
+      .feature,
+      .module,
+      .cta {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-card {
+        padding: 34px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-card::after {
+        content: "";
+        position: absolute;
+        width: 420px;
+        height: 420px;
+        background: radial-gradient(circle, rgba(118, 166, 255, 0.24) 0%, transparent 67%);
+        right: -120px;
+        top: -160px;
+        pointer-events: none;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #d7e6ff;
+        background: rgba(72, 119, 255, 0.18);
+        border: 1px solid rgba(130, 165, 255, 0.34);
+        padding: 6px 10px;
+        border-radius: 999px;
+        margin-bottom: 14px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.2;
+      }
+
+      h1 {
+        font-size: clamp(30px, 4vw, 52px);
+        margin-bottom: 14px;
+        letter-spacing: 0.2px;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--text-dim);
+      }
+
+      .hero-actions {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .btn {
+        border: 1px solid rgba(130, 165, 255, 0.38);
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        transition: 0.2s ease;
+      }
+
+      .btn.primary {
+        background: linear-gradient(130deg, #5f8dff 0%, #56d1ff 100%);
+        color: #021425;
+        border-color: transparent;
+      }
+
+      .btn.primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 22px rgba(86, 181, 255, 0.35);
+      }
+
+      .btn.ghost {
+        color: var(--text);
+        background: rgba(110, 146, 255, 0.1);
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .panel h3 {
+        font-size: 16px;
+        margin-bottom: 12px;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stat {
+        padding: 14px;
+        border-radius: var(--radius-lg);
+      }
+
+      .stat .num {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .stat .label {
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      section {
+        padding: 28px 0;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .section-head p {
+        margin: 0;
+        color: var(--text-dim);
+        max-width: 780px;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .feature {
+        padding: 18px;
+        border-radius: var(--radius-lg);
+      }
+
+      .feature h3 {
+        margin: 8px 0 8px;
+        font-size: 17px;
+      }
+
+      .feature p {
+        margin: 0;
+        color: var(--text-dim);
+        font-size: 14px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 0 14px currentColor;
+      }
+
+      .dot.blue { color: var(--blue); background: var(--blue); }
+      .dot.cyan { color: var(--cyan); background: var(--cyan); }
+      .dot.green { color: var(--green); background: var(--green); }
+      .dot.violet { color: var(--violet); background: var(--violet); }
+      .dot.pink { color: var(--pink); background: var(--pink); }
+
+      .modules {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .module {
+        padding: 20px;
+        border-radius: var(--radius-lg);
+      }
+
+      .module h3 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+
+      .module ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--text-dim);
+      }
+
+      .module li + li {
+        margin-top: 6px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 12px;
+      }
+
+      .timeline-item {
+        padding: 18px;
+        border-radius: var(--radius-lg);
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 16px;
+      }
+
+      .phase {
+        color: var(--cyan);
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .timeline-item h3 {
+        font-size: 16px;
+        margin-bottom: 6px;
+      }
+
+      .timeline-item p {
+        margin: 0;
+        color: var(--text-dim);
+        font-size: 14px;
+      }
+
+      .cta {
+        margin: 34px 0 68px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .cta p {
+        color: var(--text-dim);
+        margin: 10px auto 16px;
+        max-width: 760px;
+      }
+
+      footer {
+        padding: 20px 0 36px;
+        color: #8f9ccc;
+        text-align: center;
+        font-size: 13px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .features,
+        .modules {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar-inner {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 10px 0;
+        }
+
+        .timeline-item {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand">
+          <div class="brand-badge" aria-hidden="true"></div>
+          <span>AxonClawX</span>
+        </div>
+        <nav class="nav">
+          <a href="#vision">项目愿景</a>
+          <a href="#capabilities">核心能力</a>
+          <a href="#modules">功能模块</a>
+          <a href="#architecture">架构亮点</a>
+          <a href="#roadmap">落地路线</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero container" id="vision">
+        <div class="hero-grid">
+          <article class="hero-card">
+            <div class="badge">✨ 参考 clawx 风格 · 针对 AxonClawX 深度重构</div>
+            <h1>让 AI Agent 管理，从“能用”升级到“可运营、可协作、可持续”。</h1>
+            <p>
+              AxonClawX 是面向 OpenClaw 生态的桌面中枢。它将<strong>多代理协作</strong>、<strong>配置治理</strong>、<strong>技能生态</strong>、<strong>知识沉淀</strong>和<strong>运行监控</strong>整合为一个统一工作台，帮助团队在真实业务里稳定落地 AI Agent。
+            </p>
+            <div class="hero-actions">
+              <a class="btn primary" href="#modules">查看详细功能</a>
+              <a class="btn ghost" href="#roadmap">查看实施说明</a>
+            </div>
+          </article>
+
+          <aside class="panel">
+            <h3>项目定位（Project Positioning）</h3>
+            <p style="margin: 0 0 14px; color: var(--text-dim)">
+              面向个人开发者、技术团队与运维场景，提供从“对话”到“编排”再到“观测”的完整闭环。
+            </p>
+            <div class="kpis">
+              <div class="stat"><div class="num">12+</div><div class="label">配置中心子模块</div></div>
+              <div class="stat"><div class="num">6 大</div><div class="label">能力域（聊天/代理/技能/知识/监控/系统）</div></div>
+              <div class="stat"><div class="num">2 语言</div><div class="label">中英文国际化切换</div></div>
+              <div class="stat"><div class="num">Electron + React 19</div><div class="label">现代桌面应用栈</div></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="container" id="capabilities">
+        <div class="section-head">
+          <div>
+            <h2>核心能力（详细说明）</h2>
+            <p>
+              借鉴 clawx “平台级叙事”与“可验证价值表达”，AxonClawX 更聚焦于「工程落地」：不仅展示能力，更强调运维可控、配置可管、过程可追溯。
+            </p>
+          </div>
+        </div>
+
+        <div class="features">
+          <article class="feature">
+            <span class="dot blue"></span>
+            <h3>统一对话与会话管理</h3>
+            <p>
+              支持会话创建、历史回溯、上下文切换与消息交互。将“即时问答”与“持续任务”放到同一界面，减少上下文断裂。
+            </p>
+          </article>
+
+          <article class="feature">
+            <span class="dot cyan"></span>
+            <h3>多代理协作工作流</h3>
+            <p>
+              从单 Agent 到多 Agent 编排，支持角色分工、串并行执行、任务路由和步骤追踪，适配 DevOps、研究、内容生产等协作模式。
+            </p>
+          </article>
+
+          <article class="feature">
+            <span class="dot green"></span>
+            <h3>配置中心治理能力</h3>
+            <p>
+              将模型、渠道、会话、模板、Hooks、Gateway 等配置集中管理，支持统一规范、快速比对、策略沉淀与变更追踪。
+            </p>
+          </article>
+
+          <article class="feature">
+            <span class="dot violet"></span>
+            <h3>技能与工具生态</h3>
+            <p>
+              Skill/Tool/Plugin 一体化入口，支持能力扩展、市场接入与组合编排。让 Agent 能力从“点功能”升级为“平台能力”。
+            </p>
+          </article>
+
+          <article class="feature">
+            <span class="dot pink"></span>
+            <h3>知识中心与记忆沉淀</h3>
+            <p>
+              FAQ、Snippet、Tip、Recipe 等知识形态统一检索与分组管理，结合记忆策略形成“可复用经验库”，降低重复劳动。
+            </p>
+          </article>
+
+          <article class="feature">
+            <span class="dot blue"></span>
+            <h3>监控诊断与运维闭环</h3>
+            <p>
+              Gateway 状态、事件流、活动监控、告警与诊断协同，帮助团队快速定位问题并形成“观测—分析—修复”闭环。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="container" id="modules">
+        <div class="section-head">
+          <div>
+            <h2>功能模块拆解（更详细）</h2>
+            <p>这部分可直接用于项目汇报、官网介绍页或产品白皮书摘要。</p>
+          </div>
+        </div>
+
+        <div class="modules">
+          <article class="module">
+            <h3>1) 概览与对话系统</h3>
+            <ul>
+              <li><strong>Dashboard：</strong>展示关键运行指标、任务态势与系统健康度。</li>
+              <li><strong>Chat：</strong>支持多会话消息交互、上下文延续与会话新建。</li>
+              <li><strong>Sessions：</strong>历史会话检索、切换与整理，提升连续工作效率。</li>
+            </ul>
+          </article>
+
+          <article class="module">
+            <h3>2) 配置中心（Configuration Center）</h3>
+            <ul>
+              <li><strong>Models / Channels / Agents：</strong>连接模型、渠道与代理治理能力。</li>
+              <li><strong>Templates / Hooks：</strong>沉淀团队提示词与可扩展处理链。</li>
+              <li><strong>Gateway / Session / Memory：</strong>运行参数、上下文策略与记忆规则统一配置。</li>
+              <li><strong>Logging / Commands / Misc：</strong>支撑调试、审计和日常运维优化。</li>
+            </ul>
+          </article>
+
+          <article class="module">
+            <h3>3) 代理与编排</h3>
+            <ul>
+              <li><strong>Agents：</strong>代理资产管理、能力查看与状态维护。</li>
+              <li><strong>Workflow：</strong>可视化多代理协作流程，支持步骤化执行与复用。</li>
+              <li><strong>Nodes：</strong>节点资源管理与拓扑展示，便于多端部署。</li>
+              <li><strong>Cron：</strong>定时调度与执行记录，支撑自动化巡检与提醒。</li>
+            </ul>
+          </article>
+
+          <article class="module">
+            <h3>4) 技能、知识与系统运维</h3>
+            <ul>
+              <li><strong>Skills：</strong>技能中心、插件扩展与市场接入。</li>
+              <li><strong>Knowledge：</strong>知识检索、分组浏览与使用统计。</li>
+              <li><strong>GatewayMonitoring / Diagnostics：</strong>状态监控、事件分析与故障定位。</li>
+              <li><strong>Settings / Usage：</strong>全局设置与用量统计可视化。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="container" id="architecture">
+        <div class="section-head">
+          <div>
+            <h2>架构亮点（技术说明）</h2>
+            <p>
+              AxonClawX 以 Electron 33 + React 19 + TypeScript 5 + Vite 5 为核心，结合 Zustand 与 i18next，确保桌面体验、状态管理和国际化能力可持续演进。
+            </p>
+          </div>
+        </div>
+        <div class="features">
+          <article class="feature">
+            <span class="dot cyan"></span>
+            <h3>前后端边界清晰</h3>
+            <p>Electron 主进程负责系统能力与桥接，Renderer 聚焦交互与业务视图，降低耦合风险。</p>
+          </article>
+          <article class="feature">
+            <span class="dot blue"></span>
+            <h3>状态管理可维护</h3>
+            <p>基于 Zustand 的轻量状态组织，便于在多页面、多模块场景中持续扩展。</p>
+          </article>
+          <article class="feature">
+            <span class="dot violet"></span>
+            <h3>国际化可扩展</h3>
+            <p>i18next/react-i18next 支撑中英文切换，便于后续拓展更多语种与地区化内容。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="container" id="roadmap">
+        <div class="section-head">
+          <div>
+            <h2>落地路线（实施建议）</h2>
+            <p>如果你要把这个页面作为官网首页，建议按以下节奏推进，避免一次性大改带来的风险。</p>
+          </div>
+        </div>
+
+        <div class="timeline">
+          <article class="timeline-item">
+            <div class="phase">Phase 01</div>
+            <div>
+              <h3>官网化包装</h3>
+              <p>将本页面拆分为组件化模块（Hero / Capability / Modules / CTA），接入实际路由并补充 SEO 元信息。</p>
+            </div>
+          </article>
+
+          <article class="timeline-item">
+            <div class="phase">Phase 02</div>
+            <div>
+              <h3>数据化展示</h3>
+              <p>接入真实指标：任务吞吐、成功率、响应时延、配置变更统计，让介绍页从“描述”升级为“可量化”。</p>
+            </div>
+          </article>
+
+          <article class="timeline-item">
+            <div class="phase">Phase 03</div>
+            <div>
+              <h3>案例与场景沉淀</h3>
+              <p>加入真实业务案例（如 DevOps 事件响应、内容生产协作、研究任务拆解），强化对外说服力。</p>
+            </div>
+          </article>
+
+          <article class="timeline-item">
+            <div class="phase">Phase 04</div>
+            <div>
+              <h3>增长与转化闭环</h3>
+              <p>增加文档入口、下载入口、体验申请与反馈机制，形成“认知 → 试用 → 留存”的完整漏斗。</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="container">
+        <div class="cta">
+          <h2>AxonClawX 不只是一个界面，而是一套可长期运营的 Agent 基础设施工作台。</h2>
+          <p>
+            这版页面已按你的要求：参考 clawx 站点叙事风格，同时突出 AxonClawX 的功能细节与落地说明。你可以直接拿它做项目介绍页，或继续让我帮你改成 React 组件并接入现有路由。
+          </p>
+          <a class="btn primary" href="#">立即用于项目展示</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      © 2026 AxonClawX Project · Designed for detailed product storytelling.
+    </footer>
+  </body>
+</html>
