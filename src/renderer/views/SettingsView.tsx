@@ -102,6 +102,28 @@ interface AlertItem {
   timestamp: string;
 }
 
+interface CodexStatusResponse {
+  installed: boolean;
+  path?: string;
+  version?: string;
+  configured?: boolean;
+  providerId?: string | null;
+  providerModels?: string[];
+  defaultPrimary?: string;
+}
+
+interface CodexQuickConnectResponse {
+  success: boolean;
+  codexInstalled: boolean;
+  codexPath?: string;
+  codexVersion?: string;
+  providerId: string;
+  primaryModel: string;
+  fallbackModels: string[];
+  createdProvider: boolean;
+  addedModels: string[];
+}
+
 interface SettingsViewProps {
   embedded?: boolean;
   onNavigateTo?: (viewId: string) => void;
@@ -121,6 +143,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const [alertSummary, setAlertSummary] = useState<AlertSummary | null>(null);
   const [alertList, setAlertList] = useState<AlertItem[]>([]);
   const [alertLoading, setAlertLoading] = useState(false);
+  const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
+  const [codexStatusLoading, setCodexStatusLoading] = useState(false);
+  const [codexQuickConnecting, setCodexQuickConnecting] = useState(false);
+  const [codexProviderBaseUrl, setCodexProviderBaseUrl] = useState('https://api.openai.com/v1');
+  const [codexPreferredModel, setCodexPreferredModel] = useState('gpt-5.4');
+  const [codexFallbackModel, setCodexFallbackModel] = useState('gpt-5.3-codex');
+  const [codexApiKey, setCodexApiKey] = useState('');
+  const [codexConnectResult, setCodexConnectResult] = useState<CodexQuickConnectResponse | null>(null);
 
   const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
   const updateStatus = useUpdateStore((s) => s.status);
@@ -232,6 +262,43 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
       /* ignore */
     }
   };
+
+  const refreshCodexStatus = async () => {
+    setCodexStatusLoading(true);
+    try {
+      const res = await hostApiFetch<CodexStatusResponse>('/api/app/codex/status');
+      setCodexStatus(res);
+    } catch {
+      setCodexStatus(null);
+    } finally {
+      setCodexStatusLoading(false);
+    }
+  };
+
+  const handleCodexQuickConnect = async () => {
+    setCodexQuickConnecting(true);
+    setCodexConnectResult(null);
+    try {
+      const res = await hostApiFetch<CodexQuickConnectResponse>('/api/app/codex/quick-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerBaseUrl: codexProviderBaseUrl.trim() || undefined,
+          preferredModel: codexPreferredModel.trim() || undefined,
+          fallbackModel: codexFallbackModel.trim() || undefined,
+          apiKey: codexApiKey.trim() || undefined,
+        }),
+      });
+      setCodexConnectResult(res);
+      await refreshCodexStatus();
+    } finally {
+      setCodexQuickConnecting(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshCodexStatus();
+  }, []);
 
   const cardClass = 'rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden';
   const rowClass = 'flex items-center justify-between px-4 py-3 border-b border-white/5 last:border-b-0 gap-4';
@@ -413,6 +480,93 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
 
             {activeSection === 'account' && (
               <div className="space-y-6">
+                {/* Codex Plus 一键接入 */}
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">Codex Plus 一键接入</h2>
+                  <p className="text-sm text-white/50 mb-4">自动检测 codex CLI，并一键写入 OpenClaw 模型配置（主模型 gpt-5.4，备用 gpt-5.3-codex）。</p>
+                  <div className={cardClass}>
+                    <div className={rowClass}>
+                      <div>
+                        <div className="text-sm font-medium text-white/80">Codex CLI</div>
+                        <div className="text-xs text-white/40 mt-0.5 break-all">{codexStatus?.installed ? `已安装 ${codexStatus.version || ''}`.trim() : '未检测到'}</div>
+                        {codexStatus?.path && <div className="text-xs text-white/35 mt-0.5 break-all">{codexStatus.path}</div>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void refreshCodexStatus()}
+                        disabled={codexStatusLoading}
+                        className="px-3 py-1.5 rounded-lg text-xs border bg-white/5 border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-50"
+                      >
+                        {codexStatusLoading ? '刷新中...' : '刷新状态'}
+                      </button>
+                    </div>
+
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">Provider Base URL</label>
+                      <input
+                        type="text"
+                        value={codexProviderBaseUrl}
+                        onChange={(e) => setCodexProviderBaseUrl(e.target.value)}
+                        placeholder="https://api.openai.com/v1"
+                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
+                      />
+                    </div>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">API Key（可选）</label>
+                      <input
+                        type="password"
+                        value={codexApiKey}
+                        onChange={(e) => setCodexApiKey(e.target.value)}
+                        placeholder="sk-..."
+                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
+                      />
+                    </div>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">主模型</label>
+                      <input
+                        type="text"
+                        value={codexPreferredModel}
+                        onChange={(e) => setCodexPreferredModel(e.target.value)}
+                        placeholder="gpt-5.4"
+                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
+                      />
+                    </div>
+                    <div className={rowClass}>
+                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">备用模型</label>
+                      <input
+                        type="text"
+                        value={codexFallbackModel}
+                        onChange={(e) => setCodexFallbackModel(e.target.value)}
+                        placeholder="gpt-5.3-codex"
+                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
+                      />
+                    </div>
+
+                    <div className="px-4 py-3 flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void handleCodexQuickConnect()}
+                        disabled={codexQuickConnecting}
+                        className={btnPrimary}
+                      >
+                        {codexQuickConnecting ? '正在配置...' : '一键配置并启用'}
+                      </button>
+                      <div className="text-xs text-white/40 break-all">
+                        {codexStatus?.defaultPrimary ? `当前主模型：${codexStatus.defaultPrimary}` : '未检测到当前主模型'}
+                      </div>
+                    </div>
+
+                    {codexConnectResult && (
+                      <div className="px-4 py-3 border-t border-white/5 text-xs text-emerald-300 bg-emerald-500/10">
+                        已完成：{codexConnectResult.primaryModel}
+                        {codexConnectResult.fallbackModels.length > 0 && (
+                          <span className="text-emerald-200/90">（Fallback: {codexConnectResult.fallbackModels.join(', ')}）</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* 修改密码 */}
                 <div>
                   <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.account.passwordTitle')}</h2>
