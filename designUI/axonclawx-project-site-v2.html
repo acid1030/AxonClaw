@@ -1,0 +1,1459 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AxonClawX · 下一代 OpenClaw 桌面中枢</title>
+    <meta name="description" content="AxonClawX 是基于 Electron + React 19 的 OpenClaw 桌面客户端，提供多代理协作、配置中心、技能市场、知识中心、网关监控与系统管理能力。" />
+    <style>
+      :root {
+        --primary: #6366f1;
+        --primary-dark: #4f46e5;
+        --accent: #06b6d4;
+        --accent-light: #0891b2;
+        --bg-main: #0c1f1e;
+        --bg-card: #111827;
+        --bg-elevated: #0f1419;
+        --text-primary: #f8fafc;
+        --text-secondary: #9ca3af;
+        --text-tertiary: #64748b;
+        --border-color: rgba(255, 255, 255, 0.1);
+        --border-light: rgba(255, 255, 255, 0.05);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(180deg, #090318 0%, #1a0a2e 50%, #0f0711 100%);
+        color: var(--text-primary);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: var(--bg-main);
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: var(--accent);
+        border-radius: 4px;
+      }
+
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+
+      /* Header */
+      header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background: rgba(12, 15, 24, 0.85);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 20px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+
+      .logo:hover {
+        transform: scale(1.02);
+      }
+
+      .logo-icon {
+        width: 44px;
+        height: 44px;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        transition: box-shadow 0.3s;
+      }
+
+      .logo:hover .logo-icon{
+        box-shadow: 0 6px 30px rgba(99, 102, 241, 0.6);
+      }
+
+      .logo-icon svg {
+        width: 24px;
+        height: 24px;
+        fill: white;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 40px;
+        list-style: none;
+      }
+
+      .nav-links a {
+        color: var(--text-secondary);
+        font-size: 15px;
+        font-weight: 500;
+        transition: all 0.2s;
+        position: relative;
+      }
+
+      .nav-links a::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--primary);
+        transform: scaleX(0);
+        transition: transform 0.2s;
+      }
+
+      .nav-links a:hover {
+        color: var(--text-primary);
+      }
+
+      .nav-links a:hover::after {
+        transform: scaleX(1);
+      }
+
+      .nav-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .btn {
+        padding: 10px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+        color: white;
+        box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+      }
+
+      .btn-secondary {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+      }
+
+      .btn-secondary:hover {
+        background: rgba(99, 102, 241, 0.1);
+        border-color: var(--primary);
+      }
+
+      /* Hero */
+      .hero {
+        padding: 140px 0 100px;
+        position: relative;
+        overflow: hidden;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+      }
+
+      .hero::before,
+      .hero::after {
+        content: '';
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+      }
+
+      .hero::before {
+        width: 800px;
+        height: 800px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+        top: -300px;
+        right: -200px;
+      }
+
+      .hero::after {
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%);
+        bottom: -200px;
+        left: -100px;
+      }
+
+      .hero-content {
+        text-align: center;
+        position: relative;
+        z-index: 1;
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 100px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary);
+        margin-bottom: 32px;
+        animation: fadeInUp 0.6s ease;
+      }
+
+      h1 {
+        font-size: 64px;
+        font-weight: 800;
+        line-height: 1.1;
+        margin-bottom: 32px;
+        background: linear-gradient(135deg, #ffffff 0%, var(--text-secondary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: fadeInUp 0.6s ease 0.1s both;
+      }
+
+      .hero p {
+        font-size: 20px;
+        color: var(--text-secondary);
+        max-width: 800px;
+        margin: 0 auto 48px;
+        line-height: 1.8;
+        animation: fadeInUp 0.6s ease 0.2s both;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        flex-wrap: wrap;
+        animation: fadeInUp 0.6s ease 0.3s both;
+      }
+
+      .hero-features {
+        display: flex;
+        gap: 32px;
+        justify-content: center;
+        margin-top: 48px;
+        animation: fadeInUp 0.6s ease 0.4s both;
+      }
+
+      .hero-feature {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-tertiary);
+        font-size: 14px;
+      }
+
+      .hero-feature svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--accent);
+      }
+
+      /* Sections */
+      section {
+        padding: 100px 0;
+      }
+
+      .section-header {
+        text-align: center;
+        margin-bottom: 64px;
+      }
+
+      .section-header h2 {
+        font-size: 48px;
+        font-weight: 800;
+        margin-bottom: 16px;
+        background: linear-gradient(135deg, #fff 0%, var(--text-secondary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .section-header p {
+        color: var(--text-secondary);
+        font-size: 18px;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      /* Features */
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 32px;
+      }
+
+      .feature-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 40px;
+        transition: all 0.3s;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .feature-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+        transform: scaleX(0);
+        transition: transform 0.3s;
+      }
+
+      .feature-card:hover::before {
+        transform: scaleX(1);
+      }
+
+      .feature-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--primary);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+
+      .feature-icon {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+      }
+
+      .feature-icon svg {
+        width: 32px;
+        height: 32px;
+        fill: var(--primary);
+      }
+
+      .feature-card h3 {
+        font-size: 24px;
+        margin-bottom: 16px;
+        font-weight: 700;
+      }
+
+      .feature-card p {
+        color: var(--text-secondary);
+        font-size: 15px;
+        line-height: 1.8;
+        margin-bottom: 20px;
+      }
+
+      .feature-list {
+        list-style: none;
+      }
+
+      .feature-list li {
+        padding: 8px 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .feature-list li svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--accent);
+        flex-shrink: 0;
+      }
+
+      /* Modules */
+      .modules-section {
+        background: var(--bg-elevated);
+      }
+
+      .modules-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 24px;
+      }
+
+      .module-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 32px;
+        transition: all 0.3s;
+      }
+
+      .module-card:hover {
+        border-color: var(--accent);
+        box-shadow: 0 0 40px rgba(6, 182, 212, 0.15);
+      }
+
+      .module-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+
+      .module-number {
+        width: 40px;
+        height: 40px;
+        background: rgba(99, 102, 241, 0.2);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: var(--primary);
+        font-size: 16px;
+      }
+
+      .module-card h3{
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .module-card ul{
+        list-style: none;
+      }
+
+      .module-card li{
+        padding: 8px 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .module-card li svg{
+        width: 16px;
+        height: 16px;
+        fill: var(--accent);
+        margin-top: 3px;
+        flex-shrink: 0;
+      }
+
+      /* Architecture */
+      .architecture-section{
+        position: relative;
+        overflow: hidden;
+      }
+
+      .architecture-section::before{
+        content: '';
+        position: absolute;
+        width: 1000px;
+        height: 1000px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+        top: -400px;
+        left: -300px;
+      }
+
+      .architecture-content{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 80px;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+
+      .arch-text h2{
+        font-size: 48px;
+        margin-bottom: 24px;
+        font-weight: 800;
+      }
+
+      .arch-text p{
+        color: var(--text-secondary);
+        font-size: 16px;
+        line-height: 1.8;
+        margin-bottom: 24px;
+      }
+
+      .tech-stack{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 32px;
+      }
+
+      .tech-tag{
+        padding: 10px 20px;
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--primary);
+        transition: all 0.2s;
+      }
+
+      .tech-tag:hover{
+        background: rgba(99, 102, 241, 0.2);
+        transform: translateY(-2px);
+      }
+
+      .arch-visual{
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 48px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .arch-visual::before{
+        content: '';
+        position: absolute;
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+        top: -100px;
+        right: -100px;
+      }
+
+      .arch-layers{
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .arch-layer{
+        padding: 24px;
+        background: rgba(99, 102, 241, 0.05);
+        border: 1px solid var(--border-light);
+        border-radius: 12px;
+        text-align: center;
+        transition: all 0.3s;
+      }
+
+      .arch-layer:hover{
+        background: rgba(99, 102, 241, 0.1);
+        border-color: var(--primary);
+        transform: translateX(8px);
+      }
+
+      .arch-layer h4{
+        font-size: 13px;
+        color: var(--text-tertiary);
+        margin-bottom: 8px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .arch-layer p{
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      /* Roadmap */
+      .roadmap-section{
+        background: var(--bg-elevated);
+      }
+
+      .roadmap-grid{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+        margin-top: 48px;
+      }
+
+      .roadmap-card{
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 32px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .roadmap-card::before{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+      }
+
+      .roadmap-phase{
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        margin-bottom: 16px;
+      }
+
+      .roadmap-card h3{
+        font-size: 20px;
+        margin-bottom: 16px;
+        font-weight: 700;
+      }
+
+      .roadmap-card p{
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      /* FAQ */
+      .faq-grid{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+      }
+
+      .faq-item{
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 32px;
+        transition: all 0.3s;
+      }
+
+      .faq-item:hover{
+        border-color: var(--primary);
+        transform: translateY(-2px);
+      }
+
+      .faq-question{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .faq-question svg{
+        width: 24px;
+        height: 24px;
+        fill: var(--primary);
+      }
+
+      .faq-question h3{
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .faq-item p{
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      /* CTA */
+      .cta-section{
+        padding: 120px 0;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cta-section::before{
+        content: '';
+        position: absolute;
+        width: 800px;
+        height: 800px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+        top: -300px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      .cta-content{
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 80px 60px;
+        position: relative;
+        z-index: 1;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      .cta h2{
+        font-size: 40px;
+        margin-bottom: 20px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #fff 0%, var(--text-secondary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .cta p{
+        color: var(--text-secondary);
+        font-size: 16px;
+        max-width: 600px;
+        margin: 0 auto 40px;
+        line-height: 1.8;
+      }
+
+      .cta-actions{
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      /* Footer */
+      footer{
+        padding: 80px 0 40px;
+        border-top: 1px solid var(--border-color);
+        background: rgba(12, 15, 24, 0.5);
+      }
+
+      .footer-content{
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr;
+        gap: 80px;
+      }
+
+      .footer-brand p{
+        color: var(--text-tertiary);
+        font-size: 14px;
+        margin-top: 20px;
+        line-height: 1.8;
+      }
+
+      .footer-section h4{
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 24px;
+        color: var(--text-primary);
+      }
+
+      .footer-section ul{
+        list-style: none;
+      }
+
+      .footer-section li{
+        margin-bottom: 16px;
+      }
+
+      .footer-section a{
+        color: var(--text-tertiary);
+        font-size: 14px;
+        transition: color 0.2s;
+      }
+
+      .footer-section a:hover{
+        color: var(--text-primary);
+      }
+
+      .footer-bottom{
+        margin-top: 80px;
+        padding-top: 40px;
+        border-top: 1px solid var(--border-light);
+        text-align: center;
+        color: var(--text-tertiary);
+        font-size: 14px;
+      }
+
+      /* Animations */
+      @keyframes fadeInUp{
+        from{
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to{
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* Responsive */
+      @media (max-width: 1024px){
+        h1{
+          font-size: 48px;
+        }
+
+        .section-header h2{
+          font-size: 40px;
+        }
+
+        .architecture-content{
+          grid-template-columns: 1fr;
+          gap: 60px;
+        }
+
+        .footer-content{
+          grid-template-columns: 1fr 1fr;
+          gap: 60px;
+        }
+      }
+
+      @media (max-width: 768px){
+        h1{
+          font-size: 36px;
+        }
+
+        .section-header h2{
+          font-size: 32px;
+        }
+
+        .nav-links{
+          display: none;
+        }
+
+        .features-grid,
+        .modules-grid,
+        .roadmap-grid,
+        .faq-grid{
+          grid-template-columns: 1fr;
+        }
+
+        .footer-content{
+          grid-template-columns: 1fr;
+          gap: 40px;
+        }
+
+        .hero-features{
+          flex-direction: column;
+          gap: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="container">
+        <nav>
+          <a href="#" class="logo">
+            <div class="logo-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>AxonClawX</span>
+          </a>
+          <ul class="nav-links">
+            <li><a href="#features">功能特性</a></li>
+            <li><a href="#modules">功能模块</a></li>
+            <li><a href="#architecture">技术架构</a></li>
+            <li><a href="#roadmap">落地路线</a></li>
+            <li><a href="#faq">FAQ</a></li>
+          </ul>
+          <div class="nav-actions">
+            <a href="https://github.com/ValueCell-ai/ClawX" target="_blank">
+              <button class="btn btn-secondary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                GitHub
+              </button>
+            </a>
+            <button class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              立即下载
+            </button>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-content">
+          <div class="badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+            <span>下一代 OpenClaw 桌面中枢</span>
+          </div>
+          <h1>让 AI Agent 管理<br/>从"能用"升级到"可运营"</h1>
+          <p>
+            AxonClawX 是基于 Electron + React 19 的 OpenClaw 桌面客户端，将多代理协作、配置治理、技能生态、知识沉淀和运行监控整合为一个统一工作台，帮助团队在真实业务里稳定落地 AI Agent。
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              立即下载
+            </button>
+            <button class="btn btn-secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              查看文档
+            </button>
+          </div>
+          <div class="hero-features">
+            <div class="hero-feature">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span>开源免费</span>
+            </div>
+            <div class="hero-feature">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span>跨平台支持</span>
+            </div>
+            <div class="hero-feature">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span>中英双语</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <div class="section-header">
+          <h2>六大核心能力</h2>
+          <p>为数据驱动的专业人士打造，开箱即用的全栈解决方案</p>
+        </div>
+        <div class="features-grid">
+          <!-- Feature 1 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3>统一对话与会话管理</h3>
+            <p>支持会话创建、历史回溯、上下文切换与消息交互。将"即时问答"与"持续任务"放到同一界面，减少上下文断裂。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                多会话并行管理
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                上下文智能延续
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                历史快速检索
+              </li>
+            </ul>
+          </div>
+
+          <!-- Feature 2 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </div>
+            <h3>多代理协作工作流</h3>
+            <p>从单 Agent 到多 Agent 编排，支持角色分工、串并行执行、任务路由和步骤追踪，适配 DevOps、研究、内容生产等协作模式。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                可视化流程编排
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                角色任务分配
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                执行状态追踪
+              </li>
+            </ul>
+          </div>
+
+          <!-- Feature 3 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </div>
+            <h3>配置中心治理能力</h3>
+            <p>将模型、渠道、会话、模板、Hooks、Gateway 等配置集中管理，支持统一规范、快速比对、策略沉淀与变更追踪。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                12+ 配置子模块
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                策略模板复用
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                变更历史追溯
+              </li>
+            </ul>
+          </div>
+
+          <!-- Feature 4 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+            </div>
+            <h3>技能与工具生态</h3>
+            <p>Skill/Tool/Plugin 一体化入口，支持能力扩展、市场接入与组合编排。让 Agent 能力从"点功能"升级为"平台能力"。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                技能市场接入
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                插件自由组合
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                工具链编排
+              </li>
+            </ul>
+          </div>
+
+          <!-- Feature 5 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+              </svg>
+            </div>
+            <h3>知识中心与记忆沉淀</h3>
+            <p>FAQ、Snippet、Tip、Recipe 等知识形态统一检索与分组管理，结合记忆策略形成"可复用经验库"，降低重复劳动。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                多形态知识管理
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                智能检索推荐
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                记忆策略配置
+              </li>
+            </ul>
+          </div>
+
+          <!-- Feature 6 -->
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+              </svg>
+            </div>
+            <h3>监控诊断与运维闭环</h3>
+            <p>Gateway 状态、事件流、活动监控、告警与诊断协同，帮助团队快速定位问题并形成"观测—分析—修复"闭环。</p>
+            <ul class="feature-list">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                实时状态监控
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                告警智能推送
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                问题快速定位
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modules Section -->
+    <section class="modules-section" id="modules">
+      <div class="container">
+        <div class="section-header">
+          <h2>功能模块详解</h2>
+          <p>从概览到系统，四大模块覆盖完整工作流</p>
+        </div>
+        <div class="modules-grid">
+          <div class="module-card">
+            <div class="module-header">
+              <div class="module-number">01</div>
+              <h3>概览与对话系统</h3>
+            </div>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Dashboard：</strong>展示关键运行指标、任务态势与系统健康度</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Chat：</strong>支持多会话消息交互、上下文延续与会话新建</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Sessions：</strong>历史会话检索、切换与整理</div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="module-card">
+            <div class="module-header">
+              <div class="module-number">02</div>
+              <h3>配置中心</h3>
+            </div>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Models / Channels / Agents：</strong>模型、渠道与代理治理</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Templates / Hooks：</strong>提示词模板与扩展处理链</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Gateway / Session / Memory：</strong>运行参数与记忆规则</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Logging / Commands / Misc：</strong>调试、审计与运维</div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="module-card">
+            <div class="module-header">
+              <div class="module-number">03</div>
+              <h3>代理与编排</h3>
+            </div>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Agents：</strong>代理资产管理、能力查看与状态维护</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Workflow：</strong>可视化多代理协作流程编排</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Nodes：</strong>节点资源管理与拓扑展示</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Cron：</strong>定时调度与执行历史</div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="module-card">
+            <div class="module-header">
+              <div class="module-number">04</div>
+              <h3>技能、知识与运维</h3>
+            </div>
+            <ul>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Skills：</strong>技能中心、插件扩展与市场接入</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Knowledge：</strong>知识检索、分组浏览与统计</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>GatewayMonitoring：</strong>状态监控与事件分析</div>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                <div><strong>Settings / Usage：</strong>全局设置与用量统计</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="architecture-section" id="architecture">
+      <div class="container">
+        <div class="architecture-content">
+          <div class="arch-text">
+            <h2>现代技术栈<br/>可持续演进</h2>
+            <p>
+              AxonClawX 以 Electron 33 + React 19 + TypeScript 5 + Vite 5 为核心，结合 Zustand 与 i18next，确保桌面体验、状态管理和国际化能力可持续演进。
+            </p>
+            <p>
+              前后端边界清晰：Electron 主进程负责系统能力与桥接，Renderer 聚焦交互与业务视图，降低耦合风险，便于长期维护。
+            </p>
+            <div class="tech-stack">
+              <span class="tech-tag">Electron 33</span>
+              <span class="tech-tag">React 19</span>
+              <span class="tech-tag">TypeScript 5</span>
+              <span class="tech-tag">Vite 5</span>
+              <span class="tech-tag">Zustand</span>
+              <span class="tech-tag">i18next</span>
+              <span class="tech-tag">Tailwind CSS</span>
+              <span class="tech-tag">Radix UI</span>
+            </div>
+          </div>
+          <div class="arch-visual">
+            <div class="arch-layers">
+              <div class="arch-layer">
+                <h4>APPLICATION LAYER</h4>
+                <p>Desktop App (macOS / Windows / Linux)</p>
+              </div>
+              <div class="arch-layer">
+                <h4>RENDERER LAYER</h4>
+                <p>React 19 + TypeScript + Zustand</p>
+              </div>
+              <div class="arch-layer">
+                <h4>BRIDGE LAYER</h4>
+                <p>Electron IPC + Native APIs</p>
+              </div>
+              <div class="arch-layer">
+                <h4>SERVICE LAYER</h4>
+                <p>OpenClaw Gateway + Skills + Knowledge</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Roadmap Section -->
+    <section class="roadmap-section" id="roadmap">
+      <div class="container">
+        <div class="section-header">
+          <h2>落地路线</h2>
+          <p>分阶段实施，降低风险，持续迭代</p>
+        </div>
+        <div class="roadmap-grid">
+          <div class="roadmap-card">
+            <div class="roadmap-phase">PHASE 01</div>
+            <h3>官网化包装</h3>
+            <p>将页面拆分为组件化模块（Hero / Capability / Modules / CTA），接入实际路由并补充 SEO 元信息。</p>
+          </div>
+
+          <div class="roadmap-card">
+            <div class="roadmap-phase">PHASE 02</div>
+            <h3>数据化展示</h3>
+            <p>接入真实指标：任务吞吐、成功率、响应时延、配置变更统计，让介绍页从"描述"升级为"可量化"。</p>
+          </div>
+
+          <div class="roadmap-card">
+            <div class="roadmap-phase">PHASE 03</div>
+            <h3>案例与场景沉淀</h3>
+            <p>加入真实业务案例（如 DevOps 事件响应、内容生产协作、研究任务拆解），强化对外说服力。</p>
+          </div>
+
+          <div class="roadmap-card">
+            <div class="roadmap-phase">PHASE 04</div>
+            <h3>增长与转化闭环</h3>
+            <p>增加文档入口、下载入口、体验申请与反馈机制，形成"认知 → 试用 → 留存"的完整漏斗。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section" id="faq">
+      <div class="container">
+        <div class="section-header">
+          <h2>常见问题</h2>
+          <p>关于 AxonClawX 的常见疑问解答</p>
+        </div>
+        <div class="faq-grid">
+          <div class="faq-item">
+            <div class="faq-question">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke="currentColor" stroke-width="2" fill="none"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <h3>AxonClawX 是什么？</h3>
+            </div>
+            <p>AxonClawX 是基于 Electron + React 19 的 OpenClaw 桌面客户端，提供多代理协作、配置中心、技能市场、知识中心、网关监控与系统管理能力。</p>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">
+              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <h3>需要编程基础吗？</h3>
+            </div>
+            <p>不需要。AxonClawX 提供图形化界面，通过点击配置即可使用大部分功能。对于高级用户，也支持 CLI 模式和自定义扩展。</p>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">
+              <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <h3>支持哪些平台？</h3>
+            </div>
+            <p>AxonClawX 跨平台支持 macOS、Windows 和 Linux，基于 Electron 构建，确保在不同操作系统上的一致体验。</p>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">
+              <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <h3>数据安全吗？</h3>
+            </div>
+            <p>完全安全。所有数据本地存储，不经过任何第三方服务器。代码开源，可审计。API Key 加密存储。</p>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <h3>免费吗？</h3>
+            </div>
+            <p>是的，AxonClawX 完全开源免费，采用 MIT 协议。你可以自由使用、修改和分发。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+      <div class="container">
+        <div class="cta-content">
+          <h2>准备好升级你的<br/>AI Agent 管理方式了吗？</h2>
+          <p>
+            AxonClawX 不只是一个界面，而是一套可长期运营的 Agent 基础设施工作台。立即下载，开始你的多代理协作之旅。
+          </p>
+          <div class="cta-actions">
+            <button class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              立即下载
+            </button>
+            <button class="btn btn-secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+              查看文档
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <a href="#" class="logo">
+              <div class="logo-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <span>AxonClawX</span>
+            </a>
+            <p>
+              运行在你电脑上的 OpenClaw 桌面中枢，将多代理协作、配置治理、技能生态、知识沉淀和运行监控整合为一个统一工作台。
+            </p>
+          </div>
+
+          <div class="footer-section">
+            <h4>产品</h4>
+            <ul>
+              <li><a href="#">下载</a></li>
+              <li><a href="#">文档</a></li>
+              <li><a href="https://github.com/ValueCell-ai/ClawX" target="_blank">GitHub</a></li>
+              <li><a href="#">更新日志</a></li>
+            </ul>
+          </div>
+
+          <div class="footer-section">
+            <h4>资源</h4>
+            <ul>
+              <li><a href="#">使用指南</a></li>
+              <li><a href="#">API 文档</a></li>
+              <li><a href="#faq">常见问题</a></li>
+              <li><a href="#">社区</a></li>
+            </ul>
+          </div>
+
+          <div class="footer-section">
+            <h4>相关项目</h4>
+            <ul>
+              <li><a href="https://openclaw.ai" target="_blank">OpenClaw</a></li>
+              <li><a href="https://claw-x.com" target="_blank">ClawX</a></li>
+              <li><a href="https://clawhub.com" target="_blank">ClawHub</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer-bottom">
+          <p>© 2026 AxonClawX Project. Open source under MIT License.</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
