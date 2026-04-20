@@ -10,7 +10,7 @@
     "icon": "healing",
     "color": "from-red-500 to-orange-500",
     "tags": ["server", "monitoring", "automation", "devops"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "newbie": false,
     "costTier": "medium"
   },

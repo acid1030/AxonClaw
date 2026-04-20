@@ -1,8 +1,8 @@
-# AxonClaw - Electron Builder Configuration
+# AxonClawX - Electron Builder Configuration
 # https://www.electron.build/configuration/configuration
 
 appId: com.openclaw.axonclaw
-productName: AxonClaw
+productName: AxonClawX
 copyright: Copyright © 2026 OpenClaw Team
 
 # 目录配置
@@ -22,6 +22,15 @@ files:
   - "!test-*/**/*"
   - "!*.log"
   - "!.*"
+
+# 额外资源文件（复制到 resources/ 目录）
+extraResources:
+  - from: public/icon.png
+    to: icon.png
+  - from: public/icon-512.png
+    to: icon-512.png
+  - from: designUI/image/icon.icns
+    to: icon.icns
 
 # 排除文件
 extraMetadata:
@@ -84,7 +93,7 @@ nsis:
   installerHeaderIcon: build/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: AxonClaw
+  shortcutName: AxonClawX
 
 # DMG 配置（macOS）
 dmg:

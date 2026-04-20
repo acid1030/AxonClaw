@@ -100,7 +100,7 @@ export function AgentForm({ open, onOpenChange, agent }: AgentFormProps) {
           </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'Update this agent's configuration and persona'
+              ? "Update this agent's configuration and persona"
               : 'Add a new agent to your team'}
           </DialogDescription>
         </DialogHeader>

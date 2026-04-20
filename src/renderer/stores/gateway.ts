@@ -9,6 +9,7 @@ import { subscribeHostEvent } from '@/lib/host-events';
 import type { GatewayStatus } from '../types/gateway';
 import { useChatStore } from './chat';
 import { useChannelsStore } from './channels';
+import { useTaskMonitorStore } from './task-monitor';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -49,11 +50,41 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
     return;
   }
+  useTaskMonitorStore.getState().handleGatewayNotification(payload);
 
   const p = payload.params;
   const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
   const phase = data.phase ?? p.phase;
-  const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
+  const inferredState = p.state ?? data.state ?? (
+    phase === 'error' || phase === 'failed'
+      ? 'error'
+      : (phase === 'aborted' || phase === 'abort' ? 'aborted' : undefined)
+  );
+  const inferredErrorMessage = (() => {
+    if (typeof p.errorMessage === 'string' && p.errorMessage.trim()) return p.errorMessage.trim();
+    if (typeof data.errorMessage === 'string' && data.errorMessage.trim()) return data.errorMessage.trim();
+    if (typeof p.error === 'string' && p.error.trim()) return p.error.trim();
+    if (typeof data.error === 'string' && data.error.trim()) return data.error.trim();
+    if (p.error && typeof p.error === 'object') {
+      const err = p.error as Record<string, unknown>;
+      if (typeof err.message === 'string' && err.message.trim()) return err.message.trim();
+    }
+    if (data.error && typeof data.error === 'object') {
+      const err = data.error as Record<string, unknown>;
+      if (typeof err.message === 'string' && err.message.trim()) return err.message.trim();
+    }
+    if (p.message && typeof p.message === 'object') {
+      const msg = p.message as Record<string, unknown>;
+      if (typeof msg.errorMessage === 'string' && msg.errorMessage.trim()) return msg.errorMessage.trim();
+      if (typeof msg.error === 'string' && msg.error.trim()) return msg.error.trim();
+      if (msg.error && typeof msg.error === 'object') {
+        const err = msg.error as Record<string, unknown>;
+        if (typeof err.message === 'string' && err.message.trim()) return err.message.trim();
+      }
+    }
+    return undefined;
+  })();
+  const hasChatData = inferredState || (p.message ?? data.message) || inferredErrorMessage;
 
   if (hasChatData) {
     // 收到新的流式数据，取消待处理的完成宽限（说明对话仍在继续）
@@ -64,8 +95,9 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
       sessionKey: p.sessionKey ?? data.sessionKey,
       stream: p.stream ?? data.stream,
       seq: p.seq ?? data.seq,
-      state: p.state ?? data.state,
+      state: inferredState,
       message: p.message ?? data.message,
+      errorMessage: inferredErrorMessage,
     };
     useChatStore.getState().handleChatEvent(normalizedEvent);
   }
@@ -136,6 +168,16 @@ function handleGatewayChatMessage(data: unknown): void {
   const payload = ('message' in chatData && typeof chatData.message === 'object')
     ? chatData.message as Record<string, unknown>
     : chatData;
+  useTaskMonitorStore.getState().handleGatewayNotification({
+    method: 'agent',
+    params: {
+      state: payload.state ?? 'final',
+      runId: chatData.runId ?? payload.runId,
+      sessionKey: chatData.sessionKey ?? payload.sessionKey,
+      message: payload,
+      errorMessage: payload.errorMessage ?? payload.error,
+    },
+  });
 
   if (payload.state) {
     useChatStore.getState().handleChatEvent(payload);
@@ -184,17 +226,31 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     gatewayInitPromise = (async () => {
       try {
         console.log('[Gateway] Starting init...');
-        // AxonClaw: 直接设置为运行中，连接到已有的 OpenClaw Gateway
         // 从主进程拉取最新状态，确保与 main 一致
-        let status: GatewayStatus = { state: 'running', port: 18789 };
+        let status: GatewayStatus = { state: 'stopped', port: 18789 };
         try {
           const mainStatus = await invokeIpc<GatewayStatus>('gateway:status');
           if (mainStatus?.state) status = { ...status, ...mainStatus };
         } catch {
-          // 主进程未就绪时使用默认 running（AxonClaw 连接已有 Gateway）
+          // 主进程未就绪时保留默认 stopped
         }
-        set({ status, health: { ok: true }, isInitialized: true });
-        console.log('[Gateway] Connected to OpenClaw Gateway (port 18789)');
+
+        // 如果 IPC 返回 stopped，做一次真实连接检测来修正状态
+        // （概览页通过 checkConnection 做了同样的事，会话页缺少此步骤导致状态不同步）
+        if (status.state === 'stopped' || status.state === 'error') {
+          try {
+            const conn = await invokeIpc<{ success: boolean; port?: number; error?: string }>('gateway:checkConnection');
+            if (conn?.success) {
+              status = { ...status, state: 'running', port: conn.port ?? status.port };
+              console.log('[Gateway] Connection check succeeded, correcting state to running');
+            }
+          } catch {
+            // 连接检测失败，保留原始 stopped 状态
+          }
+        }
+
+        set({ status, health: { ok: status.state === 'running' }, isInitialized: true });
+        console.log(`[Gateway] Init complete, state=${status.state}, port=${status.port}`);
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
@@ -226,6 +282,25 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           ));
           gatewayEventUnsubscribers = unsubscribers;
         }
+
+        // 如果初始化后仍是 stopped/error，启动定期重连检测（每 10 秒一次，成功后自动停止）
+        if (status.state !== 'running') {
+          const retryTimer = window.setInterval(async () => {
+            try {
+              const conn = await invokeIpc<{ success: boolean; port?: number }>('gateway:checkConnection');
+              if (conn?.success) {
+                set({
+                  status: { ...get().status, state: 'running', port: conn.port ?? get().status.port },
+                  health: { ok: true },
+                });
+                console.log('[Gateway] Reconnect check succeeded, state corrected to running');
+                window.clearInterval(retryTimer);
+              }
+            } catch {
+              // 继续重试
+            }
+          }, 10000);
+        }
       } catch (error) {
         console.error('Failed to initialize Gateway:', error);
         set({ lastError: String(error) });
@@ -240,14 +315,33 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   start: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/start', {
+      const result = await hostApiFetch<{
+        success: boolean;
+        error?: string;
+        diagnostics?: string[];
+        logTail?: string[];
+        selfHealTried?: boolean;
+        selfHealSucceeded?: boolean;
+        status?: GatewayStatus;
+      }>('/api/gateway/start', {
         method: 'POST',
       });
       if (!result.success) {
+        const diag = Array.isArray(result.diagnostics) && result.diagnostics.length > 0
+          ? `\n\nDiagnostics:\n${result.diagnostics.map((line) => `- ${line}`).join('\n')}`
+          : '';
+        const logTail = Array.isArray(result.logTail) && result.logTail.length > 0
+          ? `\n\nRecent Gateway Logs:\n${result.logTail.slice(-25).join('\n')}`
+          : '';
+        const enrichedError = `${result.error || 'Failed to start Gateway'}${diag}${logTail}`;
         set({
-          status: { ...get().status, state: 'error', error: result.error },
-          lastError: result.error || 'Failed to start Gateway',
+          status: result.status
+            ? { ...get().status, ...result.status, state: 'error', error: result.error || result.status.error }
+            : { ...get().status, state: 'error', error: result.error },
+          lastError: enrichedError,
         });
+      } else if (result.status) {
+        set({ status: { ...get().status, ...result.status }, lastError: null });
       }
     } catch (error) {
       set({

@@ -8,7 +8,7 @@
 
 ## 🎯 四大差异化核心竞争力
 
-根据 ClawDeckX 和 OpenClaw 的对比分析，AxonClaw 必须在以下方面建立**不可替代的竞争优势**：
+根据 AxonClawX 和 OpenClaw 的对比分析，AxonClaw 必须在以下方面建立**不可替代的竞争优势**：
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -34,7 +34,7 @@
 
 ### 优势
 
-| 对比项 | ClawDeckX | AxonClaw |
+| 对比项 | AxonClawX | AxonClaw |
 |--------|-----------|----------|
 | UI 库 | 完全自研 (100+ 组件) | shadcn/ui (50+ 组件) |
 | 开发效率 | 低 (每个组件都要写) | 高 (直接使用) |
@@ -100,7 +100,7 @@
 
 ### 竞争优势
 
-| 功能 | ClawDeckX | OpenClaw | AxonClaw |
+| 功能 | AxonClawX | OpenClaw | AxonClaw |
 |------|-----------|----------|----------|
 | 内容生成 | ❌ | ❌ | ✅ |
 | 模板系统 | ⚠️ 场景模板 | ❌ | ✅ 专业模板 |
@@ -154,13 +154,13 @@
 
 ### 竞争优势
 
-| 功能 | ClawDeckX | OpenClaw | AxonClaw |
+| 功能 | AxonClawX | OpenClaw | AxonClaw |
 |------|-----------|----------|----------|
 | 多 Agent 协作 | ⚠️ 基础 | ⚠️ 基础 | ✅ 完整系统 |
 | 工作流可视化 | ⚠️ 基础 | ❌ | ✅ 可视化编辑器 |
 | 预设工作流 | ❌ | ❌ | ✅ 5+ 个工作流 |
 
-**这是我们的最大差异化优势，ClawDeckX 和 OpenClaw 都没有完整的多 Agent 协作系统。**
+**这是我们的最大差异化优势，AxonClawX 和 OpenClaw 都没有完整的多 Agent 协作系统。**
 
 **负责人**: NEXUS (战略执行官) + KAEL (工程总管)
 **截止**: 3/15 24:00
@@ -214,7 +214,7 @@
 
 ### 竞争优势
 
-| 功能 | ClawDeckX | OpenClaw | AxonClaw |
+| 功能 | AxonClawX | OpenClaw | AxonClaw |
 |------|-----------|----------|----------|
 | 插件系统 | ❌ | ✅ 技能系统 | ✅ 更完整 |
 | 插件市场 | ❌ | ⚠️ 基础 | ✅ 可视化市场 |
@@ -230,7 +230,7 @@
 
 ### 功能矩阵
 
-| 功能 | ClawDeckX | OpenClaw | AxonClaw | 我们的优势 |
+| 功能 | AxonClawX | OpenClaw | AxonClaw | 我们的优势 |
 |------|-----------|----------|----------|-----------|
 | 可视化界面 | ✅ | ❌ | ✅ | 持平 |
 | Mac 风格 UI | ✅ | ❌ | ✅ | 持平 (shadcn/ui 更快) |
@@ -244,7 +244,7 @@
 ### 核心竞争力评分
 
 ```
-ClawDeckX:  ████████░░░░░░░░░░░░  35%  (UI 优秀，功能单一)
+AxonClawX:  ████████░░░░░░░░░░░░  35%  (UI 优秀，功能单一)
 OpenClaw:   ██████████░░░░░░░░░░  45%  (引擎强大，无 UI)
 AxonClaw:   ████████████████░░░░  70%  (规划中，差异化明显)
 ```
@@ -336,7 +336,7 @@ AxonClaw:   ████████████████░░░░  70%  (
 - [数据库与记忆系统规划](./DATABASE_MEMORY_PLAN.md)
 - [项目状态](./PROJECT_STATUS.md)
 - [任务追踪](./TASK_TRACKER.md)
-- [ClawDeckX 分析](./CLAWDECKX_ANALYSIS.md)
+- [AxonClawX 分析](./AXONCLAWX_ANALYSIS.md)
 - [竞品分析](./COMPETITOR_ANALYSIS.md)
 
 ---

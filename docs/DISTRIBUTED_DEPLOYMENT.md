@@ -525,7 +525,7 @@ ECHO (Node-03/VPS) → 执行分析 (VPS 计算能力强)
 
 ## 📊 竞争优势
 
-| 功能 | ClawDeckX | OpenClaw | AxonClaw |
+| 功能 | AxonClawX | OpenClaw | AxonClaw |
 |------|-----------|----------|----------|
 | 单节点部署 | ✅ | ✅ | ✅ |
 | **多节点分布式** | ❌ | ❌ | ✅ **领先** |

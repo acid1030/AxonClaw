@@ -6,44 +6,62 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
-import { loadLocale } from '@/clawdeckx/locales';
+import { loadLocale } from '@/axonclawx/locales';
 import { hostApiFetch } from '@/lib/host-api';
 import { DashboardView } from '@/views/DashboardView';
 import { ChatView } from '@/components/chat/ChatView';
 import { AgentsView } from '@/views/AgentsView';
-import { ChannelsView } from '@/views/ChannelsView';
-import { MemoryView } from '@/views/MemoryView';
-import { ContentView } from '@/views/ContentView';
-import { WorkflowView } from '@/views/WorkflowView';
 import { Skills } from '@/pages/Skills';
-import { ModelsView } from '@/views/ModelsView';
-import Scheduler from '@/clawdeckx/windows/Scheduler';
-import Nodes from '@/clawdeckx/windows/Nodes';
-import { RunView } from '@/views/RunView';
+import Scheduler from '@/axonclawx/windows/Scheduler';
+import Nodes from '@/axonclawx/windows/Nodes';
 import { UsageView } from '@/views/UsageView';
-import { AlertsView } from '@/views/AlertsView';
-import { LogsView } from '@/views/LogsView';
-import { ExtensionsView } from '@/views/ExtensionsView';
 import { SystemView } from '@/views/SystemView';
 import { DiagnosticsView } from '@/views/DiagnosticsView';
 import { KnowledgeView } from '@/views/KnowledgeView';
 import { ActivityMonitorView } from '@/views/ActivityMonitorView';
+import { IntelligenceManagementView } from '@/views/IntelligenceManagementView';
+import { AgentOrchestrationCanvasView } from '@/views/AgentOrchestrationCanvasView';
 import { InstallationWizardView } from '@/views/InstallationWizardView';
 import { ConfigurationCenterView } from '@/views/ConfigurationCenterView';
 import { UsageWizardView } from '@/views/UsageWizardView';
 import { GatewayMonitoringView } from '@/views/GatewayMonitoringView';
-import { ApprovalCenterView } from '@/views/ApprovalCenterView';
+import { TasksView } from '@/views/TasksView';
 import { UnifiedSidebar } from '@/components/Sidebar/UnifiedSidebar';
 import { FloatingPanel } from '@/components/Panel/FloatingPanel';
 import { PanelContent } from '@/components/Panel/PanelContent';
 import { PanelTrigger } from '@/components/Panel/PanelTrigger';
 import { useGatewayStore } from '@/stores/gateway';
-import lockLogo from '../../../../designUI/image/clawLogo1.png';
+const lockLogo = '/icon.png';
+
+const ADVANCED_ROUTE_TO_VISIBILITY_KEY: Record<string, 'agentConfig' | 'knowledge' | 'cron' | 'nodes' | 'monitor'> = {
+  'agent-config': 'agentConfig',
+  knowledge: 'knowledge',
+  cron: 'cron',
+  nodes: 'nodes',
+  'system-monitor': 'monitor',
+};
+const FORCE_SETUP_WIZARD_KEY = 'clawx.force-setup-wizard';
+const FORCE_SETUP_WIZARD_ALWAYS = false;
 
 const MainLayout: React.FC = () => {
   const [activeNav, setActiveNav] = useState('overview');
+  const [forceSetupWizard, setForceSetupWizard] = useState<boolean>(() => {
+    if (FORCE_SETUP_WIZARD_ALWAYS) return true;
+    try {
+      const current = window.localStorage.getItem(FORCE_SETUP_WIZARD_KEY);
+      if (current == null) {
+        // Default to forcing setup wizard until user finishes once.
+        window.localStorage.setItem(FORCE_SETUP_WIZARD_KEY, '1');
+        return true;
+      }
+      return current === '1';
+    } catch {
+      return false;
+    }
+  });
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [monitorTab, setMonitorTab] = useState<'network' | 'activity' | 'usage' | 'health'>('network');
+  const [settingsReady, setSettingsReady] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [lockUsername, setLockUsername] = useState('admin');
   const [lockPassword, setLockPassword] = useState('');
@@ -58,13 +76,40 @@ const MainLayout: React.FC = () => {
 
   const language = useSettingsStore((s) => s.language);
   const theme = useSettingsStore((s) => s.theme);
+  const setupComplete = useSettingsStore((s) => s.setupComplete);
+  const featureVisibility = useSettingsStore((s) => s.featureVisibility);
   const applyLanguageFromExternal = useSettingsStore((s) => s.applyLanguageFromExternal);
+  const initSettings = useSettingsStore((s) => s.init);
+
+  const resolveAllowedView = (view: string): string => {
+    const key = ADVANCED_ROUTE_TO_VISIBILITY_KEY[view];
+    if (!key) return view;
+    const canOpenAdvanced =
+      !featureVisibility.simpleMode &&
+      featureVisibility.showAdvanced &&
+      featureVisibility.items[key];
+    return canOpenAdvanced ? view : 'overview';
+  };
+
+  const navigateTo = (view: string) => {
+    if (view === 'usage-wizard') {
+      setForceSetupWizard(false);
+    }
+    setActiveNav(resolveAllowedView(view));
+  };
 
   // Initialize settings from config file on mount
   useEffect(() => {
-    const { init } = useSettingsStore.getState();
-    init().catch(console.error);
-  }, []);
+    let stopped = false;
+    void initSettings()
+      .catch(console.error)
+      .finally(() => {
+        if (!stopped) setSettingsReady(true);
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [initSettings]);
 
   // Apply theme class to document root
   useEffect(() => {
@@ -164,18 +209,33 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPanelOpen]);
 
+  useEffect(() => {
+    const safeView = resolveAllowedView(activeNav);
+    if (safeView !== activeNav) {
+      setActiveNav(safeView);
+    }
+  }, [activeNav, featureVisibility]);
+
   const renderContent = () => {
     switch (activeNav) {
       case 'overview':
-        return <DashboardView onNavigateTo={(view) => setActiveNav(view)} />;
+        return <DashboardView onNavigateTo={navigateTo} />;
       case 'chat':
         return <ChatView />;
+      case 'tasks':
+        return <TasksView />;
       case 'channel-config':
-        return <ConfigurationCenterView pendingSection="channels" />;
+        return <ConfigurationCenterView pendingSection="channels" minimal />;
+      case 'model-config':
+        return <ConfigurationCenterView pendingSection="models" />;
       case 'agent-config':
         return <AgentsView />;
+      case 'agent-hub':
+        return <AgentOrchestrationCanvasView />;
+      case 'agent-orchestration':
+        return <IntelligenceManagementView />;
       case 'skill-config':
-        return <Skills onNavigateTo={(view) => setActiveNav(view)} />;
+        return <Skills onNavigateTo={navigateTo} />;
       case 'knowledge':
         return <KnowledgeView />;
       case 'cron':
@@ -204,15 +264,15 @@ const MainLayout: React.FC = () => {
             </div>
             <div className="flex-1 min-h-0 overflow-hidden">
               {monitorTab === 'network' && <GatewayMonitoringView />}
-              {monitorTab === 'activity' && <ActivityMonitorView onNavigateTo={(view) => setActiveNav(view)} />}
+              {monitorTab === 'activity' && <ActivityMonitorView onNavigateTo={navigateTo} />}
               {monitorTab === 'usage' && <UsageView />}
-              {monitorTab === 'health' && <DiagnosticsView standalone onNavigateTo={(view) => setActiveNav(view)} />}
+              {monitorTab === 'health' && <DiagnosticsView standalone onNavigateTo={navigateTo} />}
             </div>
           </div>
         );
       }
       case 'system-config':
-        return <SystemView onNavigateTo={(view) => setActiveNav(view)} />;
+        return <SystemView onNavigateTo={navigateTo} />;
       default:
         return <DashboardView />;
     }
@@ -255,12 +315,28 @@ const MainLayout: React.FC = () => {
 
   const dateLocale = language?.toLowerCase?.().startsWith('zh') ? 'zh-CN' : 'en-US';
 
+  if (!settingsReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0f172a] text-white">
+        <div className="text-sm text-white/60">Loading...</div>
+      </div>
+    );
+  }
+
+  if (forceSetupWizard || !setupComplete) {
+    return <InstallationWizardView onNavigateTo={navigateTo} />;
+  }
+
+  if (activeNav === 'usage-wizard') {
+    return <UsageWizardView onNavigateTo={navigateTo} />;
+  }
+
   return (
     <div className="flex h-screen bg-[#0f172a] text-white overflow-hidden">
       {/* Unified Sidebar */}
       <UnifiedSidebar
         activeView={activeNav}
-        onViewChange={setActiveNav}
+        onViewChange={navigateTo}
         onLock={handleLock}
       />
 

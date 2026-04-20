@@ -19,6 +19,12 @@ export interface ConfirmDialogProps {
   variant?: 'default' | 'destructive';
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
+  confirmDisabled?: boolean;
+  contentClassName?: string;
+  titleClassName?: string;
+  messageClassName?: string;
+  cancelButtonClassName?: string;
+  confirmButtonClassName?: string;
   /** 可选：在 message 和 footer 之间渲染额外内容 */
   children?: React.ReactNode;
 }
@@ -32,6 +38,12 @@ export function ConfirmDialog({
   variant = 'default',
   onConfirm,
   onCancel,
+  confirmDisabled = false,
+  contentClassName,
+  titleClassName,
+  messageClassName,
+  cancelButtonClassName,
+  confirmButtonClassName,
   children,
 }: ConfirmDialogProps) {
   const [loading, setLoading] = React.useState(false);
@@ -47,20 +59,21 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className={cn('sm:max-w-md', contentClassName)} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {message && <DialogDescription>{message}</DialogDescription>}
+          <DialogTitle className={titleClassName}>{title}</DialogTitle>
+          {message && <DialogDescription className={messageClassName}>{message}</DialogDescription>}
         </DialogHeader>
         {children}
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onCancel} disabled={loading}>
+          <Button variant="outline" onClick={onCancel} disabled={loading} className={cancelButtonClassName}>
             {cancelLabel}
           </Button>
           <Button
             variant={variant === 'destructive' ? 'destructive' : 'default'}
             onClick={() => void handleConfirm()}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
+            className={confirmButtonClassName}
           >
             {loading ? '...' : confirmLabel}
           </Button>

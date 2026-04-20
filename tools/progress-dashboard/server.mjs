@@ -75,7 +75,7 @@ function computeGroupProgress() {
     'src/renderer/views/LogsView.tsx',
   ].map((p) => path.join(ROOT, p));
 
-  const dirGroupC = path.join(ROOT, 'src/renderer/views/ConfigurationCenter');
+  const dirGroupC = path.join(ROOT, 'src/renderer/axonclawx/windows/Editor/sections');
 
   const calcFiles = (files) => {
     const existing = files.filter((f) => fs.existsSync(f));
@@ -86,7 +86,7 @@ function computeGroupProgress() {
   };
 
   const calcDir = (dir) => {
-    const files = walkTsxFiles(dir).filter((f) => !f.includes('/clawdeckx/'));
+    const files = walkTsxFiles(dir);
     const total = files.length || 1;
     const done = files.filter((f) => cjkDebtCountForFile(f) === 0).length;
     const debtLines = files.reduce((s, f) => s + cjkDebtCountForFile(f), 0);
@@ -107,8 +107,6 @@ root=pathlib.Path('src/renderer')
 files=[]
 for p in root.rglob('*.tsx'):
     sp=str(p)
-    if '/clawdeckx/' in sp:
-        continue
     text=p.read_text(errors='ignore').splitlines()
     cnt=0
     for line in text:

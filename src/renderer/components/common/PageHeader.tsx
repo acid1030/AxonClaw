@@ -74,7 +74,7 @@ export function PageHeader({
   };
 
   return (
-    <div className={cn('z-10 shrink-0 pt-4 pb-4 -mt-4 -mx-4 px-4 bg-[#0f172a] mb-0', sticky && 'sticky top-0')}>
+    <div className={cn('z-10 shrink-0 pt-4 pb-4 -mt-4 -mx-4 px-4 bg-background mb-0', sticky && 'sticky top-0')}>
       {/* 标题行：dividerUnderSubtitle 时只显示标题+副标题，操作区移到分割线下方 */}
       <div className="flex items-start sm:items-center justify-between gap-3 mb-0 min-w-0">
         <div className="min-w-0 flex-1 pr-2">
@@ -92,7 +92,7 @@ export function PageHeader({
                 disabled={refreshing}
                 className={cn(
                   'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors shrink-0',
-                  'bg-[#1e293b] border-2 text-foreground/80 hover:bg-[#334155] disabled:opacity-50',
+                  'bg-white/5 border text-foreground/80 hover:bg-white/10 disabled:opacity-50',
                   statsBorderColor
                 )}
               >
@@ -123,7 +123,7 @@ export function PageHeader({
               disabled={refreshing}
               className={cn(
                 'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors shrink-0',
-                'bg-[#1e293b] border-2 text-foreground/80 hover:bg-[#334155] disabled:opacity-50',
+                'bg-white/5 border text-foreground/80 hover:bg-white/10 disabled:opacity-50',
                 statsBorderColor
               )}
             >
@@ -139,7 +139,7 @@ export function PageHeader({
       {!isOnline && (
         <div
           className={cn(
-            'mt-3 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2',
+            'mt-3 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border',
             'bg-amber-500/10 border-amber-500/30'
           )}
         >
@@ -168,7 +168,7 @@ export function PageHeader({
       {stats.length > 0 && (
         <div
           className={cn(
-            'mt-3 flex flex-wrap gap-3 rounded-xl border-2 bg-[#1e293b] p-3',
+            'mt-3 flex flex-wrap gap-3 rounded-xl border bg-white/[0.03] p-3',
             statsBorderColor
           )}
         >

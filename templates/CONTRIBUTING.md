@@ -2,7 +2,7 @@
 
 > **[中文版](./CONTRIBUTING.zh.md)**
 
-This guide explains how to add new content to the ClawDeckX Knowledge Hub — recipes, tips, config snippets, and FAQs.
+This guide explains how to add new content to the AxonClawX Knowledge Hub — recipes, tips, config snippets, and FAQs.
 
 ## Content Types
 
@@ -90,7 +90,7 @@ node templates/scripts/validate-templates.mjs
 
 ### Recipe
 
-Recipes should describe **ClawDeckX visual UI steps**, not CLI commands.
+Recipes should describe **AxonClawX visual UI steps**, not CLI commands.
 
 ```json
 {
@@ -104,7 +104,7 @@ Recipes should describe **ClawDeckX visual UI steps**, not CLI commands.
     "difficulty": "easy",
     "icon": "menu_book",
     "tags": ["channel", "setup", "beginner"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "lastUpdated": "2026-03-07T00:00:00Z",
     "i18n": {
       "en": {
@@ -114,7 +114,7 @@ Recipes should describe **ClawDeckX visual UI steps**, not CLI commands.
     }
   },
   "content": {
-    "body": "Connect a messaging channel to your AI agent through the ClawDeckX visual interface.",
+    "body": "Connect a messaging channel to your AI agent through the AxonClawX visual interface.",
     "steps": [
       {
         "title": "Open Config Center",
@@ -157,7 +157,7 @@ Tips can include an optional `statusCheck` field for live status detection in th
     }
   },
   "content": {
-    "body": "## Why Enable Web Search?\n\nAI models have a training data cutoff. Enable web search so your AI can look up real-time news, docs, and more.\n\n## Configure in ClawDeckX\n\n1. Go to **Config Center → Tools**\n2. Enable **Web Search**\n3. Select a provider (Brave, Perplexity, Gemini, Grok, Kimi)\n4. Enter the API Key",
+    "body": "## Why Enable Web Search?\n\nAI models have a training data cutoff. Enable web search so your AI can look up real-time news, docs, and more.\n\n## Configure in AxonClawX\n\n1. Go to **Config Center → Tools**\n2. Enable **Web Search**\n3. Select a provider (Brave, Perplexity, Gemini, Grok, Kimi)\n4. Enter the API Key",
     "editorSection": "tools",
     "statusCheck": {
       "type": "config_field",
@@ -184,7 +184,7 @@ Tips can include an optional `statusCheck` field for live status detection in th
     "difficulty": "medium",
     "icon": "code",
     "tags": ["cron", "heartbeat", "automation"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "lastUpdated": "2026-03-07T00:00:00Z",
     "i18n": {
       "en": {
@@ -214,7 +214,7 @@ Tips can include an optional `statusCheck` field for live status detection in th
     "difficulty": "easy",
     "icon": "help",
     "tags": ["troubleshooting", "gateway", "connection"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "lastUpdated": "2026-03-07T00:00:00Z",
     "i18n": {
       "en": {
@@ -244,7 +244,7 @@ Tips can include an optional `statusCheck` field for live status detection in th
 
 ### `editorSection` (optional)
 
-Links the knowledge item to a Config Center section. When the user clicks "Go to Settings", ClawDeckX opens that section.
+Links the knowledge item to a Config Center section. When the user clicks "Go to Settings", AxonClawX opens that section.
 
 Valid values: `models`, `channels`, `agents`, `tools`, `session`, `gateway`, `hooks`, `cron`, `memory`, `audio`, `browser`, `logging`, `auth`, `messages`, `commands`, `json`, `live`, `misc`, `templates`
 

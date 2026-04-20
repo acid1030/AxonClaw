@@ -1,4 +1,4 @@
-# 综合学习报告 - ClawDeckX 深度分析
+# 综合学习报告 - AxonClawX 深度分析
 
 > 学习时间：2026-03-12 23:05
 > 分析者：TECH + AXON
@@ -8,7 +8,7 @@
 
 ## 📊 核心发现
 
-### ClawDeckX 关键数据
+### AxonClawX 关键数据
 
 | 指标 | 数值 |
 |------|------|
@@ -37,21 +37,21 @@
 
 ### 决策 1: 技术栈确认 ✅
 
-**采用 ClawDeckX 技术栈**:
+**采用 AxonClawX 技术栈**:
 - ✅ React 19 (已是)
 - ✅ TypeScript 5.8+ (已是)
 - ✅ Vite 6.x (已是)
 - ✅ Tailwind CSS 4.x (已是 v4.1.18)
 
 **差异化**:
-- 使用 shadcn/ui 减少自研 (ClawDeckX 完全自研)
-- 保持 Electron 桌面应用 (ClawDeckX 是 Web 应用)
+- 使用 shadcn/ui 减少自研 (AxonClawX 完全自研)
+- 保持 Electron 桌面应用 (AxonClawX 是 Web 应用)
 
 ### 决策 2: 架构简化 ✅
 
-**学习 ClawDeckX，但简化**:
+**学习 AxonClawX，但简化**:
 
-| ClawDeckX | AxonClaw 方案 |
+| AxonClawX | AxonClaw 方案 |
 |-----------|-------------|
 | 窗口化管理 (24 个窗口) | 三列布局 (侧边栏 + 主内容 + 右面板) |
 | 完全自研 UI | shadcn/ui + 自定义 |
@@ -60,7 +60,7 @@
 
 ### 决策 3: 组件设计模式 ✅
 
-**采用 ClawDeckX 模式**:
+**采用 AxonClawX 模式**:
 
 ```tsx
 // 1. 小型工具组件 (<1KB)
@@ -76,11 +76,11 @@ function Dashboard() { ... }
 function AgentsView() { ... }
 ```
 
-**单文件限制**: <50KB (ClawDeckX 最大 141KB)
+**单文件限制**: <50KB (AxonClawX 最大 141KB)
 
 ### 决策 4: 服务层架构 ✅
 
-**已创建，参考 ClawDeckX**:
+**已创建，参考 AxonClawX**:
 
 ```
 src/renderer/services/
@@ -93,7 +93,7 @@ src/renderer/services/
 
 ### 决策 5: 国际化支持 ✅
 
-**已创建框架，参考 ClawDeckX 13 语言**:
+**已创建框架，参考 AxonClawX 13 语言**:
 
 ```
 src/renderer/lib/i18n.ts
@@ -105,11 +105,11 @@ src/renderer/lib/i18n.ts
 
 ---
 
-## 📦 必学 ClawDeckX 功能
+## 📦 必学 AxonClawX 功能
 
 ### P0 优先级 (本周实现)
 
-| 功能 | ClawDeckX 参考 | 我们的实现 | 负责人 |
+| 功能 | AxonClawX 参考 | 我们的实现 | 负责人 |
 |------|---------------|-----------|--------|
 | **Cron 构建器** | CronBuilder.tsx (7KB) | ✅ 已创建 | ZARA |
 | **技能市场** | ToolsCatalog.tsx (14KB) | 🔄 完善 UI | FLASH |
@@ -118,7 +118,7 @@ src/renderer/lib/i18n.ts
 
 ### P1 优先级 (下周实现)
 
-| 功能 | ClawDeckX 参考 | 我们的计划 | 负责人 |
+| 功能 | AxonClawX 参考 | 我们的计划 | 负责人 |
 |------|---------------|-----------|--------|
 | **Dashboard** | Dashboard.tsx (77KB) | 简化版 (20KB) | BLAZE |
 | **Agents 管理** | Agents.tsx (75KB) | 已创建基础 | ZARA |
@@ -127,7 +127,7 @@ src/renderer/lib/i18n.ts
 
 ### P2 优先级 (后续实现)
 
-| 功能 | ClawDeckX 参考 | 我们的计划 |
+| 功能 | AxonClawX 参考 | 我们的计划 |
 |------|---------------|-----------|
 | **Multi-Agent** | multiagent/*.tsx | 核心差异化功能 |
 | **Scenarios** | scenarios/*.tsx | 模板中心 |
@@ -138,7 +138,7 @@ src/renderer/lib/i18n.ts
 
 ## 🎨 UI 设计调整
 
-### 采用 ClawDeckX 设计语言
+### 采用 AxonClawX 设计语言
 
 **核心特征**:
 - ✅ 毛玻璃效果 (glassmorphism)
@@ -150,7 +150,7 @@ src/renderer/lib/i18n.ts
 **代码示例**:
 
 ```tsx
-// 健康状态指示器 (学习 ClawDeckX)
+// 健康状态指示器 (学习 AxonClawX)
 function HealthDot({ ok }: { ok: boolean }) {
   return (
     <div className={`
@@ -185,7 +185,7 @@ function StatCard({ label, value, trend }: {
 
 ## 📊 代码质量目标
 
-| 指标 | ClawDeckX | AxonClaw 目标 |
+| 指标 | AxonClawX | AxonClaw 目标 |
 |------|-----------|-------------|
 | **总代码量** | 49,729 行 | 20,000-30,000 行 |
 | **单文件最大** | 141KB | <50KB |
@@ -200,7 +200,7 @@ function StatCard({ label, value, trend }: {
 
 ### 今天完成 (3/12)
 
-- [x] 学习 ClawDeckX 分析报告
+- [x] 学习 AxonClawX 分析报告
 - [x] 创建服务层架构
 - [x] 创建国际化框架
 - [x] 创建 Cron 构建器
@@ -220,7 +220,7 @@ function StatCard({ label, value, trend }: {
 
 ## 📚 关键代码片段
 
-### 1. 格式化函数 (学习 ClawDeckX)
+### 1. 格式化函数 (学习 AxonClawX)
 
 ```typescript
 // Token 格式化
@@ -239,7 +239,7 @@ function fmtCost(n: number): string {
 }
 ```
 
-### 2. WebSocket 服务 (学习 ClawDeckX)
+### 2. WebSocket 服务 (学习 AxonClawX)
 
 ```typescript
 // services/gateway.ts
@@ -262,7 +262,7 @@ export function subscribeGateway(callback: (data: any) => void) {
 }
 ```
 
-### 3. Toast 通知系统 (学习 ClawDeckX)
+### 3. Toast 通知系统 (学习 AxonClawX)
 
 ```typescript
 // hooks/useToast.ts

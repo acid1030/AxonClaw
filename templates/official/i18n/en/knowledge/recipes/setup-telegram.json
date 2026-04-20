@@ -1,8 +1,8 @@
 {
   "name": "Connect Telegram",
-  "description": "Create a Telegram Bot and connect it to OpenClaw gateway via ClawDeckX",
+  "description": "Create a Telegram Bot and connect it to OpenClaw gateway via AxonClawX",
   "content": {
-    "body": "Telegram is one of OpenClaw's most commonly used messaging channels. You need to first create a Bot through BotFather, then enter the Token in ClawDeckX to complete the connection.\n\n**Prerequisites:**\n- A Telegram account\n- OpenClaw gateway running with model configured",
+    "body": "Telegram is one of OpenClaw's most commonly used messaging channels. You need to first create a Bot through BotFather, then enter the Token in AxonClawX to complete the connection.\n\n**Prerequisites:**\n- A Telegram account\n- OpenClaw gateway running with model configured",
     "steps": [
       {
         "title": "Create Telegram Bot",

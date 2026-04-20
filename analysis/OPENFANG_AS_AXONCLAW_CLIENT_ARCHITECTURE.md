@@ -600,7 +600,7 @@ Request:
    - 许可协议变更风险
 
 2. **市场竞争**
-   - ClawDeckX 已有 285⭐
+   - AxonClawX 已有 285⭐
    - 其他 Agent 平台竞争
    - 巨头入场风险
 
@@ -862,8 +862,8 @@ crates/
 
 ### C. 相关报告
 
-- `CLAWDECKX_VS_OPENCLAW_ANALYSIS.md` - ClawDeckX vs OpenClaw 对比
-- `CLAWDECKX_CODE_ANALYSIS.md` - ClawDeckX 代码深度分析
+- `AXONCLAWX_VS_OPENCLAW_ANALYSIS.md` - AxonClawX vs OpenClaw 对比
+- `AXONCLAWX_CODE_ANALYSIS.md` - AxonClawX 代码深度分析
 - `OPENFANG_ANALYSIS_SUMMARY.md` - OpenFang 项目分析摘要
 - `AXONCLAW_FEATURE_SPEC.md` - AxonClaw 功能规格
 

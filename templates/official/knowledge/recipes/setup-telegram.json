@@ -4,19 +4,19 @@
   "version": "1.0.0",
   "metadata": {
     "name": "连接 Telegram",
-    "description": "创建 Telegram Bot 并通过 ClawDeckX 连接到 OpenClaw 网关",
+    "description": "创建 Telegram Bot 并通过 AxonClawX 连接到 OpenClaw 网关",
     "category": "setup",
     "tags": ["telegram", "channel", "bot", "setup"],
     "difficulty": "easy",
     "i18n": {
       "en": {
         "name": "Connect Telegram",
-        "description": "Create a Telegram Bot and connect it to OpenClaw gateway via ClawDeckX"
+        "description": "Create a Telegram Bot and connect it to OpenClaw gateway via AxonClawX"
       }
     }
   },
   "content": {
-    "body": "Telegram 是 OpenClaw 最常用的消息频道之一。你需要先通过 BotFather 创建一个 Bot，然后在 ClawDeckX 中填入 Token 完成连接。\n\n**前提条件：**\n- 一个 Telegram 账户\n- OpenClaw 网关已启动且模型已配置",
+    "body": "Telegram 是 OpenClaw 最常用的消息频道之一。你需要先通过 BotFather 创建一个 Bot，然后在 AxonClawX 中填入 Token 完成连接。\n\n**前提条件：**\n- 一个 Telegram 账户\n- OpenClaw 网关已启动且模型已配置",
     "steps": [
       {
         "title": "创建 Telegram Bot",

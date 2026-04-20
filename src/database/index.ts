@@ -21,3 +21,4 @@ export {
 
 export * from './repos/alert';
 export * from './repos/setting';
+export * from './repos/task-run';

@@ -1,12 +1,12 @@
 {
   "name": "快速开始配置",
-  "description": "通过 ClawDeckX 可视化界面完成首次配置，从安装到能对话只需 5 分钟",
+  "description": "通过 AxonClawX 可视化界面完成首次配置，从安装到能对话只需 5 分钟",
   "content": {
-    "body": "通过 ClawDeckX 的可视化界面完成首次配置，全程无需手动编辑配置文件。\n\n**前提条件：**\n- 已安装 OpenClaw（`npm i -g openclaw` 或使用安装脚本）\n- 至少一个 AI 提供商的 API Key（如 OpenAI、Anthropic、Google 等）\n\n完成后你将拥有一个可以通过消息频道对话的 AI 助手。",
+    "body": "通过 AxonClawX 的可视化界面完成首次配置，全程无需手动编辑配置文件。\n\n**前提条件：**\n- 已安装 OpenClaw（`npm i -g openclaw` 或使用安装脚本）\n- 至少一个 AI 提供商的 API Key（如 OpenAI、Anthropic、Google 等）\n\n完成后你将拥有一个可以通过消息频道对话的 AI 助手。",
     "steps": [
       {
         "title": "启动网关",
-        "description": "打开 ClawDeckX → 仪表盘 → 点击「启动网关」按钮。如果是首次运行，ClawDeckX 会自动检测 OpenClaw 安装状态并引导你完成初始化。"
+        "description": "打开 AxonClawX → 仪表盘 → 点击「启动网关」按钮。如果是首次运行，AxonClawX 会自动检测 OpenClaw 安装状态并引导你完成初始化。"
       },
       {
         "title": "添加 AI 提供商",
@@ -30,7 +30,7 @@
       },
       {
         "title": "发送第一条消息",
-        "description": "在已连接的消息频道中向 AI 助手发送任意消息，或打开 ClawDeckX 内置的「聊天」窗口直接对话。收到回复即表示配置成功。"
+        "description": "在已连接的消息频道中向 AI 助手发送任意消息，或打开 AxonClawX 内置的「聊天」窗口直接对话。收到回复即表示配置成功。"
       }
     ]
   }

@@ -1,8 +1,8 @@
 {
   "name": "备份与恢复配置",
-  "description": "通过 ClawDeckX 导出完整配置，实现跨设备迁移或灾难恢复",
+  "description": "通过 AxonClawX 导出完整配置，实现跨设备迁移或灾难恢复",
   "content": {
-    "body": "定期备份 OpenClaw 配置可以防止意外丢失，也方便在多台设备间迁移。ClawDeckX 提供了可视化的导出/导入功能。\n\n**备份包含的内容：**\n- 完整的 openclaw.json 配置文件（提供商、模型、频道、会话等所有设置）\n- 代理文件（IDENTITY.md、SOUL.md、USER.md、MEMORY.md）\n- 定时任务和 Webhook 配置\n\n**不包含的内容：**\n- API Key（出于安全原因，需要在新设备上重新填写）\n- 历史会话数据（存储在本地数据库中）\n- 已安装的技能和插件（需要重新安装）",
+    "body": "定期备份 OpenClaw 配置可以防止意外丢失，也方便在多台设备间迁移。AxonClawX 提供了可视化的导出/导入功能。\n\n**备份包含的内容：**\n- 完整的 openclaw.json 配置文件（提供商、模型、频道、会话等所有设置）\n- 代理文件（IDENTITY.md、SOUL.md、USER.md、MEMORY.md）\n- 定时任务和 Webhook 配置\n\n**不包含的内容：**\n- API Key（出于安全原因，需要在新设备上重新填写）\n- 历史会话数据（存储在本地数据库中）\n- 已安装的技能和插件（需要重新安装）",
     "steps": [
       {
         "title": "导出配置",
@@ -14,7 +14,7 @@
       },
       {
         "title": "在新设备上恢复",
-        "description": "在新设备上安装 OpenClaw 和 ClawDeckX → 前往「配置中心 → JSON 编辑器」→ 粘贴备份的 JSON 配置 → 保存。"
+        "description": "在新设备上安装 OpenClaw 和 AxonClawX → 前往「配置中心 → JSON 编辑器」→ 粘贴备份的 JSON 配置 → 保存。"
       },
       {
         "title": "补充敏感信息",

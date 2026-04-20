@@ -1,7 +1,7 @@
-# ClawDeckX 代码深度分析与启示
+# AxonClawX 代码深度分析与启示
 
 > **分析时间**: 2026-03-12  
-> **ClawDeckX 版本**: v0.0.15  
+> **AxonClawX 版本**: v0.0.15  
 > **代码量**: 49,729 行 (前端)
 
 ---
@@ -27,7 +27,7 @@
 ### 项目结构
 
 ```
-clawdeckx/
+axonclawx/
 ├── cmd/                      # Go 后端入口
 ├── internal/                 # Go 后端核心 (37 个包)
 │   ├── api/                 # REST API
@@ -140,7 +140,7 @@ function MiniSparkline({ data, color, h = 32, w = 80 }: {
 
 ### 1. 窗口管理系统
 
-ClawDeckX 采用独特的**窗口化管理系统**,每个功能模块都是独立窗口:
+AxonClawX 采用独特的**窗口化管理系统**,每个功能模块都是独立窗口:
 
 ```tsx
 // App.tsx - 窗口管理核心
@@ -483,7 +483,7 @@ class ErrorBoundary extends React.Component {
 
 ### 2. UI 设计建议
 
-**学习 ClawDeckX**:
+**学习 AxonClawX**:
 - ✅ macOS 风格设计语言
 - ✅ 毛玻璃效果 + 圆角卡片
 - ✅ 深色模式优先
@@ -571,7 +571,7 @@ axonclaw/
 
 ### 5. 性能优化建议
 
-**学习 ClawDeckX**:
+**学习 AxonClawX**:
 - ✅ 路由级代码分割
 - ✅ React.lazy + Suspense
 - ✅ 空闲时间预加载
@@ -588,7 +588,7 @@ axonclaw/
 
 ## 📊 代码质量对比
 
-| 指标 | ClawDeckX | AxonClaw (目标) |
+| 指标 | AxonClawX | AxonClaw (目标) |
 |------|-----------|----------------|
 | **代码行数** | 49,729 | 20,000-30,000 |
 | **组件数量** | 100+ | 50-80 |
@@ -602,7 +602,7 @@ axonclaw/
 
 ## 🎯 总结
 
-### ClawDeckX 的优点
+### AxonClawX 的优点
 
 1. **技术先进**: React 19 + TypeScript 5.8 + Tailwind 4.x
 2. **设计优秀**: macOS 风格，用户体验好
@@ -610,7 +610,7 @@ axonclaw/
 4. **国际化完善**: 13 种语言支持
 5. **实时性强**: WebSocket 实时通信
 
-### ClawDeckX 的缺点
+### AxonClawX 的缺点
 
 1. **代码量大**: 近 5 万行，维护成本高
 2. **复杂度高**: 窗口管理系统增加复杂度

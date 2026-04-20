@@ -173,7 +173,7 @@ class GatewayBrowserClient {
                 },
                 caps: [],
                 role: 'operator',
-                scopes: ['operator.admin'],
+                scopes: ['operator.admin', 'operator.read', 'operator.write'],
               },
             };
             console.log('[GatewayClient] Sending connect with token:', this.gatewayInfo?.token?.slice(0, 10) + '...');

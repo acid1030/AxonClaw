@@ -1,8 +1,8 @@
 {
   "name": "Backup & Restore Config",
-  "description": "Export full configuration via ClawDeckX for cross-device migration or disaster recovery",
+  "description": "Export full configuration via AxonClawX for cross-device migration or disaster recovery",
   "content": {
-    "body": "Regularly backing up your OpenClaw configuration prevents accidental loss and makes it easy to migrate between devices. ClawDeckX provides visual export/import functionality.\n\n**Backup Includes:**\n- Complete openclaw.json configuration file (providers, models, channels, sessions and all settings)\n- Agent files (IDENTITY.md, SOUL.md, USER.md, MEMORY.md)\n- Cron jobs and webhook configuration\n\n**Not Included:**\n- API Keys (for security, must be re-entered on new devices)\n- Historical session data (stored in local database)\n- Installed skills and plugins (need reinstallation)",
+    "body": "Regularly backing up your OpenClaw configuration prevents accidental loss and makes it easy to migrate between devices. AxonClawX provides visual export/import functionality.\n\n**Backup Includes:**\n- Complete openclaw.json configuration file (providers, models, channels, sessions and all settings)\n- Agent files (IDENTITY.md, SOUL.md, USER.md, MEMORY.md)\n- Cron jobs and webhook configuration\n\n**Not Included:**\n- API Keys (for security, must be re-entered on new devices)\n- Historical session data (stored in local database)\n- Installed skills and plugins (need reinstallation)",
     "steps": [
       {
         "title": "Export Configuration",
@@ -14,7 +14,7 @@
       },
       {
         "title": "Restore on New Device",
-        "description": "Install OpenClaw and ClawDeckX on the new device → Go to Config Center → JSON Editor → Paste the backed-up JSON configuration → Save."
+        "description": "Install OpenClaw and AxonClawX on the new device → Go to Config Center → JSON Editor → Paste the backed-up JSON configuration → Save."
       },
       {
         "title": "Fill in Sensitive Information",

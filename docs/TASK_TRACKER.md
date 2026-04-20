@@ -187,7 +187,7 @@
 
 - [数据库与记忆系统规划](./DATABASE_MEMORY_PLAN.md)
 - [项目状态](./PROJECT_STATUS.md)
-- [ClawDeckX 分析](./CLAWDECKX_ANALYSIS.md)
+- [AxonClawX 分析](./AXONCLAWX_ANALYSIS.md)
 - [竞品分析](./COMPETITOR_ANALYSIS.md)
 
 ---

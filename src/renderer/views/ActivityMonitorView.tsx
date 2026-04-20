@@ -471,7 +471,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
   const isOnline = useGatewayStore((s) => s.status.state === 'running');
 
   return (
-    <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden bg-[#0f172a] text-white">
+    <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
       <div className="w-full h-full min-h-0 pt-0 pb-3 overflow-y-auto custom-scrollbar px-4">
         <PageHeader
           title={labels.title}
@@ -552,19 +552,19 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={labels.search}
-              className="w-full h-8 pl-8 pr-2 rounded-lg bg-[#1e293b] border border-indigo-500/20 text-xs text-white/90 placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/40"
+              className="w-full h-9 pl-8 pr-3 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/40"
             />
           </div>
           <Select value={kindFilter} onValueChange={setKindFilter}>
             <SelectTrigger
               className={cn(
-                'h-8 w-[140px] rounded-lg bg-[#1e293b] text-xs text-white/80',
+                'h-9 w-[150px] rounded-lg bg-white/5 text-sm text-foreground',
                 kindFilter === 'all' ? 'border-indigo-500/25' : kindFilter === 'direct' ? 'border-blue-500/25' : kindFilter === 'group' ? 'border-purple-500/25' : kindFilter === 'global' ? 'border-amber-500/25' : 'border-white/15'
               )}
             >
               <SelectValue placeholder={`${labels.all} (${sessions.length})`} />
             </SelectTrigger>
-            <SelectContent className="bg-[#1e293b] border-indigo-500/20 text-white/90">
+            <SelectContent className="border-white/15 bg-popover text-popover-foreground">
               <SelectItem value="all">{`${labels.all} (${sessions.length})`}</SelectItem>
               {['direct', 'group', 'global', 'unknown']
                 .filter((k) => kindCounts[k])
@@ -578,13 +578,13 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
           <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
             <SelectTrigger
               className={cn(
-                'h-8 w-[120px] rounded-lg bg-[#1e293b] text-xs text-white/80',
+                'h-9 w-[130px] rounded-lg bg-white/5 text-sm text-foreground',
                 sortField === 'updated' ? 'border-indigo-500/25' : sortField === 'tokens' ? 'border-amber-500/25' : 'border-blue-500/25'
               )}
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-[#1e293b] border-indigo-500/20 text-white/90">
+            <SelectContent className="border-white/15 bg-popover text-popover-foreground">
               <SelectItem value="updated">{labels.sortUpdated}</SelectItem>
               <SelectItem value="tokens">{labels.sortTokens}</SelectItem>
               <SelectItem value="name">{labels.sortName}</SelectItem>
@@ -624,7 +624,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
         {loading && !result ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-2xl p-4 animate-pulse bg-[#1e293b] border border-indigo-500/20">
+              <div key={i} className="rounded-2xl p-4 animate-pulse bg-white/[0.03] border border-white/10">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-12 h-4 rounded-full bg-indigo-500/20" />
                   <div className="flex-1 h-3 rounded bg-indigo-500/10" />
@@ -656,7 +656,7 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
                   </div>
                   <div>
                     <div className="text-xs font-semibold text-white/60">{step.label}</div>
-                    <div className="text-[10px] text-white/40">{step.desc}</div>
+                    <div className="text-xs text-white/45">{step.desc}</div>
                   </div>
                 </div>
               ))}
@@ -666,9 +666,9 @@ const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({ onNavigateTo 
           <>
             {groupedSessions.map((group) => (
               <div key={group.label} className="mb-1">
-                <div
+        <div
           className={cn(
-            'sticky top-0 z-10 py-1.5 text-[10px] font-bold text-white/40 uppercase tracking-wider bg-[#0f172a]/95 backdrop-blur-sm border-b',
+            'sticky top-0 z-10 py-1.5 text-xs font-semibold text-white/45 uppercase tracking-wider bg-background/95 backdrop-blur-sm border-b',
             group.label === labels.groupToday ? 'border-emerald-500/20' : group.label === labels.groupYesterday ? 'border-blue-500/15' : 'border-white/10'
           )}
         >

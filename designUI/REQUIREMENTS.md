@@ -76,12 +76,12 @@
 
 | 组件 | 说明 | 来源 |
 |------|------|------|
-| StepWizard | 多步骤向导 | ClawDeckX, onboarding |
-| HealthDot | 健康状态指示 | ClawDeckX 综合分析 |
-| StatCard | 统计卡片 | ClawDeckX |
-| ConfigDiffView | 配置对比 | ClawDeckX |
-| CronBuilder | Cron 表达式 | ClawDeckX, 已有 |
-| ToolsCatalog | 技能目录 | ClawDeckX |
+| StepWizard | 多步骤向导 | AxonClawX, onboarding |
+| HealthDot | 健康状态指示 | AxonClawX 综合分析 |
+| StatCard | 统计卡片 | AxonClawX |
+| ConfigDiffView | 配置对比 | AxonClawX |
+| CronBuilder | Cron 表达式 | AxonClawX, 已有 |
+| ToolsCatalog | 技能目录 | AxonClawX |
 
 ---
 

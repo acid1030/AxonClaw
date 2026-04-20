@@ -1,6 +1,6 @@
 {
   "name": "Add AI Provider",
-  "description": "Add OpenAI, Anthropic, Google or other AI providers and configure API keys in ClawDeckX",
+  "description": "Add OpenAI, Anthropic, Google or other AI providers and configure API keys in AxonClawX",
   "content": {
     "body": "OpenClaw supports 20+ AI providers including OpenAI, Anthropic, Google, Mistral, Groq, Ollama and more. Each provider requires configuring API type, Base URL and API Key.\n\n**Supported API Types:**\n- `openai` — OpenAI and compatible providers (e.g., Groq, Together, OpenRouter)\n- `anthropic` — Anthropic Claude series\n- `google` — Google Gemini series\n- `mistral` — Mistral AI\n- `ollama` — Local Ollama inference\n- `azure` — Azure OpenAI Service\n\n**Security Note:** API Keys are encrypted and stored locally, never uploaded to any remote service.",
     "steps": [

@@ -1,5 +1,5 @@
 /**
- * AxonClaw - 系统Settings
+ * AxonClawX - 系统Settings
  * AxonClawX 风格：账户安全 | 异常通知 | 配置备份 | 操作日志 | 软件更新 | 打赏支持 | 关于项目
  */
 
@@ -27,11 +27,14 @@ import { Switch } from '@/components/ui/switch';
 import { useUpdateStore } from '@/stores/update';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
+import { ProviderContent } from '@/pages/Setup';
+import { SETUP_PROVIDERS } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
 type SettingsSection =
   | 'general'
+  | 'codex'
   | 'account'
   | 'notification'
   | 'backup'
@@ -52,6 +55,7 @@ interface BindAddressState {
 
 const SETTINGS_LABELS: Record<SettingsSection, { key: string; fallback: string }> = {
   general: { key: 'general.menu', fallback: 'General' },
+  codex: { key: 'codex.menu', fallback: '模型认证' },
   account: { key: 'account.menu', fallback: 'Account' },
   notification: { key: 'notification.menu', fallback: 'Notifications' },
   backup: { key: 'backup.menu', fallback: 'Backup' },
@@ -63,6 +67,7 @@ const SETTINGS_LABELS: Record<SettingsSection, { key: string; fallback: string }
 
 const SIDEBAR_ITEMS: { id: SettingsSection; icon: React.ElementType; iconColor?: string }[] = [
   { id: 'general', icon: SlidersHorizontal, iconColor: 'text-cyan-400' },
+  { id: 'codex', icon: BadgeInfo, iconColor: 'text-fuchsia-400' },
   { id: 'account', icon: Shield, iconColor: 'text-blue-400' },
   { id: 'notification', icon: Bell, iconColor: 'text-amber-400' },
   { id: 'backup', icon: Cloud, iconColor: 'text-emerald-400' },
@@ -102,28 +107,6 @@ interface AlertItem {
   timestamp: string;
 }
 
-interface CodexStatusResponse {
-  installed: boolean;
-  path?: string;
-  version?: string;
-  configured?: boolean;
-  providerId?: string | null;
-  providerModels?: string[];
-  defaultPrimary?: string;
-}
-
-interface CodexQuickConnectResponse {
-  success: boolean;
-  codexInstalled: boolean;
-  codexPath?: string;
-  codexVersion?: string;
-  providerId: string;
-  primaryModel: string;
-  fallbackModels: string[];
-  createdProvider: boolean;
-  addedModels: string[];
-}
-
 interface SettingsViewProps {
   embedded?: boolean;
   onNavigateTo?: (viewId: string) => void;
@@ -143,14 +126,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const [alertSummary, setAlertSummary] = useState<AlertSummary | null>(null);
   const [alertList, setAlertList] = useState<AlertItem[]>([]);
   const [alertLoading, setAlertLoading] = useState(false);
-  const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
-  const [codexStatusLoading, setCodexStatusLoading] = useState(false);
-  const [codexQuickConnecting, setCodexQuickConnecting] = useState(false);
-  const [codexProviderBaseUrl, setCodexProviderBaseUrl] = useState('https://api.openai.com/v1');
-  const [codexPreferredModel, setCodexPreferredModel] = useState('gpt-5.4');
-  const [codexFallbackModel, setCodexFallbackModel] = useState('gpt-5.3-codex');
-  const [codexSessionPayload, setCodexSessionPayload] = useState('');
-  const [codexConnectResult, setCodexConnectResult] = useState<CodexQuickConnectResponse | null>(null);
+  const [providerSelected, setProviderSelected] = useState<string | null>(null);
+  const [providerApiKey, setProviderApiKey] = useState('');
+  const [providerConfigured, setProviderConfigured] = useState(false);
 
   const currentVersion = useUpdateStore((s) => s.currentVersion) || '1.0.0';
   const updateStatus = useUpdateStore((s) => s.status);
@@ -168,6 +146,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const alertDesktopNotification = useSettingsStore((s) => s.alertDesktopNotification);
   const setAlertDesktopNotification = useSettingsStore((s) => s.setAlertDesktopNotification);
+  const featureVisibility = useSettingsStore((s) => s.featureVisibility);
+  const setFeatureVisibility = useSettingsStore((s) => s.setFeatureVisibility);
+  const setFeatureItemVisible = useSettingsStore((s) => s.setFeatureItemVisible);
+  const resetFeatureVisibility = useSettingsStore((s) => s.resetFeatureVisibility);
+  const advancedVisible = !featureVisibility.simpleMode && featureVisibility.showAdvanced;
 
   const currentUser = 'admin';
 
@@ -262,43 +245,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
       /* ignore */
     }
   };
-
-  const refreshCodexStatus = async () => {
-    setCodexStatusLoading(true);
-    try {
-      const res = await hostApiFetch<CodexStatusResponse>('/api/app/codex/status');
-      setCodexStatus(res);
-    } catch {
-      setCodexStatus(null);
-    } finally {
-      setCodexStatusLoading(false);
-    }
-  };
-
-  const handleCodexQuickConnect = async () => {
-    setCodexQuickConnecting(true);
-    setCodexConnectResult(null);
-    try {
-      const res = await hostApiFetch<CodexQuickConnectResponse>('/api/app/codex/quick-connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          providerBaseUrl: codexProviderBaseUrl.trim() || undefined,
-          preferredModel: codexPreferredModel.trim() || undefined,
-          fallbackModel: codexFallbackModel.trim() || undefined,
-          sessionPayload: codexSessionPayload.trim() || undefined,
-        }),
-      });
-      setCodexConnectResult(res);
-      await refreshCodexStatus();
-    } finally {
-      setCodexQuickConnecting(false);
-    }
-  };
-
-  useEffect(() => {
-    void refreshCodexStatus();
-  }, []);
 
   const cardClass = 'rounded-xl border border-white/10 bg-[#1e293b] overflow-hidden';
   const rowClass = 'flex items-center justify-between px-4 py-3 border-b border-white/5 last:border-b-0 gap-4';
@@ -475,98 +421,124 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                     </div>
                   </div>
                 </div>
+
+                <div className={cardClass}>
+                  <div className="px-4 py-3 border-b border-white/5">
+                    <div className="text-sm font-medium text-white/80">
+                      {t('settings.general.featureVisibility.title', { defaultValue: '功能可见性' })}
+                    </div>
+                    <div className="text-xs text-white/40 mt-0.5">
+                      {t('settings.general.featureVisibility.desc', { defaultValue: '常用功能固定展示，进阶功能可按需显示在侧边菜单。' })}
+                    </div>
+                  </div>
+
+                  <div className={rowClass}>
+                    <div>
+                      <div className="text-sm font-medium text-white/80">
+                        {t('settings.general.featureVisibility.simpleMode', { defaultValue: '简洁模式' })}
+                      </div>
+                      <div className="text-xs text-white/40 mt-0.5">
+                        {t('settings.general.featureVisibility.simpleModeDesc', { defaultValue: '开启后仅显示常用菜单。' })}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={featureVisibility.simpleMode}
+                      onCheckedChange={(checked) => setFeatureVisibility({ simpleMode: checked })}
+                    />
+                  </div>
+
+                  <div className={rowClass}>
+                    <div>
+                      <div className="text-sm font-medium text-white/80">
+                        {t('settings.general.featureVisibility.showAdvanced', { defaultValue: '显示进阶功能' })}
+                      </div>
+                      <div className="text-xs text-white/40 mt-0.5">
+                        {t('settings.general.featureVisibility.showAdvancedDesc', { defaultValue: '控制进阶菜单分组是否显示。' })}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={featureVisibility.showAdvanced}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFeatureVisibility({ showAdvanced: true, simpleMode: false });
+                          return;
+                        }
+                        setFeatureVisibility({ showAdvanced: false });
+                      }}
+                    />
+                  </div>
+
+                  <div className="px-4 py-3 border-b border-white/5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {([
+                        ['agentConfig', t('settings.general.featureVisibility.items.agentConfig', { defaultValue: '单智能体管理' })],
+                        ['knowledge', t('settings.general.featureVisibility.items.knowledge', { defaultValue: '知识库' })],
+                        ['cron', t('settings.general.featureVisibility.items.cron', { defaultValue: '定时任务' })],
+                        ['nodes', t('settings.general.featureVisibility.items.nodes', { defaultValue: '节点管理' })],
+                        ['monitor', t('settings.general.featureVisibility.items.monitor', { defaultValue: '监控中心' })],
+                      ] as const).map(([key, label]) => (
+                        <label key={key} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                          <span className="text-sm text-white/80">{label}</span>
+                          <Switch
+                            checked={featureVisibility.items[key]}
+                            disabled={!advancedVisible}
+                            onCheckedChange={(checked) => setFeatureItemVisible(key, checked)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-white/45 mt-2">
+                      {t('settings.general.featureVisibility.itemsHint', { defaultValue: '仅当“显示进阶功能”开启时，上述项目才会出现在侧边栏。' })}
+                    </p>
+                  </div>
+
+                  <div className="px-4 py-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={resetFeatureVisibility}
+                      className="px-3 py-1.5 rounded-lg text-xs border bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    >
+                      {t('settings.general.featureVisibility.resetDefault', { defaultValue: '恢复默认' })}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'codex' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-white/90 mb-1">
+                    {t('steps.provider.title', { ns: 'setup', defaultValue: '模型认证' })}
+                  </h2>
+                  <p className="text-sm text-white/50 mb-4">
+                    {t('steps.provider.description', { ns: 'setup', defaultValue: '使用与安装向导一致的流程配置模型提供商认证。' })}
+                  </p>
+                </div>
+
+                <div className={cn(cardClass, 'p-4')}>
+                  <ProviderContent
+                    providers={SETUP_PROVIDERS}
+                    selectedProvider={providerSelected}
+                    onSelectProvider={(id) => {
+                      setProviderSelected(id);
+                      setProviderConfigured(false);
+                    }}
+                    apiKey={providerApiKey}
+                    onApiKeyChange={setProviderApiKey}
+                    onConfiguredChange={setProviderConfigured}
+                  />
+                </div>
+                {providerConfigured && (
+                  <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">
+                    {t('provider.valid', { ns: 'setup', defaultValue: '配置成功' })}
+                  </div>
+                )}
               </div>
             )}
 
             {activeSection === 'account' && (
               <div className="space-y-6">
-                {/* Codex Plus 一键接入 */}
-                <div>
-                  <h2 className="text-lg font-semibold text-white/90 mb-1">Codex Plus 一键接入</h2>
-                  <p className="text-sm text-white/50 mb-4">自动检测 codex CLI，并一键写入 OpenClaw 模型配置（主模型 gpt-5.4，备用 gpt-5.3-codex）。</p>
-                  <div className={cardClass}>
-                    <div className={rowClass}>
-                      <div>
-                        <div className="text-sm font-medium text-white/80">Codex CLI</div>
-                        <div className="text-xs text-white/40 mt-0.5 break-all">{codexStatus?.installed ? `已安装 ${codexStatus.version || ''}`.trim() : '未检测到'}</div>
-                        {codexStatus?.path && <div className="text-xs text-white/35 mt-0.5 break-all">{codexStatus.path}</div>}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void refreshCodexStatus()}
-                        disabled={codexStatusLoading}
-                        className="px-3 py-1.5 rounded-lg text-xs border bg-white/5 border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-50"
-                      >
-                        {codexStatusLoading ? '刷新中...' : '刷新状态'}
-                      </button>
-                    </div>
-
-                    <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">Provider Base URL</label>
-                      <input
-                        type="text"
-                        value={codexProviderBaseUrl}
-                        onChange={(e) => setCodexProviderBaseUrl(e.target.value)}
-                        placeholder="https://api.openai.com/v1"
-                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
-                      />
-                    </div>
-                    <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">Session JSON / AccessToken</label>
-                      <input
-                        type="password"
-                        value={codexSessionPayload}
-                        onChange={(e) => setCodexSessionPayload(e.target.value)}
-                        placeholder="粘贴 https://chatgpt.com/api/auth/session 的返回 JSON，或仅粘贴 accessToken"
-                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
-                      />
-                    </div>
-                    <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">主模型</label>
-                      <input
-                        type="text"
-                        value={codexPreferredModel}
-                        onChange={(e) => setCodexPreferredModel(e.target.value)}
-                        placeholder="gpt-5.4"
-                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
-                      />
-                    </div>
-                    <div className={rowClass}>
-                      <label className="text-sm font-medium text-white/80 w-32 shrink-0">备用模型</label>
-                      <input
-                        type="text"
-                        value={codexFallbackModel}
-                        onChange={(e) => setCodexFallbackModel(e.target.value)}
-                        placeholder="gpt-5.3-codex"
-                        className={cn(inputClass, 'flex-1 min-w-[220px]')}
-                      />
-                    </div>
-
-                    <div className="px-4 py-3 flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void handleCodexQuickConnect()}
-                        disabled={codexQuickConnecting}
-                        className={btnPrimary}
-                      >
-                        {codexQuickConnecting ? '正在配置...' : '一键配置并启用'}
-                      </button>
-                      <div className="text-xs text-white/40 break-all">
-                        {codexStatus?.defaultPrimary ? `当前主模型：${codexStatus.defaultPrimary}` : '未检测到当前主模型'}
-                      </div>
-                    </div>
-
-                    {codexConnectResult && (
-                      <div className="px-4 py-3 border-t border-white/5 text-xs text-emerald-300 bg-emerald-500/10">
-                        已完成：{codexConnectResult.primaryModel}
-                        {codexConnectResult.fallbackModels.length > 0 && (
-                          <span className="text-emerald-200/90">（Fallback: {codexConnectResult.fallbackModels.join(', ')}）</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
                 {/* 修改密码 */}
                 <div>
                   <h2 className="text-lg font-semibold text-white/90 mb-1">{t('settings.account.passwordTitle')}</h2>
@@ -891,7 +863,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ embedded, onNavigateTo }) =
                       🦾
                     </div>
                     <div>
-                      <div className="text-base font-bold text-white/90">AxonClaw</div>
+                      <div className="text-base font-bold text-white/90">AxonClawX</div>
                       <div className="text-xs text-white/50 mt-0.5">{t('settings.about.appSubtitle')}</div>
                     </div>
                   </div>

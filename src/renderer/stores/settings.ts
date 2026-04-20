@@ -10,6 +10,21 @@ import { hostApiFetch } from '@/lib/host-api';
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
 
+export interface FeatureVisibility {
+  simpleMode: boolean;
+  showAdvanced: boolean;
+  showExperimental: boolean;
+  items: {
+    agentConfig: boolean;
+    knowledge: boolean;
+    cron: boolean;
+    nodes: boolean;
+    monitor: boolean;
+    usage: boolean;
+    diagnostics: boolean;
+  };
+}
+
 function normalizeLanguageCode(input: string | undefined | null): string {
   const raw = String(input || '').trim();
   if (!raw) return 'en';
@@ -55,6 +70,7 @@ interface SettingsState {
 
   // Setup
   setupComplete: boolean;
+  featureVisibility: FeatureVisibility;
 
   // Actions
   init: () => Promise<void>;
@@ -78,7 +94,10 @@ interface SettingsState {
   setSidebarCollapsed: (value: boolean) => void;
   setDevModeUnlocked: (value: boolean) => void;
   setAlertDesktopNotification: (value: boolean) => void;
-  markSetupComplete: () => void;
+  setFeatureVisibility: (value: Partial<FeatureVisibility>) => void;
+  setFeatureItemVisible: (key: keyof FeatureVisibility['items'], value: boolean) => void;
+  resetFeatureVisibility: () => void;
+  markSetupComplete: () => Promise<void>;
   resetSettings: () => void;
 }
 
@@ -105,6 +124,20 @@ const defaultSettings = {
   devModeUnlocked: false,
   alertDesktopNotification: true,
   setupComplete: false,
+  featureVisibility: {
+    simpleMode: true,
+    showAdvanced: false,
+    showExperimental: false,
+    items: {
+      agentConfig: false,
+      knowledge: false,
+      cron: false,
+      nodes: false,
+      monitor: false,
+      usage: false,
+      diagnostics: false,
+    },
+  } satisfies FeatureVisibility,
 };
 
 const PENDING_LANGUAGE_KEY = 'clawx:pending-language';
@@ -136,6 +169,12 @@ function clearPendingLanguage(): void {
   }
 }
 
+type HostSettingsResponse = Partial<Omit<typeof defaultSettings, 'setupComplete'>> & {
+  setupComplete?: boolean;
+};
+
+type PersistedSettingsState = Partial<SettingsState>;
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
@@ -143,10 +182,16 @@ export const useSettingsStore = create<SettingsState>()(
 
       init: async () => {
         try {
-          const settings = await hostApiFetch<Partial<typeof defaultSettings>>('/api/settings');
+          const settings = await hostApiFetch<HostSettingsResponse>('/api/settings');
           const pendingLanguage = readPendingLanguage();
           const mergedLanguage = normalizeLanguageCode(pendingLanguage || settings.language || '');
-          set((state) => ({ ...state, ...settings, ...(mergedLanguage ? { language: mergedLanguage } : {}) }));
+          const setupComplete = typeof settings.setupComplete === 'boolean' ? settings.setupComplete : get().setupComplete;
+          set((state) => ({
+            ...state,
+            ...settings,
+            setupComplete,
+            ...(mergedLanguage ? { language: mergedLanguage } : {}),
+          }));
           if (mergedLanguage) {
             i18n.changeLanguage(mergedLanguage);
           }
@@ -235,11 +280,62 @@ export const useSettingsStore = create<SettingsState>()(
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setDevModeUnlocked: (devModeUnlocked) => set({ devModeUnlocked }),
       setAlertDesktopNotification: (alertDesktopNotification) => set({ alertDesktopNotification }),
-      markSetupComplete: () => set({ setupComplete: true }),
+      setFeatureVisibility: (value) => {
+        set((state) => ({
+          featureVisibility: {
+            ...state.featureVisibility,
+            ...value,
+            items: {
+              ...state.featureVisibility.items,
+              ...(value.items ?? {}),
+            },
+          },
+        }));
+      },
+      setFeatureItemVisible: (key, value) => {
+        set((state) => ({
+          featureVisibility: {
+            ...state.featureVisibility,
+            items: {
+              ...state.featureVisibility.items,
+              [key]: value,
+            },
+          },
+        }));
+      },
+      resetFeatureVisibility: () => {
+        set((state) => ({
+          featureVisibility: {
+            ...defaultSettings.featureVisibility,
+            items: { ...defaultSettings.featureVisibility.items },
+          },
+          sidebarCollapsed: state.sidebarCollapsed,
+        }));
+      },
+      markSetupComplete: async () => {
+        set({ setupComplete: true });
+        try {
+          await hostApiFetch('/api/settings/setup-complete', {
+            method: 'PUT',
+            body: JSON.stringify({ value: true }),
+          });
+        } catch {
+          // Keep local state even if persistence is temporarily unavailable.
+        }
+      },
       resetSettings: () => set(defaultSettings),
     }),
     {
       name: 'clawx-settings',
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as PersistedSettingsState) || {};
+        // setupComplete must come from host config, not stale renderer cache.
+        const { setupComplete: _ignored, ...rest } = persisted;
+        return {
+          ...currentState,
+          ...rest,
+        };
+      },
     }
   )
 );

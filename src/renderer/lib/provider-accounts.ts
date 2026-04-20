@@ -39,7 +39,7 @@ export function hasConfiguredCredentials(
   account: ProviderAccount,
   status?: ProviderWithKeyInfo,
 ): boolean {
-  if (account.authMode === 'oauth_device' || account.authMode === 'oauth_browser' || account.authMode === 'local') {
+  if (account.authMode === 'local') {
     return true;
   }
   return status?.hasKey ?? false;
@@ -122,9 +122,8 @@ export function buildProviderListItems(
 }
 
 export function hasUsableKey(account: ProviderAccount, status: ProviderWithKeyInfo): boolean {
-  if (account.authMode === 'oauth_device' || account.authMode === 'oauth_browser' || account.authMode === 'local') {
+  if (account.authMode === 'local') {
     return true;
   }
   return status?.hasKey ?? false;
 }
-

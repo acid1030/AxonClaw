@@ -10,12 +10,10 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { GATEWAY_TOKEN } from './constants';
 
 const execAsync = promisify(exec);
 const DEFAULT_PORT = 18789;
-const FALLBACK_PORTS = [18789, 18791, 18792, 18080]; // OpenClaw 18789/18791/18792，ClawDeckX Web UI 18080
-const CHECK_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || GATEWAY_TOKEN;
+const FALLBACK_PORTS = [18789, 18791, 18792]; // OpenClaw Gateway WS ports only
 
 /** 从 ~/.openclaw/openclaw.json 读取 gateway.port */
 export function readGatewayPortFromConfig(): number {
@@ -82,32 +80,11 @@ async function tryConnect(port: number, timeoutMs = 5000): Promise<{ success: bo
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
-          ws.send(
-            JSON.stringify({
-              type: 'req',
-              id: 'chk-' + Date.now(),
-              method: 'connect',
-              params: {
-                minProtocol: 3,
-                maxProtocol: 3,
-                client: {
-                  id: 'gateway-client',
-                  displayName: 'AxonClaw',
-                  version: '0.1.0',
-                  platform: process.platform,
-                  mode: 'ui',
-                },
-                auth: { token: CHECK_TOKEN },
-                role: 'operator',
-                scopes: ['operator.admin'],
-              },
-            })
-          );
-          return;
-        }
-        if (msg.type === 'res' && String(msg.id).startsWith('chk-')) {
+          // 端口探测只需要确认“这是 Gateway WS 端点且可达”。
+          // 收到 challenge 即可判定端口可用，避免鉴权/配对状态影响“启动检测”。
           clearTimeout(timeout);
-          once({ success: !!msg.ok, error: msg.ok ? undefined : (msg.error?.message ?? msg.error ?? 'Connect failed') });
+          once({ success: true });
+          return;
         }
       } catch {
         /* ignore parse errors */
@@ -125,9 +102,9 @@ async function detectOpenClawPortFromProcess(): Promise<number[]> {
   try {
     const platform = os.platform();
     if (platform === 'darwin' || platform === 'linux') {
-      // lsof -iTCP -sTCP:LISTEN -P -n 列出所有 TCP 监听，grep openclaw 或 clawdeck（ClawDeckX）
+      // lsof -iTCP -sTCP:LISTEN -P -n 列出所有 TCP 监听，仅匹配 openclaw 进程
       const { stdout } = await execAsync(
-        "lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -iE 'openclaw|clawdeck' || true",
+        "lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -i 'openclaw' || true",
         { timeout: 3000, maxBuffer: 64 * 1024 }
       );
       // 输出格式: openclaw  12345 user  21u  IPv4 0x...  TCP 127.0.0.1:18789 (LISTEN)

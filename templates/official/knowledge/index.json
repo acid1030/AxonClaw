@@ -16,7 +16,7 @@
     "recipes/setup-hooks.json",
     "recipes/setup-memory-search.json",
     "recipes/backup-restore.json",
-    "tips/clawdeckx-workflow.json",
+    "tips/axonclawx-workflow.json",
     "tips/multi-channel-routing.json",
     "tips/session-management.json",
     "tips/security-hardening.json",

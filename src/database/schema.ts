@@ -1,6 +1,6 @@
 /**
  * AxonClaw 数据库 Schema
- * 参考 ClawDeckX internal/database
+ * 参考 AxonClawX internal/database
  */
 
 export const SCHEMA_SQL = `
@@ -41,4 +41,26 @@ CREATE TABLE IF NOT EXISTS activities (
 );
 CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON activities(timestamp);
 CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category);
+
+-- 任务执行记录（任务中心）
+CREATE TABLE IF NOT EXISTS task_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  local_id TEXT UNIQUE NOT NULL,
+  source TEXT NOT NULL,
+  session_key TEXT NOT NULL,
+  run_id TEXT,
+  task TEXT,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  events_json TEXT NOT NULL,
+  last_signature TEXT,
+  agent_id TEXT,
+  result TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_local_id ON task_runs(local_id);
+CREATE INDEX IF NOT EXISTS idx_task_runs_updated_at ON task_runs(updated_at);
+CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);
+CREATE INDEX IF NOT EXISTS idx_task_runs_run_id ON task_runs(run_id);
+CREATE INDEX IF NOT EXISTS idx_task_runs_session_key ON task_runs(session_key);
 `;

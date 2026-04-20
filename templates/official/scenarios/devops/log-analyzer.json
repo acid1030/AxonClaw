@@ -10,7 +10,7 @@
     "icon": "analytics",
     "color": "from-amber-500 to-yellow-500",
     "tags": ["logs", "analysis", "monitoring", "devops"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "newbie": false,
     "costTier": "low"
   },

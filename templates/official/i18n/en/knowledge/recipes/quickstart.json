@@ -1,12 +1,12 @@
 {
   "name": "Quick Start Guide",
-  "description": "Complete first-time setup through ClawDeckX visual interface — from install to first conversation in 5 minutes",
+  "description": "Complete first-time setup through AxonClawX visual interface — from install to first conversation in 5 minutes",
   "content": {
-    "body": "Complete your first-time setup through ClawDeckX's visual interface — no manual configuration file editing required.\n\n**Prerequisites:**\n- OpenClaw installed (`npm i -g openclaw` or use the install script)\n- At least one AI provider API Key (e.g., OpenAI, Anthropic, Google)\n\nAfter completion, you'll have an AI assistant that can chat through messaging channels.",
+    "body": "Complete your first-time setup through AxonClawX's visual interface — no manual configuration file editing required.\n\n**Prerequisites:**\n- OpenClaw installed (`npm i -g openclaw` or use the install script)\n- At least one AI provider API Key (e.g., OpenAI, Anthropic, Google)\n\nAfter completion, you'll have an AI assistant that can chat through messaging channels.",
     "steps": [
       {
         "title": "Start the Gateway",
-        "description": "Open ClawDeckX → Dashboard → Click \"Start Gateway\" button. If this is the first run, ClawDeckX will automatically detect OpenClaw installation and guide you through initialization."
+        "description": "Open AxonClawX → Dashboard → Click \"Start Gateway\" button. If this is the first run, AxonClawX will automatically detect OpenClaw installation and guide you through initialization."
       },
       {
         "title": "Add AI Provider",
@@ -30,7 +30,7 @@
       },
       {
         "title": "Send Your First Message",
-        "description": "Send any message to your AI assistant in a connected messaging channel, or open ClawDeckX's built-in Chat window for direct conversation. Receiving a reply means setup is complete."
+        "description": "Send any message to your AI assistant in a connected messaging channel, or open AxonClawX's built-in Chat window for direct conversation. Receiving a reply means setup is complete."
       }
     ]
   }

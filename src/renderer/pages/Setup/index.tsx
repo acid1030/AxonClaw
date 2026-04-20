@@ -18,6 +18,8 @@ import {
   XCircle,
   ExternalLink,
   Copy,
+  Server,
+  Globe2,
 } from 'lucide-react';
 // TitleBar 可选：Electron 无边框窗口时使用
 import { Button } from '@/components/ui/button';
@@ -108,8 +110,8 @@ import {
   hasConfiguredCredentials,
   pickPreferredAccount,
 } from '@/lib/provider-accounts';
-// 使用 public 目录下的 logo
-const clawxIcon = '/logo.png';
+// 使用 public 目录下的方形 app 图标（从 icon.icns 提取的 PNG）
+const clawxIcon = '/icon.png';
 
 // Use the shared provider registry for setup providers
 const providers = SETUP_PROVIDERS;
@@ -144,6 +146,7 @@ export function SetupWizardContent({ onComplete, showTitleBar = false }: SetupWi
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
   // Runtime check status
   const [runtimeChecksPassed, setRuntimeChecksPassed] = useState(false);
+  const providerAutoAdvancedRef = useRef(false);
 
   const steps = getSteps(t);
   const safeStepIndex = Number.isInteger(currentStep)
@@ -188,6 +191,19 @@ export function SetupWizardContent({ onComplete, showTitleBar = false }: SetupWi
     onComplete();
   };
 
+  useEffect(() => {
+    if (safeStepIndex === STEP.PROVIDER && providerConfigured && !providerAutoAdvancedRef.current) {
+      providerAutoAdvancedRef.current = true;
+      setTimeout(() => {
+        setCurrentStep((i) => Math.min(i + 1, steps.length - 1));
+      }, 300);
+      return;
+    }
+    if (safeStepIndex !== STEP.PROVIDER || !providerConfigured) {
+      providerAutoAdvancedRef.current = false;
+    }
+  }, [providerConfigured, safeStepIndex, steps.length]);
+
   // Auto-proceed when installation is complete
   const handleInstallationComplete = useCallback((skills: string[]) => {
     setInstalledSkills(skills);
@@ -202,7 +218,7 @@ export function SetupWizardContent({ onComplete, showTitleBar = false }: SetupWi
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       {showTitleBar && (
         <div className="h-8 shrink-0 bg-[#0f172a] border-b border-white/5 flex items-center px-4">
-          <span className="text-sm font-medium text-white/80">AxonClaw 安装向导</span>
+          <span className="text-sm font-medium text-white/80">AxonClawX 安装向导</span>
         </div>
       )}
       <div className="flex-1 overflow-auto">
@@ -346,7 +362,7 @@ function WelcomeContent() {
   return (
     <div className="text-center space-y-4">
       <div className="mb-4 flex justify-center">
-        <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
+        <img src={clawxIcon} alt="ClawX" className="h-16 w-16 rounded-xl" />
       </div>
       <h2 className="text-xl font-semibold">{t('welcome.title')}</h2>
       <p className="text-muted-foreground">
@@ -395,8 +411,8 @@ interface RuntimeContentProps {
 }
 
 function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
-  const { t } = useTranslation('setup');
-  type SetupMode = 'local-existing' | 'remote-existing' | 'local-install' | 'cloud-install';
+  const { t, i18n } = useTranslation('setup');
+  type SetupMode = 'local-existing' | 'remote-existing';
   type ScanData = {
     os: string;
     arch: string;
@@ -426,6 +442,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const [scanData, setScanData] = useState<ScanData | null>(null);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [localStarting, setLocalStarting] = useState(false);
   const [remoteTesting, setRemoteTesting] = useState(false);
   const [remoteProtocol, setRemoteProtocol] = useState<'ws' | 'wss'>('ws');
   const [remoteHost, setRemoteHost] = useState('');
@@ -433,79 +450,197 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const [remoteToken, setRemoteToken] = useState('');
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [localConnected, setLocalConnected] = useState(false);
-  const [installLogs, setInstallLogs] = useState<string[]>([]);
   const [recommendedMode, setRecommendedMode] = useState<SetupMode | null>(null);
+  const [scanLogs, setScanLogs] = useState<string[]>([]);
+  const [scanReady, setScanReady] = useState(false);
+  const scanLogRef = useRef<HTMLDivElement | null>(null);
+
+  const appendScanLog = useCallback((message: string) => {
+    const locale = (i18n.language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : undefined;
+    const stamp = new Date().toLocaleTimeString(locale, { hour12: false });
+    setScanLogs((prev) => {
+      const next = [...prev, `[${stamp}] ${message}`];
+      return next.length > 160 ? next.slice(next.length - 160) : next;
+    });
+  }, [i18n.language]);
+
+  const getScanLogToneClass = useCallback((line: string) => {
+    const text = line.toLowerCase();
+    if (
+      text.includes('failed')
+      || text.includes('error')
+      || text.includes('失败')
+      || text.includes('异常')
+    ) return 'text-rose-300 bg-rose-500/10';
+    if (
+      text.includes('done')
+      || text.includes('completed')
+      || text.includes('running')
+      || text.includes('推荐')
+      || text.includes('完成')
+      || text.includes('检测到')
+    ) return 'text-emerald-300 bg-emerald-500/10';
+    if (
+      text.includes('checking')
+      || text.includes('detect')
+      || text.includes('检查')
+      || text.includes('检测')
+      || text.includes('读取')
+      || text.includes('probe')
+    ) return 'text-cyan-300 bg-cyan-500/10';
+    return 'text-slate-300 bg-slate-500/10';
+  }, []);
 
   const refreshScan = useCallback(async () => {
     setScanLoading(true);
+    setScanReady(false);
     setError('');
+    setScanLogs([]);
+    appendScanLog(t('runtime.detect.start', { defaultValue: '开始环境检测...' }));
+    const progress = [
+      t('runtime.detect.progressEnv', { defaultValue: '检测系统环境...' }),
+      t('runtime.detect.progressOpenclaw', { defaultValue: '检查 OpenClaw 安装状态...' }),
+      t('runtime.detect.progressGateway', { defaultValue: '探测 Gateway 连接状态...' }),
+      t('runtime.detect.progressRemote', { defaultValue: '读取远程连接配置...' }),
+    ];
+    let idx = 0;
+    const timer = window.setInterval(() => {
+      appendScanLog(progress[idx % progress.length]);
+      idx += 1;
+    }, 500);
     try {
       const result = await invokeIpc<{ success: boolean; data?: ScanData }>('setup:scan-environment');
       if (!result?.success || !result?.data) {
         setError(t('runtime.status.error', { defaultValue: '环境扫描失败' }));
+        appendScanLog(t('runtime.detect.failed', { defaultValue: '环境检测失败，请重试。' }));
         return;
       }
       setScanData(result.data);
       const localReady = result.data.local.openClawInstalled && result.data.local.gatewayRunning;
       setLocalConnected(localReady);
+      appendScanLog(
+        result.data.local.openClawInstalled
+          ? t('runtime.detect.openclawInstalled', { version: result.data.local.openClawVersion || 'unknown', defaultValue: '检测到 OpenClaw: {{version}}' })
+          : t('runtime.detect.openclawMissing', { defaultValue: '未检测到本地 OpenClaw 安装。' }),
+      );
+      appendScanLog(
+        result.data.local.gatewayRunning
+          ? t('runtime.detect.gatewayRunning', { port: result.data.local.gatewayPort || 'unknown', defaultValue: 'Gateway 运行中（端口 {{port}}）。' })
+          : t('runtime.detect.gatewayStopped', { defaultValue: 'Gateway 当前未运行。' }),
+      );
       const remote = result.data.remote;
       const remoteAvailable = !!remote?.host;
       if (remoteAvailable) {
         setRemoteProtocol(remote?.protocol === 'wss' ? 'wss' : 'ws');
         setRemoteHost(remote?.host || '');
         if (remote?.port) setRemotePort(String(remote.port));
+        appendScanLog(t('runtime.detect.remoteFound', { host: remote?.host || '-', port: remote?.port || '-', defaultValue: '发现远程配置：{{host}}:{{port}}' }));
+      } else {
+        appendScanLog(t('runtime.detect.remoteMissing', { defaultValue: '未发现可用远程配置。' }));
       }
-      const recommended: SetupMode = localReady
+      const recommended: SetupMode = (localReady || !remoteAvailable)
         ? 'local-existing'
-        : result.data.local.openClawInstalled
-          ? 'local-existing'
-          : remoteAvailable
-            ? 'remote-existing'
-            : 'local-install';
+        : 'remote-existing';
       setRecommendedMode(recommended);
+      const recommendedLabel = recommended === 'local-existing'
+        ? t('runtime.modes.localConnection.title', { defaultValue: '本地连接' })
+        : t('runtime.modes.remoteConnection.title', { defaultValue: '远程连接' });
+      appendScanLog(t('runtime.detect.recommended', { mode: recommendedLabel, defaultValue: '推荐模式：{{mode}}' }));
       setMode((currentMode) => {
         if (currentMode === 'local-existing' && !result.data.local.openClawInstalled) {
-          return remoteAvailable ? 'remote-existing' : 'local-install';
+          return remoteAvailable ? 'remote-existing' : 'local-existing';
         }
         return currentMode;
       });
+      setScanReady(true);
+      appendScanLog(t('runtime.detect.done', { defaultValue: '环境检测完成。' }));
     } catch (err) {
       setError(String(err));
+      appendScanLog(`${t('runtime.detect.failed', { defaultValue: '环境检测失败，请重试。' })} ${String(err)}`);
     } finally {
+      window.clearInterval(timer);
       setScanLoading(false);
     }
-  }, [t]);
+  }, [appendScanLog, t]);
 
   useEffect(() => {
     refreshScan();
   }, [refreshScan]);
 
   useEffect(() => {
-    if (mode === 'local-existing' || mode === 'local-install') {
+    if (!scanReady || scanLoading || !scanData) {
+      onStatusChange(false);
+      return;
+    }
+    if (mode === 'local-existing') {
       onStatusChange(localConnected);
     } else if (mode === 'remote-existing') {
       onStatusChange(remoteConnected);
     } else {
       onStatusChange(false);
     }
-  }, [mode, localConnected, remoteConnected, onStatusChange]);
+  }, [mode, localConnected, onStatusChange, remoteConnected, scanData, scanLoading, scanReady]);
+
+  useEffect(() => {
+    if (!scanLogRef.current) return;
+    scanLogRef.current.scrollTop = scanLogRef.current.scrollHeight;
+  }, [scanLogs]);
 
   const handleConnectLocal = async () => {
     setActionLoading(true);
     setError('');
+    appendScanLog(t('runtime.local.connecting', { defaultValue: '正在连接本地 Gateway...' }));
     try {
       const res = await invokeIpc<{ success: boolean; error?: string; port?: number }>('setup:connect-local-gateway');
       if (!res?.success) {
-        setError(res?.error || 'Local gateway connection failed');
+        appendScanLog(t('runtime.local.connectFailed', { defaultValue: '本地 Gateway 连接失败' }));
+        setError(res?.error || t('runtime.local.connectFailed', { defaultValue: '本地 Gateway 连接失败' }));
         return;
       }
       setLocalConnected(true);
-      toast.success(`Local gateway connected on ${res.port ?? 'unknown port'}`);
+      appendScanLog(t('runtime.local.connected', { port: res.port ?? 'unknown', defaultValue: '本地 Gateway 已连接（端口 {{port}}）' }));
+      toast.success(t('runtime.local.connected', { port: res.port ?? 'unknown', defaultValue: '本地 Gateway 已连接（端口 {{port}}）' }));
       await refreshScan();
     } catch (err) {
+      appendScanLog(`${t('runtime.local.connectFailed', { defaultValue: '本地 Gateway 连接失败' })} ${String(err)}`);
       setError(String(err));
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleStartLocalGateway = async () => {
+    setLocalStarting(true);
+    setError('');
+    appendScanLog(t('runtime.local.starting', { defaultValue: '正在启动本地 Gateway...' }));
+    try {
+      const status = await invokeIpc<{
+        state?: string;
+        error?: string;
+        diagnostics?: string[];
+        logTail?: string[];
+        selfHealTried?: boolean;
+        selfHealSucceeded?: boolean;
+      }>('gateway:start');
+      if (status?.state === 'error') {
+        appendScanLog(t('runtime.local.startFailed', { defaultValue: '本地 Gateway 启动失败' }));
+        const diag = Array.isArray(status.diagnostics) && status.diagnostics.length > 0
+          ? `\n\nDiagnostics:\n${status.diagnostics.map((line) => `- ${line}`).join('\n')}`
+          : '';
+        const tail = Array.isArray(status.logTail) && status.logTail.length > 0
+          ? `\n\nRecent Logs:\n${status.logTail.slice(-30).join('\n')}`
+          : '';
+        setError(`${status.error || t('runtime.local.startFailed', { defaultValue: '本地 Gateway 启动失败' })}${diag}${tail}`);
+        return;
+      }
+      appendScanLog(t('runtime.local.started', { defaultValue: '已启动本地 Gateway' }));
+      toast.success(t('runtime.local.started', { defaultValue: '已启动本地 Gateway' }));
+      await refreshScan();
+    } catch (err) {
+      appendScanLog(`${t('runtime.local.startFailed', { defaultValue: '本地 Gateway 启动失败' })} ${String(err)}`);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLocalStarting(false);
     }
   };
 
@@ -514,6 +649,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     setRemoteTesting(true);
     setError('');
     setRemoteConnected(false);
+    appendScanLog(t('runtime.remote.testing', { host: remoteHost.trim(), port: remotePort.trim(), defaultValue: '正在测试远程连接 {{host}}:{{port}} ...' }));
     try {
       const res = await invokeIpc<{ success: boolean; error?: string }>('setup:test-remote-gateway', {
         protocol: remoteProtocol,
@@ -522,12 +658,15 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         token: remoteToken.trim(),
       });
       if (!res?.success) {
-        setError(res?.error || 'Remote gateway unavailable');
+        appendScanLog(t('runtime.remote.unavailable', { defaultValue: '远程 Gateway 不可用' }));
+        setError(res?.error || t('runtime.remote.unavailable', { defaultValue: '远程 Gateway 不可用' }));
         return;
       }
       setRemoteConnected(true);
-      toast.success('Remote gateway verified');
+      appendScanLog(t('runtime.remote.verified', { defaultValue: '远程 Gateway 验证成功' }));
+      toast.success(t('runtime.remote.verified', { defaultValue: '远程 Gateway 验证成功' }));
     } catch (err) {
+      appendScanLog(`${t('runtime.remote.unavailable', { defaultValue: '远程 Gateway 不可用' })} ${String(err)}`);
       setError(String(err));
     } finally {
       setRemoteTesting(false);
@@ -536,11 +675,12 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
   const handleSaveRemote = async () => {
     if (!remoteConnected) {
-      setError('Please test remote gateway first');
+      setError(t('runtime.remote.testFirst', { defaultValue: '请先测试远程连接' }));
       return;
     }
     setActionLoading(true);
     setError('');
+    appendScanLog(t('runtime.remote.saving', { defaultValue: '正在保存远程连接配置...' }));
     try {
       const res = await invokeIpc<{ success: boolean; error?: string }>('setup:save-remote-gateway', {
         protocol: remoteProtocol,
@@ -549,39 +689,19 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         token: remoteToken.trim(),
       });
       if (!res?.success) {
-        setError(res?.error || 'Failed to save remote settings');
+        appendScanLog(t('runtime.remote.saveFailed', { defaultValue: '保存远程配置失败' }));
+        setError(res?.error || t('runtime.remote.saveFailed', { defaultValue: '保存远程配置失败' }));
         return;
       }
-      toast.success('Remote gateway connected and saved');
+      appendScanLog(t('runtime.remote.saved', { defaultValue: '远程连接已保存并启用' }));
+      toast.success(t('runtime.remote.saved', { defaultValue: '远程连接已保存并启用' }));
     } catch (err) {
+      appendScanLog(`${t('runtime.remote.saveFailed', { defaultValue: '保存远程配置失败' })} ${String(err)}`);
       setError(String(err));
     } finally {
       setActionLoading(false);
     }
   };
-
-  const handleInstallLocal = async () => {
-    setActionLoading(true);
-    setError('');
-    setInstallLogs([]);
-    try {
-      const res = await invokeIpc<{ success: boolean; error?: string; logs?: string[]; port?: number }>('setup:install-local-openclaw');
-      if (Array.isArray(res?.logs)) setInstallLogs(res.logs);
-      if (!res?.success) {
-        setError(res?.error || 'Local install failed');
-        return;
-      }
-      setLocalConnected(true);
-      toast.success(`OpenClaw installed and connected (${res.port ?? 'unknown'})`);
-      await refreshScan();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const cloudItems = scanData?.cloudOptions || [];
 
   return (
     <div className="space-y-5">
@@ -593,12 +713,36 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         </Button>
       </div>
 
+      <div className="rounded-lg border border-slate-500/30 bg-[#0b1220]/90 p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs text-slate-300">
+          {scanLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+          <span>
+            {scanLoading
+              ? t('runtime.detect.running', { defaultValue: '正在检测运行环境...' })
+              : t('runtime.detect.finished', { defaultValue: '检测日志' })}
+          </span>
+        </div>
+        <div ref={scanLogRef} className="max-h-44 overflow-auto rounded-md border border-slate-500/30 bg-[#070d18] p-2 font-mono text-[11px] leading-5">
+          {scanLogs.length > 0 ? (
+            <div className="space-y-1">
+              {scanLogs.map((line, index) => (
+                <div key={`${index}-${line}`} className={cn('rounded px-2 py-0.5', getScanLogToneClass(line))}>
+                  <code>{line}</code>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <code className="text-slate-400">{t('runtime.detect.pending', { defaultValue: '等待检测开始...' })}</code>
+          )}
+        </div>
+      </div>
+
       {scanData && (
         <div className="rounded-lg bg-muted/40 p-3 text-sm">
           <div className="flex flex-wrap items-center gap-4">
             <span>{scanData.os} / {scanData.arch}</span>
-            <span>OpenClaw: {scanData.local.openClawInstalled ? `installed ${scanData.local.openClawVersion || ''}` : 'not installed'}</span>
-            <span>Gateway: {scanData.local.gatewayRunning ? `running:${scanData.local.gatewayPort}` : 'offline'}</span>
+            <span>{t('runtime.summary.openclaw', { status: scanData.local.openClawInstalled ? `installed ${scanData.local.openClawVersion || ''}` : 'not installed', defaultValue: 'OpenClaw: {{status}}' })}</span>
+            <span>{t('runtime.summary.gateway', { status: scanData.local.gatewayRunning ? `running:${scanData.local.gatewayPort}` : 'offline', defaultValue: 'Gateway: {{status}}' })}</span>
           </div>
           {scanData.local.openclaw?.path && (
             <p className="mt-2 text-xs text-muted-foreground font-mono break-all">{scanData.local.openclaw.path}</p>
@@ -606,127 +750,84 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         </div>
       )}
 
+      {scanReady && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <button onClick={() => setMode('local-existing')} className={cn('p-3 rounded-lg border text-left', mode === 'local-existing' ? 'border-primary bg-primary/10' : 'border-border')}>
-          <p className="font-medium">1. {t('runtime.modes.localExisting.title', { defaultValue: '本地已安装，直接对接' })}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('runtime.modes.localExisting.desc', { defaultValue: '扫描本机 OpenClaw，启动并接入本地 Gateway' })}</p>
-          {recommendedMode === 'local-existing' && <p className="text-[11px] text-emerald-400 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 rounded-md bg-sky-500/15 p-1.5">
+              <Server className="h-4 w-4 text-sky-300" />
+            </span>
+            <div>
+              <p className="font-medium text-sky-200">1. {t('runtime.modes.localConnection.title', { defaultValue: '本地连接' })}</p>
+              <p className="text-xs text-sky-100/70 mt-1">{t('runtime.modes.localConnection.desc', { defaultValue: '连接本机 OpenClaw Gateway' })}</p>
+              {recommendedMode === 'local-existing' && <p className="text-[11px] text-emerald-300 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
+            </div>
+          </div>
         </button>
         <button onClick={() => setMode('remote-existing')} className={cn('p-3 rounded-lg border text-left', mode === 'remote-existing' ? 'border-primary bg-primary/10' : 'border-border')}>
-          <p className="font-medium">2. {t('runtime.modes.remoteExisting.title', { defaultValue: '远程已安装，对接远程' })}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('runtime.modes.remoteExisting.desc', { defaultValue: '填写远程 Gateway 地址，测试连接并保存' })}</p>
-          {recommendedMode === 'remote-existing' && <p className="text-[11px] text-emerald-400 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
-        </button>
-        <button onClick={() => setMode('local-install')} className={cn('p-3 rounded-lg border text-left', mode === 'local-install' ? 'border-primary bg-primary/10' : 'border-border')}>
-          <p className="font-medium">3. {t('runtime.modes.localInstall.title', { defaultValue: '本地未安装，下载安装' })}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('runtime.modes.localInstall.desc', { defaultValue: '自动安装 OpenClaw 并启动 Gateway' })}</p>
-          {recommendedMode === 'local-install' && <p className="text-[11px] text-emerald-400 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
-        </button>
-        <button onClick={() => setMode('cloud-install')} className={cn('p-3 rounded-lg border text-left', mode === 'cloud-install' ? 'border-primary bg-primary/10' : 'border-border')}>
-          <p className="font-medium">4. {t('runtime.modes.cloudInstall.title', { defaultValue: '本地未安装，云安装列表' })}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('runtime.modes.cloudInstall.desc', { defaultValue: '展示云端部署选项，完成后回到远程对接' })}</p>
-          {recommendedMode === 'cloud-install' && <p className="text-[11px] text-emerald-400 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 rounded-md bg-violet-500/15 p-1.5">
+              <Globe2 className="h-4 w-4 text-violet-300" />
+            </span>
+            <div>
+              <p className="font-medium text-violet-200">2. {t('runtime.modes.remoteConnection.title', { defaultValue: '远程连接' })}</p>
+              <p className="text-xs text-violet-100/70 mt-1">{t('runtime.modes.remoteConnection.desc', { defaultValue: '填写远程 Gateway 地址并连接' })}</p>
+              {recommendedMode === 'remote-existing' && <p className="text-[11px] text-emerald-300 mt-1">{t('runtime.recommended', { defaultValue: '推荐' })}</p>}
+            </div>
+          </div>
         </button>
       </div>
+      )}
 
-      {mode === 'local-existing' && (
+      {scanReady && mode === 'local-existing' && (
         <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">步骤说明</p>
+          <p className="text-sm font-medium">{t('runtime.local.stepsTitle', { defaultValue: '步骤说明' })}</p>
           <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
-            <li>扫描本机是否已安装 OpenClaw 与 Gateway 状态</li>
-            <li>切换到本地连接模式并尝试启动 Gateway</li>
-            <li>连接成功后可进入下一步</li>
+            <li>{t('runtime.local.step1', { defaultValue: '扫描本机是否已安装 OpenClaw 与 Gateway 状态' })}</li>
+            <li>{t('runtime.local.step2', { defaultValue: '切换到本地连接模式并尝试启动 Gateway' })}</li>
+            <li>{t('runtime.local.step3', { defaultValue: '连接成功后可进入下一步' })}</li>
           </ol>
-          <Button onClick={handleConnectLocal} disabled={actionLoading}>
-            {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-            连接本地 Gateway
-          </Button>
-          {localConnected && <p className="text-sm text-green-400">已完成本地对接</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleStartLocalGateway} disabled={localStarting || actionLoading}>
+              {localStarting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {t('runtime.local.startBtn', { defaultValue: '启动本地 Gateway' })}
+            </Button>
+            <Button onClick={handleConnectLocal} disabled={actionLoading || localStarting}>
+              {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {t('runtime.local.connectBtn', { defaultValue: '连接本地 Gateway' })}
+            </Button>
+          </div>
+          {localConnected && <p className="text-sm text-green-400">{t('runtime.local.connectedDone', { defaultValue: '已完成本地对接' })}</p>}
         </div>
       )}
 
-      {mode === 'remote-existing' && (
+      {scanReady && mode === 'remote-existing' && (
         <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">步骤说明</p>
+          <p className="text-sm font-medium">{t('runtime.remote.stepsTitle', { defaultValue: '步骤说明' })}</p>
           <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
-            <li>输入远程 Gateway 地址与端口</li>
-            <li>测试远程 WebSocket 连接与鉴权</li>
-            <li>保存远程连接配置并启用</li>
+            <li>{t('runtime.remote.step1', { defaultValue: '输入远程 Gateway 地址与端口' })}</li>
+            <li>{t('runtime.remote.step2', { defaultValue: '测试远程 WebSocket 连接与鉴权' })}</li>
+            <li>{t('runtime.remote.step3', { defaultValue: '保存远程连接配置并启用' })}</li>
           </ol>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
             <select className="h-10 rounded-md border bg-background px-3 text-sm" value={remoteProtocol} onChange={(e) => setRemoteProtocol(e.target.value === 'wss' ? 'wss' : 'ws')}>
               <option value="ws">ws</option>
               <option value="wss">wss</option>
             </select>
-            <Input value={remoteHost} onChange={(e) => setRemoteHost(e.target.value)} placeholder="host / ip" />
-            <Input value={remotePort} onChange={(e) => setRemotePort(e.target.value)} placeholder="port" />
-            <Input value={remoteToken} onChange={(e) => setRemoteToken(e.target.value)} placeholder="token (optional)" />
+            <Input value={remoteHost} onChange={(e) => setRemoteHost(e.target.value)} placeholder={t('runtime.remote.hostPlaceholder', { defaultValue: 'host / ip' })} />
+            <Input value={remotePort} onChange={(e) => setRemotePort(e.target.value)} placeholder={t('runtime.remote.portPlaceholder', { defaultValue: 'port' })} />
+            <Input value={remoteToken} onChange={(e) => setRemoteToken(e.target.value)} placeholder={t('runtime.remote.tokenPlaceholder', { defaultValue: 'token (optional)' })} />
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleTestRemote} disabled={remoteTesting}>
               {remoteTesting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              测试远程连接
+              {t('runtime.remote.testBtn', { defaultValue: '测试远程连接' })}
             </Button>
             <Button onClick={handleSaveRemote} disabled={actionLoading || !remoteConnected}>
-              保存并启用远程
+              {t('runtime.remote.saveBtn', { defaultValue: '保存并启用远程' })}
             </Button>
           </div>
-          {remoteConnected && <p className="text-sm text-green-400">远程连接验证通过</p>}
-        </div>
-      )}
-
-      {mode === 'local-install' && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">步骤说明</p>
-          <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
-            <li>检查 Node/NPM 基础环境</li>
-            <li>自动安装 OpenClaw（npm 全局安装）</li>
-            <li>启动本地 Gateway 并完成对接</li>
-          </ol>
-          <Button onClick={handleInstallLocal} disabled={actionLoading}>
-            {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-            自动安装并对接本地
-          </Button>
-          {installLogs.length > 0 && (
-            <pre className="text-xs bg-black/50 text-slate-300 p-3 rounded max-h-48 overflow-auto whitespace-pre-wrap">{installLogs.join('\n\n')}</pre>
-          )}
-          {localConnected && <p className="text-sm text-green-400">本地安装与对接完成</p>}
-        </div>
-      )}
-
-      {mode === 'cloud-install' && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">步骤说明</p>
-          <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
-            <li>选择云安装方案并完成部署</li>
-            <li>记录云端 Gateway 的 host/port/token</li>
-            <li>返回“远程已安装”完成对接</li>
-          </ol>
-          <div className="space-y-2">
-            {cloudItems.map((item) => (
-              <div key={item.id} className="rounded-lg bg-muted/40 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.description}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => invokeIpc('shell:openExternal', item.docsUrl)}>
-                      文档
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={async () => {
-                      await navigator.clipboard.writeText(item.command);
-                      toast.success('已复制命令');
-                    }}>
-                      复制命令
-                    </Button>
-                  </div>
-                </div>
-                <code className="block mt-2 text-xs font-mono bg-black/40 p-2 rounded">{item.command}</code>
-              </div>
-            ))}
-          </div>
-          <Button variant="outline" onClick={() => setMode('remote-existing')}>我已云端部署，去远程对接</Button>
+          {remoteConnected && <p className="text-sm text-green-400">{t('runtime.remote.connectedDone', { defaultValue: '远程连接验证通过' })}</p>}
         </div>
       )}
 
@@ -739,7 +840,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   );
 }
 
-interface ProviderContentProps {
+export interface ProviderContentProps {
   providers: ProviderTypeInfo[];
   selectedProvider: string | null;
   onSelectProvider: (id: string | null) => void;
@@ -748,7 +849,17 @@ interface ProviderContentProps {
   onConfiguredChange: (configured: boolean) => void;
 }
 
-function ProviderContent({
+type OAuthLoginInfo = {
+  loggedIn?: boolean;
+  email?: string;
+  name?: string;
+  userId?: string;
+  expires?: string;
+  sessionCookiePresent?: boolean;
+  source?: string;
+};
+
+export function ProviderContent({
   providers,
   selectedProvider,
   onSelectProvider,
@@ -764,9 +875,14 @@ function ProviderContent({
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [configuredModelOptions, setConfiguredModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
+  const [oauthLoginInfo, setOauthLoginInfo] = useState<OAuthLoginInfo | null>(null);
+  const [oauthTokenPreview, setOauthTokenPreview] = useState<string | null>(null);
+  const [oauthTokenError, setOauthTokenError] = useState<string | null>(null);
+  const [oauthLoggingOut, setOauthLoggingOut] = useState(false);
 
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
 
@@ -785,6 +901,148 @@ function ProviderContent({
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [oauthError, setOauthError] = useState<string | null>(null);
   const pendingOAuthRef = useRef<{ accountId: string; label: string } | null>(null);
+  const oauthSubmittingRef = useRef(false);
+  const oauthSuccessHandledRef = useRef(false);
+  const openCodexLoginWindow = useCallback(async (options?: { forceReauth?: boolean; url?: string; title?: string }) => {
+    const forceReauth = Boolean(options?.forceReauth);
+    const url = typeof options?.url === 'string' ? options.url : undefined;
+    const title = typeof options?.title === 'string' ? options.title : undefined;
+    try {
+      const viaIpc = await invokeIpc('codex:open-login', { forceReauth, url, title }) as { success?: boolean; error?: string } | undefined;
+      if (viaIpc?.success) return;
+    } catch {
+      // fallback to host api
+    }
+    const viaHost = await hostApiFetch<{ success?: boolean; error?: string }>('/api/app/codex/open-login', {
+      method: 'POST',
+      body: JSON.stringify({ forceReauth, url, title }),
+    });
+    if (viaHost?.success === false) {
+      throw new Error(String(viaHost.error || t('provider.oauth.startFailed')));
+    }
+  }, [t]);
+  const parseOAuthPayload = (raw: unknown) => {
+    const obj = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : null;
+    const nested = (obj?.data && typeof obj.data === 'object') ? (obj.data as Record<string, unknown>) : null;
+    const payload = nested || obj;
+    const mode = payload?.mode === 'manual' ? 'manual' : 'device';
+    const message = typeof payload?.message === 'string' ? payload.message : undefined;
+    const error = typeof payload?.error === 'string'
+      ? payload.error
+      : (typeof obj?.error === 'string' ? obj.error : undefined);
+    const success = typeof payload?.success === 'boolean'
+      ? payload.success
+      : (typeof obj?.success === 'boolean' ? obj.success : undefined);
+    return { payload, mode, message, error, success };
+  };
+
+  const maskToken = (token?: string | null): string | null => {
+    const value = String(token || '').trim();
+    if (!value) return null;
+    if (value.length <= 12) return `${value.slice(0, 4)}***${value.slice(-2)}`;
+    return `${value.slice(0, 6)}...${value.slice(-4)}`;
+  };
+
+  const refreshCodexLoginInfo = useCallback(async () => {
+    try {
+      const tokenState = await hostApiFetch<{ loginInfo?: OAuthLoginInfo; success?: boolean; accessToken?: string; error?: string }>(
+        '/api/app/codex/session-token'
+      );
+      const preview = maskToken(tokenState?.accessToken);
+      setOauthTokenPreview(preview);
+      setOauthTokenError(tokenState?.success ? null : (tokenState?.error || null));
+      const info = tokenState?.loginInfo;
+      if (info && (info.loggedIn || info.email || info.name || info.userId)) {
+        setOauthLoginInfo(info);
+        return info;
+      }
+      setOauthLoginInfo(null);
+      return null;
+    } catch {
+      setOauthLoginInfo(null);
+      setOauthTokenPreview(null);
+      setOauthTokenError(null);
+      return null;
+    }
+  }, []);
+
+  const completeOAuthSuccess = useCallback(async (payload?: { accountId?: string; provider?: string; loginInfo?: OAuthLoginInfo; accessToken?: string }) => {
+    if (oauthSuccessHandledRef.current) return;
+    oauthSuccessHandledRef.current = true;
+    setOauthFlowing(false);
+    setOauthData(null);
+    setManualCodeInput('');
+    setKeyValid(true);
+    if (payload?.loginInfo && (payload.loginInfo.loggedIn || payload.loginInfo.email || payload.loginInfo.name)) {
+      setOauthLoginInfo(payload.loginInfo);
+    } else {
+      void refreshCodexLoginInfo();
+    }
+
+    const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
+    if (accountId) {
+      try {
+        await hostApiFetch('/api/provider-accounts/default', {
+          method: 'PUT',
+          body: JSON.stringify({ accountId }),
+        });
+        setSelectedAccountId(accountId);
+      } catch (error) {
+        console.error('Failed to set default provider account:', error);
+      }
+    }
+
+    const oauthProvider = String(payload?.provider || selectedProvider || '').trim().toLowerCase();
+    let hasUsableToken = oauthProvider !== 'openai';
+    if (oauthProvider === 'openai') {
+      let tokenPreview = maskToken(payload?.accessToken);
+      let tokenErrorText: string | null = null;
+      try {
+        const tokenState = await hostApiFetch<{ success?: boolean; accessToken?: string; sessionPayload?: string; error?: string; loginInfo?: OAuthLoginInfo }>(
+          '/api/app/codex/session-token'
+        );
+        tokenPreview = tokenPreview || maskToken(tokenState?.accessToken);
+        tokenErrorText = tokenState?.success ? null : (tokenState?.error || null);
+        setOauthTokenPreview(tokenPreview);
+        setOauthTokenError(tokenErrorText);
+        if (tokenState?.loginInfo && (tokenState.loginInfo.loggedIn || tokenState.loginInfo.email || tokenState.loginInfo.name)) {
+          setOauthLoginInfo(tokenState.loginInfo);
+        }
+      } catch (error) {
+        console.error('Failed to refresh OpenAI OAuth state after login:', error);
+      }
+      if (tokenPreview) {
+        hasUsableToken = true;
+        toast.success(
+          t('provider.oauth.loginSuccessWithToken', {
+            defaultValue: '登录成功，已获取令牌 {{token}}',
+            token: tokenPreview,
+          }),
+        );
+      } else {
+        toast.warning(
+          t('provider.oauth.loginSuccessNoToken', {
+            defaultValue: '登录完成，但暂未读取到令牌',
+          }),
+        );
+        if (tokenErrorText) {
+          setOauthError(tokenErrorText);
+        }
+        // Keep current step retryable when login finished but token was not captured.
+        oauthSuccessHandledRef.current = false;
+        hasUsableToken = false;
+      }
+    } else {
+      toast.success(t('provider.valid'));
+    }
+
+    if (hasUsableToken) {
+      pendingOAuthRef.current = null;
+      onConfiguredChange(true);
+    } else {
+      onConfiguredChange(false);
+    }
+  }, [onConfiguredChange, refreshCodexLoginInfo, selectedProvider, t]);
 
   // Manage OAuth events
   useEffect(() => {
@@ -808,34 +1066,14 @@ function ProviderContent({
     };
 
     const handleSuccess = async (data: unknown) => {
-      setOauthFlowing(false);
-      setOauthData(null);
-      setManualCodeInput('');
-      setKeyValid(true);
-
-      const payload = (data as { accountId?: string } | undefined) || undefined;
-      const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
-
-      if (accountId) {
-        try {
-          await hostApiFetch('/api/provider-accounts/default', {
-            method: 'PUT',
-            body: JSON.stringify({ accountId }),
-          });
-          setSelectedAccountId(accountId);
-        } catch (error) {
-          console.error('Failed to set default provider account:', error);
-        }
-      }
-
-      pendingOAuthRef.current = null;
-      onConfiguredChange(true);
-      toast.success(t('provider.valid'));
+      const payload = (data as { accountId?: string; provider?: string; loginInfo?: OAuthLoginInfo; accessToken?: string } | undefined) || undefined;
+      await completeOAuthSuccess(payload);
     };
 
     const handleError = (data: unknown) => {
       setOauthError((data as { message: string }).message);
       setOauthData(null);
+      oauthSuccessHandledRef.current = false;
       pendingOAuthRef.current = null;
     };
 
@@ -848,7 +1086,7 @@ function ProviderContent({
       offSuccess();
       offError();
     };
-  }, [onConfiguredChange, t]);
+  }, [completeOAuthSuccess]);
 
   const handleStartOAuth = async () => {
     if (!selectedProvider) return;
@@ -872,8 +1110,10 @@ function ProviderContent({
     setOauthData(null);
     setManualCodeInput('');
     setOauthError(null);
+    oauthSuccessHandledRef.current = false;
 
     try {
+      const forceReauth = Boolean(selectedProvider === 'openai' && oauthLoginInfo?.loggedIn);
       const snapshot = await fetchProviderSnapshot();
       const accountId = buildProviderAccountId(
         selectedProvider as ProviderType,
@@ -882,12 +1122,35 @@ function ProviderContent({
       );
       const label = selectedProviderData?.name || selectedProvider;
       pendingOAuthRef.current = { accountId, label };
-      await hostApiFetch('/api/providers/oauth/start', {
+      const response = await hostApiFetch<unknown>('/api/providers/oauth/start', {
         method: 'POST',
-        body: JSON.stringify({ provider: selectedProvider, accountId, label }),
+        body: JSON.stringify({ provider: selectedProvider, accountId, label, forceReauth }),
       });
+      const { payload, mode, message, error, success } = parseOAuthPayload(response);
+      if (error || success === false) {
+        throw new Error(error || message || t('provider.oauth.startFailed'));
+      }
+      if (payload?.verificationUri || payload?.authorizationUrl || payload?.userCode || payload?.mode) {
+        if (mode === 'manual') {
+          const authorizationUrl = String(payload?.authorizationUrl || '');
+          setOauthData({
+            mode: 'manual',
+            authorizationUrl,
+            message,
+          });
+        } else {
+          setOauthData({
+            mode: 'device',
+            verificationUri: String(payload?.verificationUri || ''),
+            userCode: String(payload?.userCode || ''),
+            expiresIn: Number(payload?.expiresIn || 300),
+          });
+        }
+      }
     } catch (e) {
-      setOauthError(String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setOauthError(msg);
+      toast.error(msg);
       setOauthFlowing(false);
       pendingOAuthRef.current = null;
     }
@@ -898,23 +1161,110 @@ function ProviderContent({
     setOauthData(null);
     setManualCodeInput('');
     setOauthError(null);
+    oauthSuccessHandledRef.current = false;
     pendingOAuthRef.current = null;
     await hostApiFetch('/api/providers/oauth/cancel', { method: 'POST' });
   };
 
-  const handleSubmitManualOAuthCode = async () => {
-    const value = manualCodeInput.trim();
-    if (!value) return;
+  const handleSubmitManualOAuthCode = async (overrideCode?: string) => {
+    if (oauthSubmittingRef.current) return;
+    oauthSubmittingRef.current = true;
+    const value = (overrideCode ?? manualCodeInput).trim();
     try {
-      await hostApiFetch('/api/providers/oauth/submit', {
+      const response = await hostApiFetch<unknown>('/api/providers/oauth/submit', {
         method: 'POST',
         body: JSON.stringify({ code: value }),
       });
+      const { payload, message, error, success } = parseOAuthPayload(response);
+      if (error || success === false) {
+        throw new Error(error || message || t('provider.oauth.submitFailed'));
+      }
       setOauthError(null);
+      // Fallback: some environments may miss IPC oauth:success event.
+      await completeOAuthSuccess({
+        accountId: typeof payload?.accountId === 'string' ? payload.accountId : undefined,
+        provider: typeof payload?.provider === 'string' ? payload.provider : undefined,
+        loginInfo: (payload?.loginInfo as OAuthLoginInfo | undefined),
+        accessToken: typeof payload?.accessToken === 'string' ? payload.accessToken : undefined,
+      });
     } catch (error) {
-      setOauthError(String(error));
+      setOauthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      oauthSubmittingRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!oauthFlowing || oauthData?.mode !== 'manual' || selectedProvider !== 'openai') {
+      return;
+    }
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      if (cancelled || oauthSubmittingRef.current || oauthSuccessHandledRef.current) return;
+      try {
+        const tokenState = await hostApiFetch<{ success?: boolean; accessToken?: string; loginInfo?: OAuthLoginInfo }>(
+          '/api/app/codex/session-token'
+        );
+        if (cancelled) return;
+        if (tokenState?.success) {
+          await completeOAuthSuccess({
+            provider: 'openai',
+            loginInfo: tokenState.loginInfo,
+            accessToken: tokenState.accessToken,
+          });
+          await hostApiFetch('/api/providers/oauth/cancel', { method: 'POST' }).catch(() => {});
+          return;
+        }
+      } catch {
+        // ignore transient errors while waiting user to complete login
+      }
+      if (!cancelled) {
+        timer = window.setTimeout(poll, 2200);
+      }
+    };
+
+    timer = window.setTimeout(poll, 2200);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [completeOAuthSuccess, oauthData, oauthFlowing, selectedProvider]);
+
+  useEffect(() => {
+    if (selectedProvider !== 'openai') {
+      setOauthLoginInfo(null);
+      setOauthTokenPreview(null);
+      setOauthTokenError(null);
+      oauthSuccessHandledRef.current = false;
+      return;
+    }
+    void refreshCodexLoginInfo();
+  }, [refreshCodexLoginInfo, selectedProvider]);
+
+  const handleOAuthLogout = useCallback(async () => {
+    if (oauthLoggingOut) return;
+    setOauthLoggingOut(true);
+    try {
+      await hostApiFetch('/api/app/codex/logout', {
+        method: 'POST',
+        body: JSON.stringify({ clearProviderAuth: true }),
+      });
+      setOauthLoginInfo(null);
+      setOauthTokenPreview(null);
+      setOauthTokenError(null);
+      oauthSuccessHandledRef.current = false;
+      onApiKeyChange('');
+      onConfiguredChange(false);
+      toast.success(t('provider.oauth.loggedOut', { defaultValue: '已退出登录' }));
+    } catch (error) {
+      toast.error(t('provider.oauth.logoutFailed', { defaultValue: '退出登录失败' }));
+      console.error('Failed to logout codex oauth:', error);
+    } finally {
+      setOauthLoggingOut(false);
+    }
+  }, [oauthLoggingOut, onApiKeyChange, onConfiguredChange, t]);
 
   // On mount, try to restore previously configured provider
   useEffect(() => {
@@ -1017,6 +1367,54 @@ function ProviderContent({
     };
   }, [providerMenuOpen]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedProvider) {
+        setConfiguredModelOptions([]);
+        return;
+      }
+      try {
+        const payload = await hostApiFetch<{ config?: Record<string, unknown> } | Record<string, unknown>>('/api/v1/config');
+        const container = payload as Record<string, unknown>;
+        const cfg = (container.config as Record<string, unknown>) || container;
+        const providersNode = (((cfg.models as Record<string, unknown>) || {}).providers as Record<string, unknown>) || {};
+        const choices: Array<{ value: string; label: string }> = [];
+        for (const [providerKey, providerRaw] of Object.entries(providersNode)) {
+          const providerObj = (providerRaw as Record<string, unknown>) || {};
+          const models = Array.isArray(providerObj.models) ? providerObj.models : [];
+          for (const item of models) {
+            const rec = (item as Record<string, unknown>) || {};
+            const mid = typeof rec.id === 'string' ? rec.id.trim() : '';
+            if (!mid) continue;
+            const mname = typeof rec.name === 'string' && rec.name.trim() ? rec.name.trim() : mid;
+            const full = `${providerKey}/${mid}`;
+            choices.push({ value: full, label: `${mname} (${providerKey})` });
+          }
+        }
+        const dedup = Array.from(new Map(choices.map((c) => [c.value, c])).values());
+        if (cancelled) return;
+        setConfiguredModelOptions(dedup);
+        if (dedup.length > 0) {
+          const defaults = (((cfg.agents as Record<string, unknown>) || {}).defaults as Record<string, unknown>) || {};
+          const modelCfg = (defaults.model as Record<string, unknown>) || {};
+          const primary = typeof modelCfg.primary === 'string' ? modelCfg.primary.trim() : '';
+          if (primary && dedup.some((x) => x.value === primary)) {
+            setModelId(primary);
+          } else if (!modelId.trim()) {
+            setModelId(dedup[0].value);
+          }
+          onConfiguredChange(true);
+        }
+      } catch {
+        if (!cancelled) setConfiguredModelOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProvider, onConfiguredChange]);
+
   const selectedProviderData = providers.find((p) => p.id === selectedProvider);
   const providerDocsUrl = getProviderDocsUrl(selectedProviderData, i18n.language);
   const selectedProviderIconUrl = selectedProviderData
@@ -1096,12 +1494,12 @@ function ProviderContent({
         label: selectedProvider === 'custom'
           ? t('settings:aiProviders.custom')
           : (selectedProviderData?.name || selectedProvider),
-        authMode: selectedProvider === 'ollama'
+        authMode: (selectedProvider === 'ollama' || selectedProvider === 'claude-code')
           ? 'local'
           : 'api_key',
         baseUrl: baseUrl.trim() || undefined,
-        apiProtocol: (selectedProvider === 'custom' || selectedProvider === 'ollama')
-          ? apiProtocol
+        apiProtocol: (selectedProvider === 'custom' || selectedProvider === 'ollama' || selectedProvider === 'claude-code')
+          ? (apiProtocol || 'anthropic-messages')
           : undefined,
         model: effectiveModelId,
         enabled: true,
@@ -1137,6 +1535,122 @@ function ProviderContent({
         throw new Error(saveResult.error || 'Failed to save provider config');
       }
 
+      // ── Sync provider & model into openclaw.json so chat model-list picks it up ──
+      try {
+        const cfgRes = await hostApiFetch<Record<string, unknown>>('/api/config', { method: 'GET' });
+        const cfg: Record<string, unknown> = (cfgRes && typeof cfgRes === 'object') ? cfgRes : {};
+        const modelsSection: Record<string, unknown> =
+          (cfg.models && typeof cfg.models === 'object') ? cfg.models as Record<string, unknown> : {};
+        const providersSection: Record<string, unknown> =
+          (modelsSection.providers && typeof modelsSection.providers === 'object')
+            ? modelsSection.providers as Record<string, unknown>
+            : {};
+
+        const providerId = selectedProvider as string;
+        const existing: Record<string, unknown> =
+          (providersSection[providerId] && typeof providersSection[providerId] === 'object')
+            ? providersSection[providerId] as Record<string, unknown>
+            : {};
+
+        // Resolve baseUrl and api type from account payload or provider defaults
+        if (!existing.baseUrl && accountPayload.baseUrl) {
+          existing.baseUrl = accountPayload.baseUrl;
+        }
+        if (!existing.api && accountPayload.apiProtocol) {
+          existing.api = accountPayload.apiProtocol;
+        }
+        // Provide sensible defaults for well-known providers
+        if (!existing.baseUrl) {
+          const wellKnownBaseUrls: Record<string, string> = {
+            openai: 'https://api.openai.com/v1',
+            anthropic: 'https://api.anthropic.com',
+            google: 'https://generativelanguage.googleapis.com/v1beta',
+            moonshot: 'https://api.moonshot.cn/v1',
+            siliconflow: 'https://api.siliconflow.cn/v1',
+            deepseek: 'https://api.deepseek.com/v1',
+            'claude-code': 'http://localhost:3210/v1',
+          };
+          if (wellKnownBaseUrls[providerId]) {
+            existing.baseUrl = wellKnownBaseUrls[providerId];
+          }
+        }
+        if (!existing.api) {
+          const wellKnownApis: Record<string, string> = {
+            openai: 'openai-completions',
+            anthropic: 'anthropic-messages',
+            google: 'google-generative-ai',
+            'claude-code': 'anthropic-messages',
+          };
+          existing.api = wellKnownApis[providerId] || 'openai-completions';
+        }
+
+        // Merge the model into the provider's model list
+        const existingModels: Array<{ id: string; name: string }> = Array.isArray(existing.models)
+          ? (existing.models as Array<{ id: string; name: string }>)
+          : [];
+        const modelSet = new Set(existingModels.map((m) => m.id));
+
+        // Add the configured model if present
+        if (effectiveModelId && !modelSet.has(effectiveModelId)) {
+          existingModels.push({ id: effectiveModelId, name: effectiveModelId });
+          modelSet.add(effectiveModelId);
+        }
+        // For well-known providers, ensure at least common models are present
+        const wellKnownModels: Record<string, string[]> = {
+          openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini'],
+          anthropic: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
+          google: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+          'claude-code': ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'],
+        };
+        for (const mid of (wellKnownModels[providerId] || [])) {
+          if (!modelSet.has(mid)) {
+            existingModels.push({ id: mid, name: mid });
+            modelSet.add(mid);
+          }
+        }
+        existing.models = existingModels;
+
+        // Store the API key for the config-based provider entry
+        if (effectiveApiKey) {
+          existing.apiKey = effectiveApiKey;
+        }
+
+        providersSection[providerId] = existing;
+        modelsSection.providers = providersSection;
+        if (!modelsSection.mode) modelsSection.mode = 'merge';
+        cfg.models = modelsSection;
+
+        // Also set the default model under agents.defaults
+        if (effectiveModelId || existingModels.length > 0) {
+          const agents: Record<string, unknown> =
+            (cfg.agents && typeof cfg.agents === 'object') ? cfg.agents as Record<string, unknown> : {};
+          const defaults: Record<string, unknown> =
+            (agents.defaults && typeof agents.defaults === 'object') ? agents.defaults as Record<string, unknown> : {};
+          const modelCfg: Record<string, unknown> =
+            (defaults.model && typeof defaults.model === 'object') ? defaults.model as Record<string, unknown> : {};
+          const primaryModelId = effectiveModelId || existingModels[0]?.id;
+          if (primaryModelId) {
+            modelCfg.primary = `${providerId}/${primaryModelId}`;
+          }
+          defaults.model = modelCfg;
+          agents.defaults = defaults;
+          cfg.agents = agents;
+        }
+
+        cfg.meta = {
+          ...((cfg.meta && typeof cfg.meta === 'object') ? cfg.meta as Record<string, unknown> : {}),
+          lastTouchedAt: new Date().toISOString(),
+        };
+
+        await hostApiFetch('/api/config', {
+          method: 'POST',
+          body: JSON.stringify(cfg),
+        });
+      } catch (syncErr) {
+        console.warn('[Setup] Failed to sync provider to openclaw config:', syncErr);
+        // Non-fatal: account was saved, config sync is best-effort
+      }
+
       const defaultResult = await hostApiFetch<{ success: boolean; error?: string }>(
         '/api/provider-accounts/default',
         {
@@ -1162,6 +1676,7 @@ function ProviderContent({
   };
 
   // Can the user submit?
+  const hasConfiguredModels = configuredModelOptions.length > 0;
   const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
   const canSubmit =
     selectedProvider
@@ -1203,8 +1718,9 @@ function ProviderContent({
             aria-haspopup="listbox"
             aria-expanded={providerMenuOpen}
             onClick={() => setProviderMenuOpen((open) => !open)}
+            style={{ backgroundColor: '#111827', backdropFilter: 'none' }}
             className={cn(
-              'w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+              'w-full rounded-md border border-[#334155] bg-[#111827] px-3 py-2 text-sm text-slate-100',
               'flex items-center justify-between gap-2',
               'focus:outline-none focus:ring-2 focus:ring-ring'
             )}
@@ -1235,7 +1751,8 @@ function ProviderContent({
           {providerMenuOpen && (
             <div
               role="listbox"
-              className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-64 overflow-auto"
+              style={{ backgroundColor: '#111827', backdropFilter: 'none' }}
+              className="absolute z-20 mt-1 w-full rounded-md border border-[#334155] bg-[#111827] shadow-md max-h-64 overflow-auto"
             >
               {providers.map((p) => {
                 const iconUrl = getProviderIconUrl(p.id);
@@ -1248,10 +1765,11 @@ function ProviderContent({
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => handleSelectProvider(p.id)}
+                    style={{ backgroundColor: isSelected ? '#1f2937' : '#111827' }}
                     className={cn(
-                      'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
-                      'hover:bg-accent transition-colors',
-                      isSelected && 'bg-accent/60'
+                      'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2 text-slate-100',
+                      'hover:bg-[#1f2937] transition-colors',
+                      isSelected && 'bg-[#1f2937]'
                     )}
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -1306,20 +1824,41 @@ function ProviderContent({
           {showModelIdField && (
             <div className="space-y-2">
               <Label htmlFor="modelId">{t('provider.modelId')}</Label>
-              <Input
-                id="modelId"
-                type="text"
-                placeholder={selectedProviderData?.modelIdPlaceholder || 'e.g. deepseek-ai/DeepSeek-V3'}
-                value={modelId}
-                onChange={(e) => {
-                  setModelId(e.target.value);
-                  onConfiguredChange(false);
-                }}
-                autoComplete="off"
-                className="bg-background border-input"
-              />
+              {configuredModelOptions.length > 0 ? (
+                <select
+                  id="modelId"
+                  value={modelId}
+                  onChange={(e) => {
+                    setModelId(e.target.value);
+                    onConfiguredChange(true);
+                  }}
+                  style={{ backgroundColor: '#111827', color: '#e2e8f0' }}
+                  className="h-10 w-full rounded-md border border-[#334155] bg-[#111827] px-3 text-sm text-slate-100"
+                >
+                  {configuredModelOptions.map((option) => (
+                    <option key={option.value} value={option.value} style={{ backgroundColor: '#111827', color: '#e2e8f0' }}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  id="modelId"
+                  type="text"
+                  placeholder={selectedProviderData?.modelIdPlaceholder || 'e.g. deepseek-ai/DeepSeek-V3'}
+                  value={modelId}
+                  onChange={(e) => {
+                    setModelId(e.target.value);
+                    onConfiguredChange(false);
+                  }}
+                  autoComplete="off"
+                  className="bg-[#111827] border-[#334155] text-slate-100"
+                />
+              )}
               <p className="text-xs text-muted-foreground">
-                {t('provider.modelIdDesc')}
+                {configuredModelOptions.length > 0
+                  ? t('provider.modelConfiguredHint', { defaultValue: 'Loaded from existing OpenClaw configuration' })
+                  : t('provider.modelIdDesc')}
               </p>
             </div>
           )}
@@ -1433,19 +1972,54 @@ function ProviderContent({
           {/* Device OAuth Trigger */}
           {useOAuthFlow && (
             <div className="space-y-4 pt-2">
+              {selectedProvider === 'openai' && oauthLoginInfo?.loggedIn && (
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-4">
+                  <div className="text-sm text-emerald-300 font-medium">
+                    {t('provider.oauth.loggedInAs', {
+                      defaultValue: '当前登录：{{identity}}',
+                      identity: oauthLoginInfo.email || oauthLoginInfo.name || oauthLoginInfo.userId || 'OpenAI',
+                    })}
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-200/90">
+                    {oauthTokenPreview
+                      ? t('provider.oauth.tokenReady', { defaultValue: '令牌状态：已获取 {{token}}', token: oauthTokenPreview })
+                      : t('provider.oauth.tokenMissing', { defaultValue: '令牌状态：未获取' })}
+                  </div>
+                  {oauthTokenError && (
+                    <div className="mt-1 text-xs text-amber-300">
+                      {oauthTokenError}
+                    </div>
+                  )}
+                  <div className="mt-3">
+                    <Button
+                      variant="outline"
+                      onClick={handleOAuthLogout}
+                      disabled={oauthLoggingOut}
+                      className="h-9"
+                    >
+                      {oauthLoggingOut
+                        ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        : null}
+                      {t('provider.oauth.logoutButton', { defaultValue: '退出登录' })}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
                 <p className="text-sm text-blue-200 mb-3 block">
-                  This provider requires signing in via your browser.
+                  {t('provider.oauth.loginPrompt')}
                 </p>
                 <Button
                   onClick={handleStartOAuth}
-                  disabled={oauthFlowing}
+                  disabled={oauthFlowing || oauthLoggingOut}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {oauthFlowing ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting...</>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('provider.oauth.waiting')}</>
                   ) : (
-                    'Login with Browser'
+                    (oauthLoginInfo?.loggedIn
+                      ? t('provider.oauth.reloginButton', { defaultValue: '重新登录' })
+                      : t('provider.oauth.loginButton'))
                   )}
                 </Button>
               </div>
@@ -1460,37 +2034,45 @@ function ProviderContent({
                     {oauthError ? (
                       <div className="text-red-400 space-y-2">
                         <XCircle className="h-8 w-8 mx-auto" />
-                        <p className="font-medium">Authentication Failed</p>
+                        <p className="font-medium">{t('provider.oauth.authFailed')}</p>
                         <p className="text-sm opacity-80">{oauthError}</p>
                         <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2">
-                          Try Again
+                          {t('provider.oauth.tryAgain')}
                         </Button>
                       </div>
                     ) : !oauthData ? (
                       <div className="space-y-3 py-4">
                         <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                        <p className="text-sm text-muted-foreground animate-pulse">Requesting secure login code...</p>
+                        <p className="text-sm text-muted-foreground animate-pulse">{t('provider.oauth.requestingCode')}</p>
                       </div>
                     ) : oauthData.mode === 'manual' ? (
                       <div className="space-y-4 w-full">
                         <div className="space-y-1">
-                          <h3 className="font-medium text-lg">Complete OpenAI Login</h3>
+                          <h3 className="font-medium text-lg">{t('provider.oauth.completeLogin')}</h3>
                           <p className="text-sm text-muted-foreground text-left mt-2">
-                            {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                            {oauthData.message || t('provider.oauth.manualHint')}
                           </p>
                         </div>
 
                         <Button
                           variant="secondary"
                           className="w-full"
-                          onClick={() => invokeIpc('shell:openExternal', oauthData.authorizationUrl)}
+                          onClick={async () => {
+                            try {
+                              await invokeIpc('shell:openExternal', oauthData.authorizationUrl);
+                            } catch (err) {
+                              const msg = err instanceof Error ? err.message : String(err);
+                              setOauthError(msg);
+                              toast.error(msg);
+                            }
+                          }}
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
-                          Open Authorization Page
+                          {t('provider.oauth.openAuthPage')}
                         </Button>
 
                         <Input
-                          placeholder="Paste callback URL or code"
+                          placeholder={t('provider.oauth.pasteCodePlaceholder')}
                           value={manualCodeInput}
                           onChange={(e) => setManualCodeInput(e.target.value)}
                         />
@@ -1498,23 +2080,22 @@ function ProviderContent({
                         <Button
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                           onClick={handleSubmitManualOAuthCode}
-                          disabled={!manualCodeInput.trim()}
                         >
-                          Submit Code
+                          {t('provider.oauth.submitCode')}
                         </Button>
 
                         <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
-                          Cancel
+                          {t('provider.oauth.cancel')}
                         </Button>
                       </div>
                     ) : (
                       <div className="space-y-4 w-full">
                         <div className="space-y-1">
-                          <h3 className="font-medium text-lg">Approve Login</h3>
+                          <h3 className="font-medium text-lg">{t('provider.oauth.approveLogin')}</h3>
                           <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
-                            <p>1. Copy the authorization code below.</p>
-                            <p>2. Open the login page in your browser.</p>
-                            <p>3. Paste the code to approve access.</p>
+                            <p>1. {t('provider.oauth.step1')}</p>
+                            <p>2. {t('provider.oauth.step2')}</p>
+                            <p>3. {t('provider.oauth.step3')}</p>
                           </div>
                         </div>
 
@@ -1527,7 +2108,7 @@ function ProviderContent({
                             size="icon"
                             onClick={() => {
                               navigator.clipboard.writeText(oauthData.userCode);
-                              toast.success('Code copied to clipboard');
+                              toast.success(t('provider.oauth.codeCopied'));
                             }}
                           >
                             <Copy className="h-4 w-4" />
@@ -1540,16 +2121,16 @@ function ProviderContent({
                           onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
-                          Open Login Page
+                          {t('provider.oauth.openLoginPage')}
                         </Button>
 
                         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
                           <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>Waiting for approval in browser...</span>
+                          <span>{t('provider.oauth.waitingApproval')}</span>
                         </div>
 
                         <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
-                          Cancel
+                          {t('provider.oauth.cancel')}
                         </Button>
                       </div>
                     )}
@@ -1778,12 +2359,69 @@ interface CompleteContentProps {
 function CompleteContent({ selectedProvider, installedSkills }: CompleteContentProps) {
   const { t } = useTranslation(['setup', 'settings']);
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const initGateway = useGatewayStore((state) => state.init);
+  const setGatewayStatus = useGatewayStore((state) => state.setStatus);
+  const [gatewayChecking, setGatewayChecking] = useState(true);
 
   const providerData = providers.find((p) => p.id === selectedProvider);
   const installedSkillNames = getDefaultSkills(t)
     .filter((s: DefaultSkill) => installedSkills.includes(s.id))
     .map((s: DefaultSkill) => s.name)
     .join(', ');
+
+  useEffect(() => {
+    let cancelled = false;
+    const ensureGatewayReady = async () => {
+      setGatewayChecking(true);
+      try {
+        await initGateway();
+        let status = await invokeIpc<{ state?: string; port?: number; error?: string }>('gateway:status');
+        if (!cancelled && status?.state) {
+          setGatewayStatus({
+            state: (status.state as 'running' | 'stopped' | 'starting' | 'error' | 'connected') || 'stopped',
+            port: status.port,
+            error: status.error,
+          });
+        }
+
+        if ((status?.state || '').toLowerCase() !== 'running') {
+          const started = await invokeIpc<{ state?: string; error?: string; diagnostics?: string[]; logTail?: string[] }>('gateway:start');
+          if ((started?.state || '').toLowerCase() === 'error') {
+            const diag = Array.isArray(started.diagnostics) && started.diagnostics.length > 0
+              ? `\n\nDiagnostics:\n${started.diagnostics.map((line) => `- ${line}`).join('\n')}`
+              : '';
+            const tail = Array.isArray(started.logTail) && started.logTail.length > 0
+              ? `\n\nRecent Logs:\n${started.logTail.slice(-25).join('\n')}`
+              : '';
+            throw new Error(`${started.error || 'Gateway start failed'}${diag}${tail}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          status = await invokeIpc<{ state?: string; port?: number; error?: string }>('gateway:status');
+          if (!cancelled && status?.state) {
+            setGatewayStatus({
+              state: (status.state as 'running' | 'stopped' | 'starting' | 'error' | 'connected') || 'stopped',
+              port: status.port,
+              error: status.error,
+            });
+          }
+        }
+
+        const conn = await invokeIpc<{ success?: boolean; port?: number }>('gateway:checkConnection').catch(() => ({ success: false }));
+        if (!cancelled && conn?.success) {
+          setGatewayStatus({ state: 'running', port: conn.port || status?.port || 18789 });
+        }
+      } catch {
+        // keep current gateway status in UI
+      } finally {
+        if (!cancelled) setGatewayChecking(false);
+      }
+    };
+
+    void ensureGatewayReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [initGateway, setGatewayStatus]);
 
   return (
     <div className="text-center space-y-6">
@@ -1809,7 +2447,11 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.gateway')}</span>
           <span className={gatewayStatus.state === 'running' ? 'text-green-400' : 'text-yellow-400'}>
-            {gatewayStatus.state === 'running' ? `✓ ${t('complete.running')}` : gatewayStatus.state}
+            {gatewayChecking
+              ? t('runtime.detecting', { defaultValue: '检测中...' })
+              : gatewayStatus.state === 'running'
+                ? `✓ ${t('complete.running')}`
+                : gatewayStatus.state}
           </span>
         </div>
       </div>

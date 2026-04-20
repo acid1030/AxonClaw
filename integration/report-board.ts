@@ -11,7 +11,7 @@
  * @version 1.0.0
  */
 
-import { ReportChain, ReportCollector, AxonDashboard, Report, DashboardMetrics } from '../renderer/agent/report-chain';
+import { ReportChain, ReportCollector, AxonDashboard, Report, DashboardMetrics } from './report-chain';
 import * as http from 'http';
 
 // ============================================================================

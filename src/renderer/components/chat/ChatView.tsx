@@ -4,7 +4,7 @@
  * 支持图片/文件展示、上传、粘贴
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -106,7 +106,9 @@ export const ChatView: React.FC = () => {
     showThinking,
     toggleThinking,
     setSessionLabel,
+    loadSessions,
   } = useChatStore();
+  const activeSessionModel = sessions.find((s) => s.key === currentSessionKey)?.model || '';
 
   // 持久化会话别名：刷新/重启后仍保留
   useEffect(() => {
@@ -194,6 +196,101 @@ export const ChatView: React.FC = () => {
     }
   };
 
+  const sessionModelRestoreAppliedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!currentSessionKey) return;
+    const normalizeProvider = (provider: string) => {
+      const next = String(provider || '').trim();
+      if (!next) return '';
+      return next.toLowerCase() === 'openai-codex' ? 'openai' : next;
+    };
+    const normalizeModelAlias = (modelText: string) => {
+      const raw = String(modelText || '').trim();
+      if (!raw) return '';
+      if (!raw.includes('/')) return raw;
+      const [provider, ...rest] = raw.split('/');
+      if (!provider || rest.length === 0) return raw;
+      return `${normalizeProvider(provider)}/${rest.join('/')}`;
+    };
+    const normalizeShort = (value: string) => {
+      const model = String(value || '').trim();
+      return model.includes('/') ? model.split('/').slice(1).join('/') : model;
+    };
+    const isSameModel = (a: string, b: string) => normalizeShort(a) === normalizeShort(b);
+
+    let preferredModel = '';
+    try {
+      const raw = localStorage.getItem('axon.chat.sessionModelPrefs.v1');
+      const parsed = raw ? JSON.parse(raw) as Record<string, { model?: string }> : {};
+      preferredModel = normalizeModelAlias(String(parsed[currentSessionKey]?.model || '').trim());
+    } catch {
+      preferredModel = '';
+    }
+    if (!preferredModel) return;
+
+    const applyToken = `${currentSessionKey}::${preferredModel}`;
+    if (sessionModelRestoreAppliedRef.current.has(applyToken)) return;
+    sessionModelRestoreAppliedRef.current.add(applyToken);
+
+    if (!isSameModel(String(activeSessionModel || '').trim(), preferredModel)) {
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.map((session) => (
+          session.key === currentSessionKey
+            ? { ...session, model: preferredModel }
+            : session
+        )),
+      }));
+    }
+
+    const shortModel = preferredModel.includes('/') ? preferredModel.split('/').slice(1).join('/') : preferredModel;
+    void (async () => {
+      try {
+        await invokeIpc('gateway:rpc', 'sessions.patch', {
+          key: currentSessionKey,
+          model: preferredModel,
+        });
+      } catch {
+        // ignore patch failure, command fallback below is the runtime guard
+      }
+
+      const sendModelCommand = async (modelText: string) => {
+        const value = String(modelText || '').trim();
+        if (!value) return false;
+        try {
+          const result = await invokeIpc<{ success?: boolean; ok?: boolean }>(
+            'gateway:rpc',
+            'chat.send',
+            {
+              sessionKey: currentSessionKey,
+              message: `/model ${value}`,
+              deliver: false,
+              idempotencyKey: crypto.randomUUID(),
+            },
+            45000,
+          );
+          return !(result && (result.success === false || result.ok === false));
+        } catch {
+          return false;
+        }
+      };
+
+      const ok = await sendModelCommand(preferredModel);
+      if (!ok && shortModel && shortModel !== preferredModel) {
+        await sendModelCommand(shortModel);
+      }
+
+      await loadSessions().catch(() => undefined);
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.map((session) => (
+          session.key === currentSessionKey
+            ? { ...session, model: preferredModel }
+            : session
+        )),
+      }));
+    })();
+  }, [activeSessionModel, currentSessionKey, loadSessions]);
+
   const openAliasEdit = (sessionKey: string) => {
     const current = sessionLabels[sessionKey] || sessions.find((s) => s.key === sessionKey)?.displayName || sessionKey;
     setAliasEditSessionKey(sessionKey);
@@ -221,6 +318,7 @@ export const ChatView: React.FC = () => {
   const [showBackToBottom, setShowBackToBottom] = useState(false);
   const [showNewMessageHint, setShowNewMessageHint] = useState(false);
   const prevMessageCountRef = useRef(0);
+  const shouldAutoFollowRef = useRef(true);
   const isConnected = gatewayStatus.state === 'running';
 
   // thinking 动画完成标记：thinking 打字机追赶到末尾后才显示正文
@@ -273,13 +371,16 @@ export const ChatView: React.FC = () => {
   const scrollToBottom = useCallback(() => {
     const el = chatAreaRef.current;
     if (el) {
+      shouldAutoFollowRef.current = true;
       el.scrollTop = el.scrollHeight;
+      setShowBackToBottom(false);
       setShowNewMessageHint(false);
     }
   }, []);
 
   useEffect(() => {
     if (suppressAutoScrollRef.current) return;
+    if (!shouldAutoFollowRef.current) return;
     scrollToBottom();
   }, [messages, streamingText, streamingMessage, scrollToBottom]);
 
@@ -287,8 +388,9 @@ export const ChatView: React.FC = () => {
     const el = chatAreaRef.current;
     if (!el) return;
     const { scrollTop, scrollHeight, clientHeight } = el;
-    const threshold = 10;
+    const threshold = 48;
     const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
+    shouldAutoFollowRef.current = nearBottom;
     setShowBackToBottom(!nearBottom);
     if (nearBottom) setShowNewMessageHint(false);
   }, []);
@@ -367,13 +469,16 @@ export const ChatView: React.FC = () => {
   // 仅当 sending 且流式内容尚未写入 messages 时显示流式块；会话消息一律从 messages 渲染，用 MarkdownContent
   const isFromModelStream = sending && !isStreamingMsgAlreadyInHistory && (!!streamingDisplayText || !!streamingThinking);
 
-  // 流式输出期间持续滚动到底部
+  // 流式输出期间仅在用户位于底部附近时自动跟随，不强制拖拽滚动
   useEffect(() => {
-    if (!sending && !streamingDisplayText && !streamingThinking) return;
-    scrollToBottom();
-    const timer = setInterval(scrollToBottom, 150);
+    if (!sending) return;
+    const timer = setInterval(() => {
+      if (suppressAutoScrollRef.current) return;
+      if (!shouldAutoFollowRef.current) return;
+      scrollToBottom();
+    }, 150);
     return () => clearInterval(timer);
-  }, [sending, streamingDisplayText, streamingThinking, scrollToBottom]);
+  }, [sending, scrollToBottom]);
 
   // 当 thinking 文本增长（新 token 到达），重置完成标记
   useEffect(() => {
@@ -1042,7 +1147,7 @@ export const ChatView: React.FC = () => {
           <ChatInput
             variant="chat-page"
             onAttachmentsChange={handleAttachmentsChange}
-            onSend={(text, attachments, _targetAgentId) => {
+            onSend={(text, attachments) => {
               clearError();
               const att = attachments?.map((a) => ({
                 fileName: a.fileName,

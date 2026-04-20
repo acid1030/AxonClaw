@@ -9,6 +9,7 @@ import * as os from 'os';
 
 const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const SKILLS_DIR = path.join(OPENCLAW_DIR, 'skills');
+const OPENCLAW_CONFIG_PATH = path.join(OPENCLAW_DIR, 'openclaw.json');
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -21,6 +22,18 @@ function stripAnsi(str: string): string {
   const csi = String.fromCharCode(155);
   const pattern = `(?:${esc}|${csi})[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`;
   return str.replace(new RegExp(pattern, 'g'), '').trim();
+}
+
+function parseConfigLoose(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    const cleaned = raw
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/,(\s*[}\]])/g, '$1');
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  }
 }
 
 function runClawhub(args: string[], workDir = OPENCLAW_DIR): Promise<string> {
@@ -67,10 +80,9 @@ export interface SearchSkill {
  */
 export function listWorkspaceSkills(): InstalledSkill[] {
   try {
-    const configPath = path.join(OPENCLAW_DIR, 'openclaw.json');
-    if (!fs.existsSync(configPath)) return [];
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const config = JSON.parse(raw) as { agents?: { list?: Array<{ workspace?: string }> } };
+    if (!fs.existsSync(OPENCLAW_CONFIG_PATH)) return [];
+    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
+    const config = parseConfigLoose(raw) as { agents?: { list?: Array<{ workspace?: string }> } };
     const workspace = config.agents?.list?.[0]?.workspace;
     if (!workspace || typeof workspace !== 'string') return [];
     const resolved = workspace.startsWith('~') ? path.join(os.homedir(), workspace.slice(1)) : workspace;
@@ -85,6 +97,50 @@ export function listWorkspaceSkills(): InstalledSkill[] {
       name: s.name,
       description: s.description,
     }));
+  } catch {
+    return [];
+  }
+}
+
+function listExtraDirSkills(): InstalledSkill[] {
+  try {
+    if (!fs.existsSync(OPENCLAW_CONFIG_PATH)) return [];
+    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8');
+    const config = parseConfigLoose(raw) as {
+      skills?: {
+        load?: {
+          extraDirs?: string[];
+        };
+      };
+    };
+    const extraDirs = Array.isArray(config.skills?.load?.extraDirs)
+      ? config.skills?.load?.extraDirs
+      : [];
+    const normalizedDirs = extraDirs
+      .filter((dir): dir is string => typeof dir === 'string' && dir.trim().length > 0)
+      .map((dir) => {
+        const expanded = dir.startsWith('~') ? path.join(os.homedir(), dir.slice(1)) : dir;
+        return path.resolve(expanded);
+      });
+
+    const seen = new Set<string>();
+    const results: InstalledSkill[] = [];
+    for (const dir of normalizedDirs) {
+      if (seen.has(dir)) continue;
+      seen.add(dir);
+      const scanned = scanSkillsFromDir(dir);
+      for (const s of scanned) {
+        results.push({
+          slug: s.slug,
+          version: 'extra',
+          source: 'openclaw-extra',
+          baseDir: s.baseDir,
+          name: s.name,
+          description: s.description,
+        });
+      }
+    }
+    return results;
   } catch {
     return [];
   }
@@ -150,6 +206,15 @@ export async function listInstalled(): Promise<InstalledSkill[]> {
   // 3. 磁盘扫描兜底（clawhub list 输出格式变化时）
   const managedFromDisk = listManagedSkillsFromDisk();
   for (const s of managedFromDisk) {
+    if (!seen.has(s.slug)) {
+      seen.add(s.slug);
+      result.push(s);
+    }
+  }
+
+  // 4. 额外目录技能（skills.load.extraDirs）
+  const extraDirSkills = listExtraDirSkills();
+  for (const s of extraDirSkills) {
     if (!seen.has(s.slug)) {
       seen.add(s.slug);
       result.push(s);
@@ -268,6 +333,28 @@ export function openSkillPath(skillKey: string, baseDir?: string): string | null
 export function scanSkillsFromDir(dirPath: string): Array<{ slug: string; name: string; baseDir: string; description?: string }> {
   const results: Array<{ slug: string; name: string; baseDir: string; description?: string }> = [];
   if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) return results;
+
+  // 支持直接选择“单个技能目录”（目录内直接包含 SKILL.md）
+  const rootSkillMd = path.join(dirPath, 'SKILL.md');
+  if (fs.existsSync(rootSkillMd)) {
+    try {
+      const raw = fs.readFileSync(rootSkillMd, 'utf8');
+      const fm = raw.match(/^---\s*\n([\s\S]*?)\n---/);
+      const slug = path.basename(dirPath);
+      let name = slug;
+      let description = '';
+      if (fm) {
+        const nameMatch = fm[1].match(/^\s*name\s*:\s*["']?([^"'\n]+)["']?\s*$/m);
+        if (nameMatch) name = nameMatch[1].trim();
+        const descMatch = fm[1].match(/^\s*description\s*:\s*["']?([^"'\n]+)["']?\s*$/m);
+        if (descMatch) description = descMatch[1].trim();
+      }
+      results.push({ slug, name, baseDir: dirPath, description: description || undefined });
+    } catch {
+      // ignore malformed root SKILL.md and continue scanning sub-directories
+    }
+  }
+
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
   for (const e of entries) {
     if (!e.isDirectory()) continue;

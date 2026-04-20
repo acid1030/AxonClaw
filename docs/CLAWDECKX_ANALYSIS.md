@@ -1,11 +1,11 @@
-# ClawDeckX 学习报告
+# AxonClawX 学习报告
 
 > 分析日期：2026-03-12 22:55
 > 分析者：TECH (技术学习官)
 
 ---
 
-## 📊 ClawDeckX 概览
+## 📊 AxonClawX 概览
 
 **定位**: OpenClaw Web 可视化管理平台
 **技术栈**: Go 后端 + React 19 + TypeScript + TailwindCSS v4
@@ -18,7 +18,7 @@
 ### 1. 架构设计 ⭐⭐⭐⭐⭐
 
 ```
-ClawDeckX/
+AxonClawX/
 ├── cmd/                    # 命令行入口
 ├── internal/
 │   ├── handlers/           # 50+ 个 API 处理器
@@ -254,7 +254,7 @@ export const agentsService = {
 ### 1. Cron 表达式生成逻辑
 
 ```javascript
-// 可以从 ClawDeckX 提取 CronBuilder 逻辑
+// 可以从 AxonClawX 提取 CronBuilder 逻辑
 const cronTemplates = {
   everyMinute: '* * * * *',
   everyHour: '0 * * * *',
@@ -323,8 +323,8 @@ class AgentsService extends BaseService {
 
 ## 📚 参考资源
 
-- **ClawDeckX GitHub**: https://github.com/ClawDeckX/ClawDeckX
-- **前端代码**: `/Users/nike/IdeaProjects/trae/ClawDeckX/web/`
+- **AxonClawX GitHub**: https://github.com/AxonClawX/AxonClawX
+- **前端代码**: `/Users/nike/IdeaProjects/trae/AxonClawX/web/`
 - **组件目录**: `web/components/` (28 个组件)
 - **服务目录**: `web/services/` (8 个服务)
 - **国际化**: `web/locales/` (18 个翻译文件)

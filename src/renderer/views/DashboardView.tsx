@@ -146,7 +146,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showLogsModal, setShowLogsModal] = useState(false);
-  const [logContent, setLogContent] = useState('');
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logsOffsetDays, setLogsOffsetDays] = useState(0);
+  const [logsHasMore, setLogsHasMore] = useState(false);
+  const [loadingMoreLogs, setLoadingMoreLogs] = useState(false);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [refreshCountdown, setRefreshCountdown] = useState(FAST_INTERVAL / 1000);
@@ -400,18 +403,65 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
     }
   };
 
+  const classifyLogLevel = useCallback((line: string): 'error' | 'warn' | 'info' | 'debug' | 'meta' => {
+    const lower = String(line || '').toLowerCase();
+    if (!lower) return 'meta';
+    if (lower.startsWith('[') && lower.endsWith('.log]')) return 'meta';
+    if (/\b(fatal|panic|critical|error|err)\b/.test(lower)) return 'error';
+    if (/\b(warn|warning|failed|exception|timeout)\b/.test(lower)) return 'warn';
+    if (/\b(debug|trace)\b/.test(lower)) return 'debug';
+    return 'info';
+  }, []);
+
+  const extractLineTs = useCallback((line: string): number => {
+    if (!line) return 0;
+    const m = line.match(/"time"\s*:\s*"([^"]+)"/);
+    if (m?.[1]) {
+      const ts = Date.parse(m[1]);
+      if (!Number.isNaN(ts)) return ts;
+    }
+    const m2 = line.match(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b/);
+    if (m2?.[1]) {
+      const ts = Date.parse(m2[1]);
+      if (!Number.isNaN(ts)) return ts;
+    }
+    return 0;
+  }, []);
+
+  const loadLogsPage = useCallback(async (offsetDays: number, append: boolean) => {
+    if (!append) setLoadingLogs(true);
+    else setLoadingMoreLogs(true);
+    try {
+      const data = await hostApiFetch<{
+        content?: string;
+        hasMore?: boolean;
+        nextOffsetDays?: number | null;
+      }>(`/api/logs?days=2&offsetDays=${offsetDays}&tailLines=400`);
+      const nextLines = String(data?.content || '')
+        .split(/\r?\n/)
+        .filter((line) => line.length > 0);
+      const sortedNextLines = [...nextLines].sort((a, b) => extractLineTs(b) - extractLineTs(a));
+      setLogLines((prev) => (
+        append
+          ? [...prev, '--- older logs ---', ...sortedNextLines]
+          : sortedNextLines
+      ));
+      setLogsHasMore(Boolean(data?.hasMore));
+      setLogsOffsetDays(Number.isFinite(data?.nextOffsetDays as number) ? Number(data?.nextOffsetDays) : offsetDays + 2);
+    } catch {
+      if (!append) setLogLines([t('dashboard.loadLogsFailed')]);
+    } finally {
+      if (!append) setLoadingLogs(false);
+      else setLoadingMoreLogs(false);
+    }
+  }, [extractLineTs, t]);
+
   const handleShowLogs = async () => {
     setShowLogsModal(true);
-    setLoadingLogs(true);
-    setLogContent('');
-    try {
-      const data = await hostApiFetch<{ content?: string }>('/api/logs?tailLines=100');
-      setLogContent(data?.content ?? t('dashboard.noLogContent'));
-    } catch {
-      setLogContent(t('dashboard.loadLogsFailed'));
-    } finally {
-      setLoadingLogs(false);
-    }
+    setLogLines([]);
+    setLogsOffsetDays(0);
+    setLogsHasMore(false);
+    await loadLogsPage(0, false);
   };
 
   const handleOpenLogDir = async () => {
@@ -615,25 +665,33 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                   )}
                   <div className="flex gap-1">
                   {!isOnline ? (
-                    <button
-                      onClick={() => void handleStartGateway()}
-                      disabled={isStarting}
-                      className={cn(
-                        'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1',
-                        hasStartError
-                          ? 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/30'
-                          : 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
-                      )}
-                    >
-                      {isStarting ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          {t('dashboard.starting')}
-                        </>
-                      ) : (
-                        t('dashboard.start')
-                      )}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => void handleStartGateway()}
+                        disabled={isStarting}
+                        className={cn(
+                          'px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1',
+                          hasStartError
+                            ? 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/30'
+                            : 'bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                        )}
+                      >
+                        {isStarting ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            {t('dashboard.starting')}
+                          </>
+                        ) : (
+                          t('dashboard.start')
+                        )}
+                      </button>
+                      <button
+                        onClick={handleShowLogs}
+                        className="px-2 py-1 rounded-lg bg-slate-500/10 text-slate-600 dark:text-slate-400 text-xs font-bold hover:bg-slate-500/20 transition-colors"
+                      >
+                        {t('dashboard.logs')}
+                      </button>
+                    </>
                   ) : (
                     <>
                       <button
@@ -1179,7 +1237,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleShowLogs}
+                onClick={() => { void loadLogsPage(0, false); }}
                 disabled={loadingLogs}
                 className="rounded-lg"
               >
@@ -1196,9 +1254,49 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTo }) => {
                 {t('dashboard.openLogDir')}
               </Button>
             </div>
-            <pre className="flex-1 overflow-auto rounded-xl border border-slate-600/30 bg-slate-900/40 p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words max-h-[50vh]">
-              {loadingLogs ? t('dashboard.loadingEllipsis') : logContent || t('dashboard.noLogs')}
-            </pre>
+            <div className="flex-1 overflow-auto rounded-xl border border-slate-600/30 bg-[#0b1220] p-0 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words max-h-[50vh]">
+              <pre className="m-0 p-4">
+                <code>
+                  {loadingLogs && (
+                    <div className="text-slate-400">{t('dashboard.loadingEllipsis')}</div>
+                  )}
+                  {!loadingLogs && logLines.length === 0 && (
+                    <div className="text-slate-400">{t('dashboard.noLogs')}</div>
+                  )}
+                  {!loadingLogs && logLines.map((line, idx) => {
+                    const level = classifyLogLevel(line);
+                    const cls = level === 'error'
+                      ? 'text-red-400'
+                      : level === 'warn'
+                        ? 'text-amber-300'
+                        : level === 'debug'
+                          ? 'text-cyan-300'
+                          : level === 'meta'
+                            ? 'text-violet-300'
+                            : 'text-slate-200';
+                    return (
+                      <div key={`${idx}-${line.slice(0, 20)}`} className={cls}>
+                        {line}
+                      </div>
+                    );
+                  })}
+                </code>
+              </pre>
+            </div>
+            <div className="pt-1 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loadingLogs || loadingMoreLogs || !logsHasMore}
+                onClick={() => { void loadLogsPage(logsOffsetDays, true); }}
+                className="rounded-lg"
+              >
+                <RefreshCw className={cn('w-4 h-4 mr-1.5', loadingMoreLogs && 'animate-spin')} />
+                {logsHasMore
+                  ? t('dashboard.loadMoreLogs', { defaultValue: '加载更多历史日志' })
+                  : t('dashboard.noMoreLogs', { defaultValue: '没有更早日志了' })}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

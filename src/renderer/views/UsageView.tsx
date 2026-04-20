@@ -203,7 +203,7 @@ const UsageView: React.FC = () => {
   }, [checkConnection, fetchCost, fetchHistory]);
 
   return (
-    <div className="flex flex-col w-full h-full min-h-0 bg-[#0f172a] overflow-hidden">
+    <div className="flex flex-col w-full h-full min-h-0 bg-background overflow-hidden">
       <div className="flex flex-col h-full py-6 px-4 overflow-y-auto min-h-0">
         {/* 头部：标题 + 日期范围 + 下载/刷新 */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -212,7 +212,7 @@ const UsageView: React.FC = () => {
             <p className="text-xs text-muted-foreground mt-0.5">{t('usage.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-[#1e293b]">
+            <div className="flex rounded-lg p-0.5 border border-white/10 bg-white/[0.04]">
               {(['today', '7d', '30d'] as const).map((r) => (
                 <button
                   key={r}
@@ -244,7 +244,7 @@ const UsageView: React.FC = () => {
         </div>
 
         {/* Tab 导航 */}
-        <div className="flex gap-1 border-b border-slate-700/50 mb-4">
+        <div className="flex gap-1 border-b border-white/10 mb-4">
           {(
             [
               { id: 'overview' as const, label: t('usage.tabs.overview') },
@@ -281,7 +281,7 @@ const UsageView: React.FC = () => {
           <>
         {/* 4 个指标卡片 - AxonClawX 风格 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
               <Hexagon className="w-5 h-5 text-purple-500" />
@@ -291,7 +291,7 @@ const UsageView: React.FC = () => {
               <MiniSparkline data={tokenTrendData.length ? tokenTrendData : [0]} color="#a78bfa" height={24} width={60} />
             </div>
           </div>
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
               <Wallet className="w-5 h-5 text-orange-500" />
@@ -301,48 +301,48 @@ const UsageView: React.FC = () => {
               <MiniSparkline data={costTrendData.length ? costTrendData : [0]} color="#f97316" height={24} width={60} />
             </div>
           </div>
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
               <MessageSquare className="w-5 h-5 text-emerald-500" />
             </div>
             <div className="text-xl font-bold text-foreground">{msgCount}</div>
-            <div className="text-[11px] text-muted-foreground mt-1">
+            <div className="text-xs text-muted-foreground mt-1">
               {t('usage.kpi.sessionsCount', { count: uniqueSessions })}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">{t('usage.kpi.avgLatency')}</span>
               <Gauge className="w-5 h-5 text-purple-500" />
             </div>
             <div className="text-xl font-bold text-foreground">—</div>
-            <div className="text-[11px] text-muted-foreground mt-1">{t('usage.kpi.sessionsCount', { count: uniqueSessions })}</div>
+            <div className="text-xs text-muted-foreground mt-1">{t('usage.kpi.sessionsCount', { count: uniqueSessions })}</div>
           </div>
         </div>
 
         {/* 缓存命中率 + 输入/输出比 - 进度条 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex justify-between text-xs mb-2">
               <span className="text-muted-foreground">{t('usage.cache.hitRate')}</span>
               <span className="font-medium">{cacheHitRate.toFixed(1)}%</span>
             </div>
-            <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden">
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-emerald-500/70 rounded-full transition-all"
                 style={{ width: `${Math.min(100, cacheHitRate)}%` }}
               />
             </div>
           </div>
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex justify-between text-xs mb-2">
               <span className="text-muted-foreground">{t('usage.cache.ioRatio')}</span>
               <span className="font-medium">
                 {formatTokenCount(inputTokens)} / {formatTokenCount(outputTokens)}
               </span>
             </div>
-            <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden flex">
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden flex">
               <div
                 className="h-full bg-purple-500/70 rounded-l-full transition-all"
                 style={{
@@ -360,7 +360,7 @@ const UsageView: React.FC = () => {
         </div>
 
         {/* 预算区块 */}
-        <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4 mb-6 flex items-center justify-between">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
               <BarChart2 className="w-5 h-5 text-emerald-500" />
@@ -378,10 +378,10 @@ const UsageView: React.FC = () => {
 
         {/* 费用趋势 + {t('usage.group.byModel')} */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="lg:col-span-2 rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="lg:col-span-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-foreground">{t('usage.trend.title')}</h3>
-              <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-slate-800/50">
+              <div className="flex rounded-lg p-0.5 border border-white/10 bg-white/[0.04]">
                 {(['day', 'week', 'month'] as const).map((g) => (
                   <button
                     key={g}
@@ -421,7 +421,7 @@ const UsageView: React.FC = () => {
               <p className="text-sm text-muted-foreground">{t('usage.empty.noTrend')}</p>
             )}
           </div>
-          <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <h3 className="text-sm font-medium text-foreground mb-3">{t('usage.byModel.title')}</h3>
             {usageGroups.length > 0 ? (
               <div className="space-y-2">
@@ -442,22 +442,22 @@ const UsageView: React.FC = () => {
         <div>
           <h3 className="text-base font-semibold text-foreground mb-4">{t('usage.logs.tokenUsageTitle')}</h3>
           {historyLoading && usageHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="loading" title={t('usage.loading')} />
             </div>
           ) : usageHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="empty" title={t('usage.empty.noUsageRecords')} />
             </div>
           ) : filteredHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="empty" title={t('usage.empty.noRecordsInRange')} />
             </div>
           ) : (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
+                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-white/[0.04]">
                     <Button
                       variant={usageGroupBy === 'model' ? 'secondary' : 'ghost'}
                       size="sm"
@@ -489,7 +489,7 @@ const UsageView: React.FC = () => {
                       {t('usage.group.byDate')}
                     </Button>
                   </div>
-                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
+                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-white/[0.04]">
                     <Button
                       variant={usageWindow === '7d' ? 'secondary' : 'ghost'}
                       size="sm"
@@ -555,7 +555,7 @@ const UsageView: React.FC = () => {
                 {pagedHistory.map((entry) => (
                   <div
                     key={`${entry.sessionId}-${entry.timestamp}`}
-                    className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4 hover:bg-[#1e293b]/80 transition-colors"
+                    className="rounded-xl border border-indigo-500/30 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -568,7 +568,7 @@ const UsageView: React.FC = () => {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-bold text-sm">{formatTokenCount(entry.totalTokens)}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {formatUsageTimestamp(entry.timestamp)}
                         </p>
                       </div>
@@ -635,24 +635,24 @@ const UsageView: React.FC = () => {
         {activeTab === 'by-model' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
                 <div className="text-xl font-bold mt-1">{formatTokenCount(totalTokens)}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
                 <div className="text-xl font-bold mt-1">${totalCost.toFixed(2)}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.modelCount')}</span>
                 <div className="text-xl font-bold mt-1">{modelGroups.length}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
                 <div className="text-xl font-bold mt-1">{msgCount}</div>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <h3 className="text-sm font-medium mb-4">{t('usage.byModel.distribution')}</h3>
               <UsageBarChart
                 groups={modelGroups}
@@ -663,7 +663,7 @@ const UsageView: React.FC = () => {
                 cacheLabel={t('usage.labels.cache')}
               />
             </div>
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <h3 className="text-sm font-medium mb-3">{t('usage.byModel.details')}</h3>
               {modelGroups.length > 0 ? (
                 <div className="space-y-2">
@@ -688,24 +688,24 @@ const UsageView: React.FC = () => {
         {activeTab === 'by-session' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.totalToken')}</span>
                 <div className="text-xl font-bold mt-1">{formatTokenCount(totalTokens)}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.sessionCount')}</span>
                 <div className="text-xl font-bold mt-1">{uniqueSessions}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.totalCost')}</span>
                 <div className="text-xl font-bold mt-1">${totalCost.toFixed(2)}</div>
               </div>
-              <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <span className="text-xs text-muted-foreground">{t('usage.kpi.messages')}</span>
                 <div className="text-xl font-bold mt-1">{msgCount}</div>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <h3 className="text-sm font-medium mb-4">{t('usage.bySession.distribution')}</h3>
               <UsageBarChart
                 groups={sessionGroups}
@@ -716,7 +716,7 @@ const UsageView: React.FC = () => {
                 cacheLabel={t('usage.labels.cache')}
               />
             </div>
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <h3 className="text-sm font-medium mb-3">{t('usage.bySession.details')}</h3>
               {sessionGroups.length > 0 ? (
                 <div className="space-y-2">
@@ -736,7 +736,7 @@ const UsageView: React.FC = () => {
 
         {activeTab === 'timeseries' && (
           <div className="space-y-6">
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <h3 className="text-sm font-medium mb-3">{t('usage.timeseries.tokenByDate')}</h3>
               <UsageBarChart
                 groups={dayGroups}
@@ -747,10 +747,10 @@ const UsageView: React.FC = () => {
                 cacheLabel={t('usage.labels.cache')}
               />
             </div>
-            <div className="rounded-xl border border-slate-600/50 bg-[#1e293b] p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-medium">{t('usage.trend.title')}</h3>
-                <div className="flex rounded-lg p-0.5 border border-slate-600/50 bg-slate-800/50">
+                <div className="flex rounded-lg p-0.5 border border-white/10 bg-white/[0.04]">
                   {(['day', 'week', 'month'] as const).map((g) => (
                     <button
                       key={g}
@@ -800,22 +800,22 @@ const UsageView: React.FC = () => {
           <div>
             <h3 className="text-base font-semibold text-foreground mb-4">{t('usage.tabs.logs')}</h3>
           {historyLoading && usageHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="loading" title={t('usage.loading')} />
             </div>
           ) : usageHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="empty" title={t('usage.empty.noUsageRecords')} />
             </div>
           ) : filteredHistory.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/30 bg-[#1e293b]/50 py-12 flex justify-center">
+            <div className="rounded-2xl border border-dashed border-indigo-500/30 bg-white/[0.03] py-12 flex justify-center">
               <FeedbackState state="empty" title={t('usage.empty.noRecordsInRange')} />
             </div>
           ) : (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
+                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-white/[0.04]">
                     <Button
                       variant={usageGroupBy === 'model' ? 'secondary' : 'ghost'}
                       size="sm"
@@ -833,7 +833,7 @@ const UsageView: React.FC = () => {
                       {t('usage.group.byDate')}
                     </Button>
                   </div>
-                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-[#1e293b]">
+                  <div className="flex rounded-lg p-1 border border-indigo-500/30 bg-white/[0.04]">
                     <Button
                       variant={usageWindow === '7d' ? 'secondary' : 'ghost'}
                       size="sm"
@@ -867,7 +867,7 @@ const UsageView: React.FC = () => {
                 {pagedHistory.map((entry) => (
                   <div
                     key={`${entry.sessionId}-${entry.timestamp}`}
-                    className="rounded-xl border-2 border-indigo-500/30 bg-[#1e293b] p-4 hover:bg-[#1e293b]/80 transition-colors"
+                    className="rounded-xl border border-indigo-500/30 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -878,7 +878,7 @@ const UsageView: React.FC = () => {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-bold text-sm">{formatTokenCount(entry.totalTokens)}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{formatUsageTimestamp(entry.timestamp)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{formatUsageTimestamp(entry.timestamp)}</p>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] font-medium text-muted-foreground">

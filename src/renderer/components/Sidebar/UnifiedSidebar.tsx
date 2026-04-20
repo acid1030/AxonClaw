@@ -3,23 +3,31 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Lock } from 'lucide-react';
 import { useChatStore } from '@/stores/chat';
+import { useSettingsStore } from '@/stores/settings';
 import { Icons } from '../Icons/IconComponents';
 import { SidebarItem } from './SidebarItem';
 import { CollapseButton } from './CollapseButton';
 
-// 新菜单结构（按用户要求）
-const menuItems: { id: string; icon: any; labelKey: string }[] = [
-  { id: 'overview', icon: Icons.dashboard, labelKey: 'overview' },
-  { id: 'chat', icon: Icons.chat, labelKey: 'chat' },
-  { id: 'channel-config', icon: Icons.channel, labelKey: 'config' },
-  { id: 'agent-config', icon: Icons.agent, labelKey: 'agents' },
-  { id: 'skill-config', icon: Icons.skill, labelKey: 'skills' },
-  { id: 'knowledge', icon: Icons.knowledge, labelKey: 'knowledge' },
-  { id: 'cron', icon: Icons.cron, labelKey: 'cron' },
-  { id: 'nodes', icon: Icons.nodes, labelKey: 'nodes' },
-  { id: 'system-monitor', icon: Icons.gatewayMonitor, labelKey: 'monitor' },
-  { id: 'system-config', icon: Icons.system, labelKey: 'settings' },
+type MenuItem = { id: string; icon: any; labelKey: string; labelFallback: string };
+
+const CORE_MENU: MenuItem[] = [
+  { id: 'overview', icon: Icons.dashboard, labelKey: 'overview', labelFallback: 'Overview' },
+  { id: 'chat', icon: Icons.chat, labelKey: 'chat', labelFallback: 'Chat' },
+  { id: 'tasks', icon: Icons.tasks, labelKey: 'tasks', labelFallback: 'Tasks' },
+  { id: 'agent-hub', icon: Icons.agent, labelKey: 'agents', labelFallback: 'Agents' },
+  { id: 'model-config', icon: Icons.model, labelKey: 'modelConfig', labelFallback: 'Configuration' },
+  { id: 'channel-config', icon: Icons.channel, labelKey: 'channelConfig', labelFallback: 'Channel' },
+  { id: 'skill-config', icon: Icons.skill, labelKey: 'skills', labelFallback: 'Plugins' },
+  { id: 'system-config', icon: Icons.system, labelKey: 'settings', labelFallback: 'System Settings' },
 ];
+
+const ADVANCED_MENU: Record<string, MenuItem> = {
+  agentConfig: { id: 'agent-config', icon: Icons.agent, labelKey: 'agents', labelFallback: 'Agents' },
+  knowledge: { id: 'knowledge', icon: Icons.knowledge, labelKey: 'knowledge', labelFallback: 'Knowledge' },
+  cron: { id: 'cron', icon: Icons.cron, labelKey: 'cron', labelFallback: 'Cron' },
+  nodes: { id: 'nodes', icon: Icons.nodes, labelKey: 'nodes', labelFallback: 'Nodes' },
+  monitor: { id: 'system-monitor', icon: Icons.gatewayMonitor, labelKey: 'monitor', labelFallback: 'Monitor' },
+};
 
 interface UnifiedSidebarProps {
   activeView?: string;
@@ -31,6 +39,15 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange, onLock 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { t } = useTranslation();
   const newSession = useChatStore((s) => s.newSession);
+  const featureVisibility = useSettingsStore((s) => s.featureVisibility);
+
+  const advancedItems: MenuItem[] =
+    !featureVisibility.simpleMode && featureVisibility.showAdvanced
+      ? Object.entries(featureVisibility.items)
+          .filter(([key, visible]) => visible && key in ADVANCED_MENU)
+          .map(([key]) => ADVANCED_MENU[key])
+      : [];
+  const menuItems = [...CORE_MENU, ...advancedItems];
 
   return (
     <motion.aside
@@ -60,12 +77,12 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange, onLock 
               exit={{ opacity: 0, x: -20 }}
               className="flex items-center gap-2 w-full"
             >
-              <img 
-                src="./logo.png" 
-                alt="AxonClaw Logo" 
+              <img
+                src="./logo.png"
+                alt="AxonClawX Logo"
                 className="h-10 w-auto object-contain flex-shrink-0"
               />
-              <span className="text-white font-semibold text-base whitespace-nowrap">AxonClaw</span>
+              <span className="text-white font-semibold text-base whitespace-nowrap">AxonClawX</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -76,9 +93,9 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange, onLock 
             animate={{ scale: 1 }}
             className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-white/5 mx-auto"
           >
-            <img 
-              src="./logo.png" 
-              alt="AxonClaw Logo"
+            <img
+              src="./logo.png"
+              alt="AxonClawX Logo"
               className="w-full h-full object-contain"
             />
           </motion.div>
@@ -112,7 +129,7 @@ export function UnifiedSidebar({ activeView = 'dashboard', onViewChange, onLock 
           <SidebarItem
             key={item.id}
             icon={item.icon}
-            label={t(item.labelKey, { ns: 'nav' })}
+            label={t(item.labelKey, { ns: 'nav', defaultValue: item.labelFallback })}
             isActive={activeView === item.id}
             isCollapsed={isCollapsed}
             onClick={() => onViewChange?.(item.id)}

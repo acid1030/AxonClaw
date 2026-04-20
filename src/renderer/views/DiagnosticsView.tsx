@@ -123,6 +123,28 @@ interface DoctorCliResult {
   error?: string;
 }
 
+interface SelfTestCheckResult {
+  id: string;
+  name: string;
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  durationMs: number;
+  autoFixed?: boolean;
+}
+
+interface SelfTestResult {
+  success: boolean;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  summary: {
+    passed: number;
+    warned: number;
+    failed: number;
+  };
+  checks: SelfTestCheckResult[];
+}
+
 type TabId = 'diagnose' | 'testing';
 
 function filterTrendByRange(trend: OverviewPoint[], range: TimeRange): OverviewPoint[] {
@@ -208,6 +230,8 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
   const [connectionVerified, setConnectionVerified] = useState<boolean | null>(null);
   const [doctorCli, setDoctorCli] = useState<DoctorCliResult | null>(null);
   const [doctorCliRunning, setDoctorCliRunning] = useState<'diagnose' | 'fix' | null>(null);
+  const [selfTestResult, setSelfTestResult] = useState<SelfTestResult | null>(null);
+  const [selfTestRunning, setSelfTestRunning] = useState(false);
   const [memoryStatus, setMemoryStatus] = useState<{
     agentId: string;
     provider?: string;
@@ -375,6 +399,27 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
       toast.error(t('diagnostics.toast.copyFailed'));
     }
   }, [doctorCli]);
+
+  const runSelfTest = useCallback(async () => {
+    setSelfTestRunning(true);
+    try {
+      const res = await hostApiFetch<SelfTestResult>('/api/app/self-test', {
+        method: 'POST',
+        body: JSON.stringify({ autoStartGateway: true }),
+      });
+      setSelfTestResult(res);
+      if (res.success) {
+        toast.success(t('diagnostics.toast.selfTestDone', { defaultValue: '自测完成' }));
+      } else {
+        toast.error(t('diagnostics.toast.selfTestFailed', { defaultValue: '自测发现失败项' }));
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message);
+    } finally {
+      setSelfTestRunning(false);
+    }
+  }, [t]);
 
   useEffect(() => {
     void checkConnection();
@@ -1320,6 +1365,62 @@ const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({ embedded, standalone,
             <pre className="p-3 text-[10px] font-mono text-white/80 max-h-64 overflow-auto whitespace-pre-wrap break-all">
               {(doctorCli.stdout || doctorCli.stderr || doctorCli.error || t('diagnostics.noOutput')).slice(0, 12000)}
             </pre>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border-2 border-sky-500/30 bg-gradient-to-br from-sky-500/10 to-[#1e293b] p-6">
+        <h3 className="text-sm font-bold text-foreground mb-1 flex items-center gap-2">
+          <Cpu className="w-5 h-5 text-sky-400" />
+          {t('diagnostics.selfTest.title', { defaultValue: '控制网页与技能自测' })}
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+          {t('diagnostics.selfTest.desc', { defaultValue: '检查 Gateway 控制链路、Control UI 参数、技能扫描与加载链路，并在可修复项上自动修复一次。' })}
+        </p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            type="button"
+            disabled={selfTestRunning}
+            onClick={() => void runSelfTest()}
+            className="h-9 px-4 rounded-lg text-xs font-bold bg-sky-600 hover:bg-sky-500 disabled:opacity-50"
+          >
+            {selfTestRunning
+              ? t('diagnostics.running', { defaultValue: '运行中...' })
+              : t('diagnostics.selfTest.run', { defaultValue: '运行自测' })}
+          </button>
+        </div>
+
+        {selfTestResult && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-muted-foreground flex flex-wrap gap-3">
+              <span>
+                {t('diagnostics.selfTest.pass', { defaultValue: '通过' })}: <span className="text-emerald-400 font-mono">{selfTestResult.summary.passed}</span>
+              </span>
+              <span>
+                {t('diagnostics.selfTest.warn', { defaultValue: '告警' })}: <span className="text-amber-400 font-mono">{selfTestResult.summary.warned}</span>
+              </span>
+              <span>
+                {t('diagnostics.selfTest.fail', { defaultValue: '失败' })}: <span className="text-red-400 font-mono">{selfTestResult.summary.failed}</span>
+              </span>
+              <span className="ml-auto">
+                {t('diagnostics.selfTest.duration', { defaultValue: '耗时' })}: <span className="font-mono text-foreground">{selfTestResult.durationMs} ms</span>
+              </span>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+              <pre className="p-3 text-[11px] font-mono max-h-72 overflow-auto whitespace-pre-wrap break-all">
+                {selfTestResult.checks.map((item) => {
+                  const statusTag = item.status === 'pass'
+                    ? '[PASS]'
+                    : item.status === 'warn'
+                      ? '[WARN]'
+                      : '[FAIL]';
+                  const autoFixed = item.autoFixed
+                    ? ` ${t('diagnostics.selfTest.autoFixed', { defaultValue: '(auto-fixed)' })}`
+                    : '';
+                  return `${statusTag} ${item.name} (${item.durationMs}ms)${autoFixed}\n${item.detail}`;
+                }).join('\n\n')}
+              </pre>
+            </div>
           </div>
         )}
       </div>

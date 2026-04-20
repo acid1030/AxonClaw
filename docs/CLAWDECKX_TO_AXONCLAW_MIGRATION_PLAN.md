@@ -1,14 +1,14 @@
-# ClawDeckX → AxonClaw 迁移计划
+# AxonClawX → AxonClaw 迁移计划
 
-> 按 ClawDeckX 的页面样式、布局和功能模块，在 AxonClaw 中复刻实现。调用逻辑使用 AxonClaw 框架重写；OpenClaw 原生能力直接调用；Go 后端用 Node/Electron 重写。
+> 按 AxonClawX 的页面样式、布局和功能模块，在 AxonClaw 中复刻实现。调用逻辑使用 AxonClaw 框架重写；OpenClaw 原生能力直接调用；Go 后端用 Node/Electron 重写。
 
 **⚠️ 约束：不改变 AxonClaw 技术架构**（Electron + hostApiFetch + 侧边栏单视图）
 
 ## 一、架构对比
 
-| 维度 | ClawDeckX | AxonClaw |
+| 维度 | AxonClawX | AxonClaw |
 |------|-----------|----------|
-| 后端 | Go (cmd/clawdeckx, internal/web) | Node.js + Electron 主进程 |
+| 后端 | Go (cmd/axonclawx, internal/web) | Node.js + Electron 主进程 |
 | 前端 | React + Vite (web/) | React + Vite |
 | 样式 | Tailwind + material-symbols | Tailwind + lucide-react |
 | API | REST `/api/v1/*` | hostApiFetch `/api/*` + IPC |
@@ -16,11 +16,11 @@
 
 ## 二、页面映射
 
-| ClawDeckX 窗口 | AxonClaw 视图 | 优先级 | 说明 |
+| AxonClawX 窗口 | AxonClaw 视图 | 优先级 | 说明 |
 |----------------|---------------|--------|------|
 | Dashboard | DashboardView | P0 | 主仪表盘，优先复刻 |
 | Gateway | GatewayView / LogsView | P1 | 网关状态、日志、事件 |
-| Agents | AgentsView | ✅ 已做 | ClawDeckX 风格已接入 |
+| Agents | AgentsView | ✅ 已做 | AxonClawX 风格已接入 |
 | Sessions | SessionsView | P1 | 会话列表 |
 | Skills | Skills | ✅ 已做 | 布局已调整 |
 | Editor | SettingsView / 配置编辑 | P2 | 配置编辑器 |
@@ -35,7 +35,7 @@
 
 ## 三、Dashboard 详细复刻计划
 
-### 3.1 ClawDeckX Dashboard 布局结构
+### 3.1 AxonClawX Dashboard 布局结构
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -69,9 +69,9 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 API 映射 (ClawDeckX → AxonClaw)
+### 3.2 API 映射 (AxonClawX → AxonClaw)
 
-| ClawDeckX API | AxonClaw 实现 | 说明 |
+| AxonClawX API | AxonClaw 实现 | 说明 |
 |---------------|---------------|------|
 | `dashboardApi.get()` | 主进程 `GET /api/dashboard` 或聚合 | 新建 dashboard 聚合接口 |
 | `gwApi.status()` | 已有 `useGatewayStore` 或 gateway 状态 | 直接复用 |
@@ -113,7 +113,7 @@ GET /api/health
 
 ### 3.4 Dashboard 组件复用
 
-| ClawDeckX 组件 | AxonClaw 实现 |
+| AxonClawX 组件 | AxonClaw 实现 |
 |----------------|---------------|
 | `HealthDot` | 内联 div 或新建 `StatusDot` |
 | `MiniSparkline` | 新建 `MiniSparkline` 或简化版 |
@@ -124,7 +124,7 @@ GET /api/health
 
 ### Phase 1: Dashboard 复刻 (P0)
 
-1. **布局**：按 ClawDeckX 结构重排 DashboardView
+1. **布局**：按 AxonClawX 结构重排 DashboardView
 2. **Gateway Hero**：状态、uptime、WS、启动/停止/重启
 3. **KPI 卡片**：7 列，点击跳转对应视图
 4. **主机信息**：实现 `/api/host-info`，GaugeCard 展示 CPU/内存/磁盘
@@ -134,8 +134,8 @@ GET /api/health
 
 ### Phase 2: 其他页面布局与样式
 
-1. **Sessions**：按 ClawDeckX Sessions 布局
-2. **Gateway/Logs**：按 ClawDeckX Gateway 事件/日志面板
+1. **Sessions**：按 AxonClawX Sessions 布局
+2. **Gateway/Logs**：按 AxonClawX Gateway 事件/日志面板
 3. **Settings/Editor**：配置编辑区块结构
 
 ### Phase 3: 后端补齐
@@ -153,15 +153,15 @@ GET /api/health
 
 ## 五、技术约束
 
-- **图标**：ClawDeckX 用 `material-symbols-outlined`，AxonClaw 用 `lucide-react`，需做图标映射
-- **颜色**：ClawDeckX 用 `mac-green`、`mac-red` 等，可用 Tailwind 近似色
-- **布局**：ClawDeckX 为多窗口，AxonClaw 为侧边栏单视图，跳转用 `onNavigateTo` 替代 `openWindow`
+- **图标**：AxonClawX 用 `material-symbols-outlined`，AxonClaw 用 `lucide-react`，需做图标映射
+- **颜色**：AxonClawX 用 `mac-green`、`mac-red` 等，可用 Tailwind 近似色
+- **布局**：AxonClawX 为多窗口，AxonClaw 为侧边栏单视图，跳转用 `onNavigateTo` 替代 `openWindow`
 
 ## 六、下一步行动
 
 1. 实现 `/api/host-info` 主进程接口
 2. 新建 `GaugeCard`、`MiniSparkline`、`HealthDot` 等通用组件
-3. 重写 `DashboardView` 布局与样式，对齐 ClawDeckX
+3. 重写 `DashboardView` 布局与样式，对齐 AxonClawX
 4. 接入真实数据（gateway、sessions、agents、channels、cron 等）
 
 ---

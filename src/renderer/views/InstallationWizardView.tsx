@@ -7,10 +7,12 @@
 import React from 'react';
 import { SetupWizardContent } from '@/pages/Setup';
 import { useSettingsStore } from '@/stores/settings';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 interface InstallationWizardViewProps {
   onNavigateTo?: (view: string) => void;
 }
+const FORCE_SETUP_WIZARD_KEY = 'clawx.force-setup-wizard';
 
 export const InstallationWizardView: React.FC<InstallationWizardViewProps> = ({
   onNavigateTo,
@@ -19,13 +21,24 @@ export const InstallationWizardView: React.FC<InstallationWizardViewProps> = ({
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-[#0f172a] overflow-hidden">
-      <SetupWizardContent
-        showTitleBar={false}
-        onComplete={() => {
-          markSetupComplete();
-          onNavigateTo?.('chat');
-        }}
-      />
+      <ErrorBoundary>
+        <SetupWizardContent
+          showTitleBar={false}
+          onComplete={async () => {
+            try {
+              window.localStorage.setItem(FORCE_SETUP_WIZARD_KEY, '0');
+            } catch {
+              // ignore storage failure
+            }
+            try {
+              await markSetupComplete();
+            } catch (error) {
+              console.error('[SetupWizard] Failed to mark setup complete:', error);
+            }
+            onNavigateTo?.('usage-wizard');
+          }}
+        />
+      </ErrorBoundary>
     </div>
   );
 };

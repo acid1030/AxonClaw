@@ -2,7 +2,7 @@
 
 > 版本：v1.0
 > 创建时间：2026-03-12
-> 参考：ClawDeckX + OpenClaw Memory System
+> 参考：AxonClawX + OpenClaw Memory System
 
 ---
 
@@ -464,7 +464,7 @@ export function MemoryView() {
 
 ## 📊 对比分析
 
-| 功能 | OpenClaw | ClawDeckX | AxonClaw (规划) |
+| 功能 | OpenClaw | AxonClawX | AxonClaw (规划) |
 |------|----------|-----------|----------------|
 | **数据库** | SQLite | SQLite + PG | SQLite ✅ |
 | **向量检索** | ChromaDB | 无 | ChromaDB ✅ |

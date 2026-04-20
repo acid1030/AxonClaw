@@ -30,6 +30,7 @@ import {
   Wifi,
   Wand2,
   FileCheck,
+  ClipboardList,
 } from 'lucide-react';
 
 export const Icons = {
@@ -62,6 +63,7 @@ export const Icons = {
   guide: Wand2,
   gatewayMonitor: Wifi,
   approval: FileCheck,
+  tasks: ClipboardList,
   chevronLeft: ChevronLeft,
   panelClose: PanelRightClose,
   panelOpen: PanelRightOpen,

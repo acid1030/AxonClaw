@@ -16,7 +16,7 @@
 GET /api/host-info
 ```
 
-**返回结构**（参考 ClawDeckX，适配 Node.js）：
+**返回结构**（参考 AxonClawX，适配 Node.js）：
 
 ```typescript
 {
@@ -57,7 +57,7 @@ GET /api/host-info
 - 标题：Host / 主机
 - 三列 GaugeCard：CPU、内存、磁盘
 - 每个 GaugeCard：圆形进度环 + 百分比 + 简要说明（如 cores、已用/总量）
-- 样式参考：ClawDeckX `web/windows/Dashboard.tsx` 约 550–620 行
+- 样式参考：AxonClawX `web/windows/Dashboard.tsx` 约 550–620 行
 
 ### 3. GaugeCard 组件（若不存在）
 
@@ -94,7 +94,7 @@ GET /api/host-info
 
 ## 参考文件
 
-- ClawDeckX: `web/windows/Dashboard.tsx` 行 550–620（Host Info Card）
+- AxonClawX: `web/windows/Dashboard.tsx` 行 550–620（Host Info Card）
 - AxonClaw: `src/renderer/views/DashboardView.tsx`
 - AxonClaw: `src/main/index.ts`（host-api 路由注册位置）
 

@@ -78,7 +78,7 @@ interface SkillsState {
   disableSkill: (skillId: string) => Promise<void>;
   setSkills: (skills: Skill[]) => void;
   updateSkill: (skillId: string, updates: Partial<Skill>) => void;
-  /** 从指定工作目录加载技能并合并到列表 */
+  /** 从指定目录加载技能，并注册到 skills.load.extraDirs 持久生效 */
   loadSkillsFromDir: (dirPath: string) => Promise<void>;
 }
 
@@ -282,31 +282,17 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
   loadSkillsFromDir: async (dirPath: string) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; skills?: Array<{ slug: string; name: string; baseDir: string; description?: string }>; error?: string }>(
+      const result = await hostApiFetch<{
+        success: boolean;
+        skills?: Array<{ slug: string; name: string; baseDir: string; description?: string }>;
+        addedToExtraDirs?: boolean;
+        error?: string;
+      }>(
         '/api/skills/load-from-dir',
-        { method: 'POST', body: JSON.stringify({ dirPath }) },
+        { method: 'POST', body: JSON.stringify({ dirPath, addToExtraDirs: true }) },
       );
-      if (!result.success || !result.skills?.length) return;
-      const configResult = await hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
-      const newSkills: Skill[] = result.skills.map((s) => ({
-        id: s.slug,
-        slug: s.slug,
-        name: s.name,
-        description: s.description || '',
-        enabled: false,
-        icon: '📁',
-        version: 'workspace',
-        config: configResult[s.slug] || {},
-        isCore: false,
-        isBundled: false,
-        source: 'openclaw-workspace',
-        baseDir: s.baseDir,
-      }));
-      set((state) => {
-        const existingIds = new Set(state.skills.map((x) => x.id));
-        const toAdd = newSkills.filter((x) => !existingIds.has(x.id));
-        return { skills: [...state.skills, ...toAdd] };
-      });
+      if (!result.success) return;
+      await get().fetchSkills();
     } catch (err) {
       console.error('loadSkillsFromDir error:', err);
       throw err;

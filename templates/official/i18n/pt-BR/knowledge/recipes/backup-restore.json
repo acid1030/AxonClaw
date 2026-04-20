@@ -2,12 +2,12 @@
   "name": "Backup e restauração",
   "description": "Fazer backup da configuração, memória e histórico de conversas do OpenClaw, com suporte para migração para novos dispositivos",
   "content": {
-    "body": "## O que fazer backup\n\n| Item | Caminho | Importância |\n|------|---------|------------|\n| Configuração | `~/.clawdeckx/config.yaml` | Essencial |\n| Config de agentes | `~/.clawdeckx/agents/` | Essencial |\n| Arquivos de memória | `~/.clawdeckx/memory/` | Importante |\n| Histórico de sessões | `~/.clawdeckx/sessions/` | Opcional |\n| Credenciais | `~/.clawdeckx/credentials/` | Importante |\n\n## Métodos de backup\n\n### Método 1: Manual\n```bash\ncp -r ~/.clawdeckx ~/clawdeckx-backup-$(date +%Y%m%d)\n```\n\n### Método 2: CLI\n```bash\nopenclaw config export > meu-backup.yaml\n```\n\n### Método 3: Interface ClawDeckX\n« Exportar configuração » no rodapé do Centro de configurações.\n\n## Restaurar\n\n1. Instalar OpenClaw\n2. Copiar arquivos para `~/.clawdeckx/`\n3. Iniciar gateway\n\n## Campos de configuração\n\nCaminho: `~/.clawdeckx/`",
+    "body": "## O que fazer backup\n\n| Item | Caminho | Importância |\n|------|---------|------------|\n| Configuração | `~/.axonclawx/config.yaml` | Essencial |\n| Config de agentes | `~/.axonclawx/agents/` | Essencial |\n| Arquivos de memória | `~/.axonclawx/memory/` | Importante |\n| Histórico de sessões | `~/.axonclawx/sessions/` | Opcional |\n| Credenciais | `~/.axonclawx/credentials/` | Importante |\n\n## Métodos de backup\n\n### Método 1: Manual\n```bash\ncp -r ~/.axonclawx ~/axonclawx-backup-$(date +%Y%m%d)\n```\n\n### Método 2: CLI\n```bash\nopenclaw config export > meu-backup.yaml\n```\n\n### Método 3: Interface AxonClawX\n« Exportar configuração » no rodapé do Centro de configurações.\n\n## Restaurar\n\n1. Instalar OpenClaw\n2. Copiar arquivos para `~/.axonclawx/`\n3. Iniciar gateway\n\n## Campos de configuração\n\nCaminho: `~/.axonclawx/`",
     "steps": [
       "Definir escopo do backup",
       "Executar backup",
       "Armazenar em local seguro",
-      "Para restaurar, copiar para ~/.clawdeckx/ e reiniciar"
+      "Para restaurar, copiar para ~/.axonclawx/ e reiniciar"
     ]
   }
 }

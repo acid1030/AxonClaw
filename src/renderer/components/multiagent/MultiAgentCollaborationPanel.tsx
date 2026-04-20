@@ -3,7 +3,7 @@
  * 模板数据：official-multi-agent/*.json（与 AxonClawX 同源）
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Users,
   Factory,
@@ -44,6 +44,7 @@ import type { MultiAgentTemplate, TemplateAgent } from '@/types/multi-agent-temp
 import { agentFileGet, agentFileSet } from '@/services/agent-api';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
+import { useTaskMonitorStore } from '@/stores/task-monitor';
 import { useTranslation } from 'react-i18next';
 
 
@@ -123,14 +124,24 @@ export interface MultiAgentCollaborationPanelProps {
   /** 完整部署成功后回调 */
   onDeploy?: () => void;
   isOnline: boolean;
+  /** 外部提供模板时，覆盖内置官方模板 */
+  templates?: MultiAgentTemplate[];
+  /** 外部指定默认选中的模板 id */
+  initialSelectedId?: string | null;
+  /** 滚动模式：默认整页滚动；split 为左右栏独立滚动 */
+  scrollMode?: 'page' | 'split';
 }
 
 export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanelProps> = ({
   defaultAgentId,
   onDeploy,
   isOnline,
+  templates: externalTemplates,
+  initialSelectedId = null,
+  scrollMode = 'page',
 }) => {
   const { t, i18n } = useTranslation('agents');
+  const gatewayRpc = useGatewayStore((s) => s.rpc);
   const isZh = /^(zh|cn)/i.test(i18n.language || '');
   const MA = useMemo(
     () => ({
@@ -172,12 +183,27 @@ export const MultiAgentCollaborationPanel: React.FC<MultiAgentCollaborationPanel
     }),
     [t],
   );
-  const templates = OFFICIAL_MULTI_AGENT_TEMPLATES;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const templates = useMemo(
+    () => (externalTemplates && externalTemplates.length > 0 ? externalTemplates : OFFICIAL_MULTI_AGENT_TEMPLATES),
+    [externalTemplates],
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   const [runTask, setRunTask] = useState('');
   const [runBusy, setRunBusy] = useState(false);
+
+  useEffect(() => {
+    if (templates.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId((prev) => {
+      if (prev && templates.some((tpl) => tpl.id === prev)) return prev;
+      if (initialSelectedId && templates.some((tpl) => tpl.id === initialSelectedId)) return initialSelectedId;
+      return templates[0].id;
+    });
+  }, [templates, initialSelectedId]);
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === selectedId) || null,
@@ -313,9 +339,17 @@ ${blockEnd}
               description: agent.description || agent.soulSnippet || '',
               icon: agent.icon,
               color: agent.color,
+              skills: agent.skills || [],
+              model: agent.model,
+              workspace: agent.workspace,
+              user: agent.userSnippet,
               soul: `# ${agent.name}\n\n**Role:** ${agent.role}\n\n${agent.description || agent.soulSnippet || ''}`,
             })),
             workflow: template.content.workflow,
+            requirements: template.requirements || {},
+            skills: template.skills || [],
+            cronJobs: template.cronJobs || [],
+            integrations: template.integrations || [],
           },
           prefix: template.id,
           skipExisting: true,
@@ -349,32 +383,67 @@ ${blockEnd}
   const handleRunWorkflow = useCallback(async () => {
     if (!defaultAgentId || !runTask.trim()) return;
     setRunBusy(true);
+    const taskText = runTask.trim();
+    const monitor = useTaskMonitorStore.getState();
+    let localRunId: string | null = null;
+    const agentId = String(defaultAgentId).trim();
+    const sessionName = `run-${Date.now()}`;
+    const sessionKey = `agent:${agentId}:${sessionName}`;
     try {
-      const rpc = useGatewayStore.getState().rpc;
-      await rpc('chat.send', {
-        sessionKey: `${defaultAgentId}:main`,
-        message: `${MA.workflowPrefix} ${runTask.trim()}`,
-        idempotencyKey: `ma-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      // Align with axonclawx: use agent-prefixed run session key.
+      const idempotencyKey = `${sessionKey}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localRunId = monitor.registerRun({
+        source: 'multi-agent',
+        sessionKey,
+        task: taskText,
       });
+      const result = await gatewayRpc<{
+        runId?: string;
+        id?: string;
+        result?: { runId?: string; id?: string };
+      }>('chat.send', {
+        sessionKey,
+        message: `${MA.workflowPrefix} ${taskText}`,
+        idempotencyKey,
+      });
+      const possibleRunId = String(
+        result?.runId
+        || result?.id
+        || result?.result?.runId
+        || result?.result?.id
+        || '',
+      ).trim();
+      if (possibleRunId) {
+        monitor.bindRunId(localRunId, possibleRunId);
+      }
       toast.success(MA.runOk);
       setRunTask('');
     } catch (e) {
+      if (localRunId) {
+        monitor.markRunFailed(localRunId, String(e));
+      }
       toast.error(`${MA.runFail}: ${e}`);
     } finally {
       setRunBusy(false);
     }
-  }, [defaultAgentId, runTask, MA]);
+  }, [defaultAgentId, runTask, MA, gatewayRpc]);
 
   return (
-    <div className="space-y-4 max-w-6xl">
-      <div>
+    <div
+      className={cn(
+        'max-w-6xl',
+        scrollMode === 'split' ? 'h-full min-h-0 flex flex-col' : 'space-y-4',
+      )}
+    >
+      <div className={cn(scrollMode === 'split' ? 'shrink-0 mb-4' : '')}>
         <h3 className="text-sm font-bold text-foreground">{MA.title}</h3>
         <p className="text-[11px] text-muted-foreground mt-0.5">{MA.subtitle}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1 space-y-2">
-          {templates.map((template) => {
+      <div className={cn('grid grid-cols-1 lg:grid-cols-3 gap-4', scrollMode === 'split' ? 'flex-1 min-h-0' : '')}>
+        <div className={cn('lg:col-span-1', scrollMode === 'split' ? 'min-h-0 overflow-y-auto pr-1' : 'space-y-2')}>
+          <div className="space-y-2">
+            {templates.map((template) => {
             const display = resolveTemplateDisplay(template, isZh);
             const metaIcon = template.metadata.icon;
             const color = template.metadata.color || 'from-purple-500 to-pink-500';
@@ -419,10 +488,11 @@ ${blockEnd}
                 </div>
               </button>
             );
-          })}
+            })}
+          </div>
         </div>
 
-        <div className="lg:col-span-2">
+        <div className={cn('lg:col-span-2', scrollMode === 'split' ? 'min-h-0 overflow-y-auto pl-1' : '')}>
           {selectedTemplate ? (
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
               <div className="p-4 border-b border-white/[0.06]">
@@ -634,7 +704,7 @@ ${blockEnd}
         </div>
       </div>
 
-      <div className="mt-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/20">
+      <div className={cn('p-4 rounded-xl bg-purple-500/5 border border-purple-500/20', scrollMode === 'split' ? 'mt-4 shrink-0' : 'mt-4')}>
         <div className="flex items-start gap-3">
           <Users className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">

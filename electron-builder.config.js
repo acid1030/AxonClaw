@@ -1,12 +1,12 @@
 /**
- * AxonClaw - Electron Builder 打包配置
+ * AxonClawX - Electron Builder 打包配置
  * 
  * 用于配置 Electron 应用的打包选项
  */
 
 const config = {
   appId: 'com.openclaw.axonclaw',
-  productName: 'AxonClaw',
+  productName: 'AxonClawX',
   copyright: 'Copyright © 2026 OpenClaw Team',
 
   directories: {
@@ -81,7 +81,7 @@ const config = {
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: 'AxonClaw',
+    shortcutName: 'AxonClawX',
   },
 
   // DMG 安装镜像

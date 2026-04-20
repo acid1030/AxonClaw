@@ -39,13 +39,14 @@ export function subscribeHostEvent<T = unknown>(
 ): () => void {
   const ipc = window.electron?.ipcRenderer;
   const ipcChannel = HOST_EVENT_TO_IPC_CHANNEL[eventName];
-  if (ipcChannel && ipc?.on && ipc?.off) {
+  const removeFn = (ipc as any)?.off || ipc?.removeListener;
+  if (ipcChannel && ipc?.on && removeFn) {
     const listener = (payload: unknown) => {
       handler(payload as T);
     };
     ipc.on(ipcChannel, listener);
     return () => {
-      ipc.off(ipcChannel, listener);
+      removeFn.call(ipc, ipcChannel, listener);
     };
   }
 

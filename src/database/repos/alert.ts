@@ -1,6 +1,6 @@
 /**
  * 告警 Repository
- * 参考 ClawDeckX internal/database/repo_alert.go
+ * 参考 AxonClawX internal/database/repo_alert.go
  */
 
 import { getDb } from '../db';
@@ -106,7 +106,7 @@ export function countUnreadAlerts(): number {
   return row?.c ?? 0;
 }
 
-/** 告警汇总统计（ClawDeckX 风格：高/中、1h/24h） */
+/** 告警汇总统计（AxonClawX 风格：高/中、1h/24h） */
 export function alertSummaryStats(): {
   high: number;
   medium: number;

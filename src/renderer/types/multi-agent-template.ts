@@ -21,6 +21,33 @@ export interface TemplateAgent {
   color?: string;
   soulSnippet?: string;
   description?: string;
+  skills?: Array<{
+    name: string;
+    permissions?: string[];
+    config?: Record<string, unknown>;
+  }>;
+  model?: string;
+  workspace?: string;
+  userSnippet?: string;
+}
+
+export interface TemplateSkillPreset {
+  name: string;
+  permissions?: string[];
+  config?: Record<string, unknown>;
+}
+
+export interface TemplateCronPreset {
+  name: string;
+  schedule: string;
+  task: string;
+  enabled?: boolean;
+  timezone?: string;
+}
+
+export interface TemplateIntegrationPreset {
+  service: string;
+  permissions?: string[];
 }
 
 export interface TemplateWorkflow {
@@ -50,4 +77,7 @@ export interface MultiAgentTemplate {
     workflow: TemplateWorkflow;
     examples?: string[];
   };
+  skills?: TemplateSkillPreset[];
+  cronJobs?: TemplateCronPreset[];
+  integrations?: TemplateIntegrationPreset[];
 }

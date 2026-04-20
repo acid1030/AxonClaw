@@ -6,18 +6,17 @@
  * Files are staged to disk via IPC — only lightweight path references
  * are sent with the message (no base64 over WebSocket).
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
-import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
-import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -33,7 +32,7 @@ export interface FileAttachment {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
+  onSend: (text: string, attachments?: FileAttachment[]) => void;
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
@@ -88,32 +87,473 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false, isEmpty = false, variant = 'default', onAttachmentsChange }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onStop,
+  disabled = false,
+  sending = false,
+  isEmpty = false,
+  variant = 'default',
+  onAttachmentsChange,
+}: ChatInputProps) {
   const { t } = useTranslation('chat');
+  const SESSION_MODEL_PREFS_KEY = 'axon.chat.sessionModelPrefs.v1';
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [modelOptions, setModelOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [sessionModelPrefs, setSessionModelPrefs] = useState<Record<string, { model: string; provider: string }>>({});
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelApplying, setModelApplying] = useState(false);
+  const [modelTesting, setModelTesting] = useState(false);
+  const [pendingModelSwitch, setPendingModelSwitch] = useState<{
+    from: string;
+    fromProvider: string;
+    to: string;
+    toProvider: string;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
-  const agents = useAgentsStore((s) => s.agents) ?? [];
-  const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const currentAgentName = useMemo(
-    () => agents.find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
-    [agents, currentAgentId],
-  );
-  const mentionableAgents = useMemo(
-    () => agents.filter((agent) => agent.id !== currentAgentId),
-    [agents, currentAgentId],
-  );
-  const selectedTarget = useMemo(
-    () => agents.find((agent) => agent.id === targetAgentId) ?? null,
-    [agents, targetAgentId],
-  );
-  const showAgentPicker = variant === 'default' && mentionableAgents.length > 0;
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const sessions = useChatStore((s) => s.sessions);
+  const loadSessions = useChatStore((s) => s.loadSessions);
   const isChatPage = variant === 'chat-page';
+  const activeSessionModel = sessions.find((s) => s.key === currentSessionKey)?.model || '';
+
+  const normalizeProviderAlias = useCallback((providerValue: string): string => {
+    const raw = String(providerValue || '').trim();
+    if (!raw) return '';
+    if (raw.toLowerCase() === 'openai-codex') return 'openai';
+    return raw;
+  }, []);
+
+  const normalizeModelAlias = useCallback((modelValue: string): string => {
+    const raw = String(modelValue || '').trim();
+    if (!raw) return '';
+
+    const normalizeLeaf = (leaf: string): string => {
+      let next = String(leaf || '').trim().replace(/cdoex/gi, 'codex');
+      if (/^\d+(?:\.\d+)?-codex$/i.test(next)) {
+        next = `gpt-${next}`;
+      }
+      return next;
+    };
+
+    if (raw.includes('/')) {
+      const [provider, ...rest] = raw.split('/');
+      if (!provider || rest.length === 0) return normalizeLeaf(raw);
+      return `${normalizeProviderAlias(provider)}/${normalizeLeaf(rest.join('/'))}`;
+    }
+    return normalizeLeaf(raw);
+  }, [normalizeProviderAlias]);
+
+  const providerFromModel = useCallback((modelValue: string): string => {
+    const value = normalizeModelAlias(String(modelValue || '').trim());
+    if (!value) return '';
+    return value.includes('/') ? String(value.split('/')[0] || '').trim() : '';
+  }, [normalizeModelAlias]);
+
+  const canonicalizeModel = useCallback((modelValue: string, providerHint?: string) => {
+    const raw = normalizeModelAlias(String(modelValue || '').trim());
+    if (!raw) return '';
+    if (raw.includes('/')) return raw;
+    const hint = String(providerHint || '').trim();
+    if (hint) {
+      const hinted = `${hint}/${raw}`;
+      const exists = modelOptions.some((opt) => String(opt.value || '').trim() === hinted);
+      if (exists) return hinted;
+    }
+    const matches = modelOptions
+      .map((opt) => String(opt.value || '').trim())
+      .filter((value) => value.endsWith(`/${raw}`));
+    if (matches.length === 1) return matches[0];
+    return hint ? `${hint}/${raw}` : raw;
+  }, [modelOptions, normalizeModelAlias]);
+
+  const persistSessionPref = useCallback((sessionKey: string, modelValue: string, providerValue?: string) => {
+    if (!sessionKey) return;
+    const model = canonicalizeModel(String(modelValue || '').trim(), String(providerValue || '').trim());
+    const provider = String(providerValue || providerFromModel(model)).trim();
+    setSessionModelPrefs((state) => ({
+      ...state,
+      [sessionKey]: { model, provider },
+    }));
+  }, [canonicalizeModel, providerFromModel]);
+
+  const normalizeModelId = useCallback((providerId: string, modelIdRaw: unknown): string => {
+    const modelId = normalizeModelAlias(String(modelIdRaw || '').trim());
+    if (!modelId) return '';
+    if (modelId.includes('/')) return modelId;
+    const provider = normalizeProviderAlias(providerId);
+    return provider ? `${provider}/${modelId}` : modelId;
+  }, [normalizeModelAlias, normalizeProviderAlias]);
+
+  const buildOptionsFromConfig = useCallback((cfg: Record<string, unknown>) => {
+    const models = ((cfg.models as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const providers = ((models.providers as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const collected: Array<{ value: string; label: string }> = [];
+    for (const [providerId, providerRaw] of Object.entries(providers)) {
+      const provider = (providerRaw as Record<string, unknown>) || {};
+      const modelList = Array.isArray(provider.models) ? provider.models : [];
+      for (const item of modelList) {
+        const rec = (typeof item === 'string' ? { id: item, name: item } : ((item as Record<string, unknown>) || {})) as Record<string, unknown>;
+        const modelId = String(rec.id || '').trim();
+        if (!modelId) continue;
+        const fullId = normalizeModelId(providerId, modelId);
+        if (!fullId) continue;
+        const name = String(rec.name || modelId).trim();
+        collected.push({ value: fullId, label: `${name} (${providerId})` });
+      }
+    }
+    const modelsPrimary = String(models.primary || '').trim();
+    if (modelsPrimary) collected.push({ value: modelsPrimary, label: modelsPrimary });
+    const modelFallbacks = Array.isArray(models.fallbacks) ? models.fallbacks : [];
+    for (const item of modelFallbacks) {
+      const mid = String(item || '').trim();
+      if (mid) collected.push({ value: mid, label: mid });
+    }
+    const agents = ((cfg.agents as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const defaults = ((agents.defaults as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const modelDefaults = ((defaults.model as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const primary = String(modelDefaults.primary || '').trim();
+    if (primary) collected.push({ value: primary, label: primary });
+    const fallbacks = Array.isArray(modelDefaults.fallbacks) ? modelDefaults.fallbacks : [];
+    for (const item of fallbacks) {
+      const mid = String(item || '').trim();
+      if (mid) collected.push({ value: mid, label: mid });
+    }
+    return Array.from(new Map(collected.map((o) => [o.value, o])).values());
+  }, [normalizeModelId]);
+
+  const loadModelOptions = useCallback(async () => {
+    if (gatewayStatus.state !== 'running') return;
+    setModelLoading(true);
+    try {
+      // Fetch from both /api/v1/config (effective config) and /api/config (raw user config)
+      // to ensure all configured models are visible in the dropdown
+      const [cfgResult, rawCfgResult, statusResult] = await Promise.allSettled([
+        hostApiFetch<{ config?: Record<string, unknown> } | Record<string, unknown>>('/api/v1/config'),
+        hostApiFetch<Record<string, unknown>>('/api/config'),
+        hostApiFetch<{
+          models?: Array<{ provider?: string; model?: string; role?: string }>;
+          fallbacks?: Array<{ role?: string; chain?: Array<{ provider?: string; model?: string }> }>;
+        }>('/api/v1/llm/models-status'),
+      ]);
+
+      const opts: Array<{ value: string; label: string }> = [];
+      if (cfgResult.status === 'fulfilled') {
+        const container = cfgResult.value as Record<string, unknown>;
+        const cfg = ((container.config as Record<string, unknown>) || container || {}) as Record<string, unknown>;
+        opts.push(...buildOptionsFromConfig(cfg));
+      }
+
+      // Also parse the raw user config (/api/config) which the setup wizard writes to
+      if (rawCfgResult.status === 'fulfilled' && rawCfgResult.value) {
+        const rawCfg = rawCfgResult.value as Record<string, unknown>;
+        opts.push(...buildOptionsFromConfig(rawCfg));
+      }
+
+      if (statusResult.status === 'fulfilled') {
+        const models = Array.isArray(statusResult.value?.models) ? statusResult.value.models : [];
+        for (const rec of models) {
+          const provider = String(rec?.provider || '').trim();
+          const rawModel = String(rec?.model || '').trim();
+          const fullId = normalizeModelId(provider, rawModel);
+          if (!fullId) continue;
+          opts.push({ value: fullId, label: provider ? `${rawModel} (${provider})` : rawModel });
+        }
+        const fallbacks = Array.isArray(statusResult.value?.fallbacks) ? statusResult.value.fallbacks : [];
+        for (const fb of fallbacks) {
+          const chain = Array.isArray(fb?.chain) ? fb.chain : [];
+          for (const node of chain) {
+            const provider = String(node?.provider || '').trim();
+            const rawModel = String(node?.model || '').trim();
+            const fullId = normalizeModelId(provider, rawModel);
+            if (!fullId) continue;
+            opts.push({ value: fullId, label: provider ? `${rawModel} (${provider})` : rawModel });
+          }
+        }
+      }
+
+      const deduped = Array.from(new Map(opts.map((o) => [o.value, o])).values())
+        .sort((a, b) => a.label.localeCompare(b.label));
+      setModelOptions(deduped);
+    } catch {
+      setModelOptions([]);
+    } finally {
+      setModelLoading(false);
+    }
+  }, [buildOptionsFromConfig, gatewayStatus.state, normalizeModelId]);
+
+  useEffect(() => {
+    void loadModelOptions();
+  }, [loadModelOptions, currentSessionKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_MODEL_PREFS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, { model?: string; provider?: string }>;
+        if (parsed && typeof parsed === 'object') {
+          const next: Record<string, { model: string; provider: string }> = {};
+          for (const [sessionKey, pref] of Object.entries(parsed)) {
+            if (!sessionKey) continue;
+            const hintedProvider = String(pref?.provider || '').trim();
+            const model = canonicalizeModel(String(pref?.model || '').trim(), hintedProvider);
+            const provider = String(pref?.provider || providerFromModel(model)).trim();
+            next[sessionKey] = { model, provider };
+          }
+          setSessionModelPrefs(next);
+        }
+      }
+    } catch {
+      // ignore parse errors
+    } finally {
+      setPrefsHydrated(true);
+    }
+  }, [SESSION_MODEL_PREFS_KEY, canonicalizeModel, providerFromModel]);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      try {
+        const raw = localStorage.getItem(SESSION_MODEL_PREFS_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Record<string, { model?: string; provider?: string }>;
+        if (!parsed || typeof parsed !== 'object') return;
+        setSessionModelPrefs((state) => {
+          const next = { ...state };
+          for (const [sessionKey, pref] of Object.entries(parsed)) {
+            if (!sessionKey) continue;
+            const hintedProvider = String(pref?.provider || '').trim();
+            const model = canonicalizeModel(String(pref?.model || '').trim(), hintedProvider);
+            const provider = String(pref?.provider || providerFromModel(model)).trim();
+            next[sessionKey] = { model, provider };
+          }
+          return next;
+        });
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    const onModelPrefUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionKey?: string; model?: string; provider?: string }>).detail;
+      const sessionKey = String(detail?.sessionKey || '').trim();
+      const hintedProvider = String(detail?.provider || '').trim();
+      const model = canonicalizeModel(String(detail?.model || '').trim(), hintedProvider);
+      const provider = String(hintedProvider || providerFromModel(model)).trim();
+      if (!sessionKey) {
+        syncFromStorage();
+        return;
+      }
+      setSessionModelPrefs((state) => ({
+        ...state,
+        [sessionKey]: { model, provider },
+      }));
+      if (sessionKey === currentSessionKey) {
+        setSelectedModel(model);
+        setProviderFilter(provider);
+      }
+    };
+
+    window.addEventListener('storage', syncFromStorage);
+    window.addEventListener('axon:session-model-pref-updated', onModelPrefUpdated as EventListener);
+    return () => {
+      window.removeEventListener('storage', syncFromStorage);
+      window.removeEventListener('axon:session-model-pref-updated', onModelPrefUpdated as EventListener);
+    };
+  }, [SESSION_MODEL_PREFS_KEY, canonicalizeModel, currentSessionKey, providerFromModel]);
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    try {
+      localStorage.setItem(SESSION_MODEL_PREFS_KEY, JSON.stringify(sessionModelPrefs));
+    } catch {
+      // ignore
+    }
+  }, [SESSION_MODEL_PREFS_KEY, prefsHydrated, sessionModelPrefs]);
+
+  useEffect(() => {
+    const model = canonicalizeModel(String(activeSessionModel || '').trim(), providerFromModel(activeSessionModel));
+    const saved = currentSessionKey ? sessionModelPrefs[currentSessionKey] : undefined;
+    const savedModel = canonicalizeModel(String(saved?.model || '').trim(), String(saved?.provider || '').trim());
+    const effectiveModel = String(savedModel || model).trim();
+    const effectiveProvider = String(saved?.provider || providerFromModel(effectiveModel) || '').trim();
+    setSelectedModel(effectiveModel);
+    setProviderFilter(effectiveProvider);
+    if (effectiveModel) {
+      setModelOptions((prev) => (
+        prev.some((o) => o.value === effectiveModel)
+          ? prev
+          : [{ value: effectiveModel, label: effectiveModel }, ...prev]
+      ));
+    }
+  }, [activeSessionModel, canonicalizeModel, currentSessionKey, providerFromModel, sessionModelPrefs]);
+
+  useEffect(() => {
+    setPendingModelSwitch(null);
+  }, [currentSessionKey]);
+
+  const applyModelChange = useCallback(async (
+    targetSessionKey: string,
+    fromModel: string,
+    fromProvider: string,
+    toModel: string,
+    toProvider: string,
+  ) => {
+    setModelApplying(true);
+    try {
+      const rpcResult = await invokeIpc<{ success?: boolean; ok?: boolean; error?: string }>(
+        'gateway:rpc', 'sessions.patch', {
+          key: targetSessionKey,
+          model: toModel || null,
+        },
+      );
+      if (rpcResult && (rpcResult.success === false || rpcResult.ok === false)) {
+        console.warn('[ChatInput] sessions.patch failed:', rpcResult.error);
+        setSelectedModel(fromModel);
+        setProviderFilter(fromProvider);
+        toast.error(t('chatView.modelSwitchFailed', {
+          defaultValue: '切换模型失败：{{error}}',
+          error: String(rpcResult.error || 'sessions.patch failed'),
+        }));
+        return;
+      }
+
+      // Runtime guard: also issue /model command so current session execution context updates immediately.
+      try {
+        await invokeIpc('gateway:rpc', 'chat.send', {
+          sessionKey: targetSessionKey,
+          message: `/model ${toModel}`,
+          deliver: false,
+          idempotencyKey: crypto.randomUUID(),
+        }, 45_000);
+      } catch (err) {
+        console.warn('[ChatInput] /model command failed after sessions.patch:', err);
+      }
+
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.map((session) => (
+          session.key === targetSessionKey ? { ...session, model: toModel } : session
+        )),
+      }));
+      await loadSessions();
+      persistSessionPref(targetSessionKey, toModel, toProvider);
+      setSelectedModel(toModel);
+      setProviderFilter(toProvider);
+      toast.success(t('chatView.modelSwitchOk', {
+        defaultValue: '已切换会话模型：{{model}}',
+        model: toModel,
+      }));
+    } catch (err) {
+      setSelectedModel(fromModel);
+      setProviderFilter(fromProvider);
+      toast.error(t('chatView.modelSwitchFailed', {
+        defaultValue: '切换模型失败：{{error}}',
+        error: String(err),
+      }));
+    } finally {
+      setModelApplying(false);
+      setPendingModelSwitch(null);
+    }
+  }, [loadSessions, persistSessionPref, t]);
+
+  const handleModelChange = useCallback(async (nextValue: string) => {
+    const prev = canonicalizeModel(String(activeSessionModel || '').trim(), providerFromModel(activeSessionModel));
+    const prevProvider = String(providerFromModel(prev)).trim();
+    const nextRaw = String(nextValue || '').trim();
+    const hintedProvider = providerFromModel(nextRaw) || providerFilter;
+    const next = canonicalizeModel(nextRaw, hintedProvider);
+    const nextProvider = String(providerFromModel(next) || hintedProvider).trim();
+    setSelectedModel(next);
+    setProviderFilter(nextProvider);
+    if (!currentSessionKey || next === prev) {
+      setPendingModelSwitch(null);
+      return;
+    }
+    setPendingModelSwitch({
+      from: prev,
+      fromProvider: prevProvider,
+      to: next,
+      toProvider: nextProvider,
+    });
+  }, [activeSessionModel, canonicalizeModel, currentSessionKey, providerFilter, providerFromModel]);
+
+  const confirmModelSwitch = useCallback(async () => {
+    const pending = pendingModelSwitch;
+    if (!pending || !currentSessionKey) return;
+    await applyModelChange(
+      currentSessionKey,
+      pending.from,
+      pending.fromProvider,
+      pending.to,
+      pending.toProvider,
+    );
+  }, [applyModelChange, currentSessionKey, pendingModelSwitch]);
+
+  const cancelModelSwitch = useCallback(() => {
+    const pending = pendingModelSwitch;
+    if (!pending) return;
+    setSelectedModel(pending.from);
+    setProviderFilter(pending.fromProvider);
+    setPendingModelSwitch(null);
+  }, [pendingModelSwitch]);
+
+  const providerOptions = Array.from(new Set(
+    modelOptions
+      .map((opt) => String(opt.value || '').split('/')[0]?.trim())
+      .filter((provider) => !!provider),
+  )).sort();
+
+  const filteredModelOptions = providerFilter
+    ? modelOptions.filter((opt) => {
+      const value = String(opt.value || '');
+      return value.startsWith(`${providerFilter}/`) || value === providerFilter;
+    })
+    : modelOptions;
+
+  const handleModelTest = useCallback(async () => {
+    const current = String(selectedModel || activeSessionModel || '').trim();
+    if (!current) {
+      toast.error(t('composer.modelTestNeedModel', { defaultValue: '请先选择模型' }));
+      return;
+    }
+    const provider = current.includes('/') ? current.split('/')[0] : current;
+    if (!provider) {
+      toast.error(t('composer.modelTestNeedModel', { defaultValue: '请先选择模型' }));
+      return;
+    }
+    setModelTesting(true);
+    try {
+      const result = await hostApiFetch<{ okCount?: number; failCount?: number; results?: Array<{ error?: string }> }>('/api/v1/llm/probe', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider,
+          timeoutMs: 12000,
+          maxTokens: 16,
+        }),
+      });
+      const okCount = Number(result?.okCount || 0);
+      if (okCount > 0) {
+        toast.success(t('composer.modelTestOk', { model: current, defaultValue: '模型连通成功：{{model}}' }));
+        return;
+      }
+      const fallbackErr = result?.results?.find((r) => String(r?.error || '').trim())?.error
+        || t('composer.modelTestFailedNoReason', { defaultValue: '无可用认证或网络不可达' });
+      toast.error(t('composer.modelTestFail', { model: current, reason: fallbackErr, defaultValue: '模型连通失败：{{model}}（{{reason}}）' }));
+    } catch (error) {
+      toast.error(t('composer.modelTestFail', {
+        model: current,
+        reason: String(error),
+        defaultValue: '模型连通失败：{{model}}（{{reason}}）',
+      }));
+    } finally {
+      setModelTesting(false);
+    }
+  }, [activeSessionModel, selectedModel, t]);
 
   // Auto-resize textarea (single line default, grow upward)
   useEffect(() => {
@@ -130,32 +570,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       textareaRef.current.focus();
     }
   }, [disabled]);
-
-  useEffect(() => {
-    if (!targetAgentId) return;
-    if (targetAgentId === currentAgentId) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-      return;
-    }
-    if (!agents.some((agent) => agent.id === targetAgentId)) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-    }
-  }, [agents, currentAgentId, targetAgentId]);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) {
-        setPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [pickerOpen]);
 
   // Docs级粘贴拦截（capture 阶段），仅 preventDefault 阻止默认行为，事件仍会冒泡到 onPaste 处理
   useEffect(() => {
@@ -346,10 +760,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSend(textToSend, attachmentsToSend, targetAgentId);
-    setTargetAgentId(null);
-    setPickerOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId]);
+    onSend(textToSend, attachmentsToSend);
+  }, [input, attachments, canSend, onSend]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -358,10 +770,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace' && !input && targetAgentId) {
-        setTargetAgentId(null);
-        return;
-      }
       if (e.key === 'Enter' && !e.shiftKey) {
         const nativeEvent = e.nativeEvent as KeyboardEvent;
         if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
@@ -371,7 +779,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, targetAgentId],
+    [handleSend, input],
   );
 
   // Handle paste (Ctrl/Cmd+V with files/images)
@@ -531,10 +939,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         {/* Input Row - chat-page: Attachment在输入框内左上角 */}
         <div
           className={cn(
-            "relative rounded-2xl border p-3 transition-all",
+            "relative rounded-2xl border transition-all",
             isChatPage
-              ? "bg-[#1e293b] border-[#334155] focus-within:border-[#6366f1]"
-              : "bg-white dark:bg-card shadow-sm",
+              ? "bg-[#1e293b] border-[#334155] focus-within:border-[#6366f1] p-4"
+              : "bg-white dark:bg-card shadow-sm p-3",
             isChatPage && dragOver && "border-[#6366f1] ring-1 ring-[#6366f1]",
             !isChatPage && (dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10')
           )}
@@ -556,25 +964,41 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               ))}
             </div>
           )}
-          {selectedTarget && (
-            <div className="px-2.5 pt-2 pb-1">
-              <button
-                type="button"
-                onClick={() => setTargetAgentId(null)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-primary/10"
-                title={t('composer.clearTarget')}
-              >
-                <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
-                <X className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
-          )}
-
           <div className="flex items-end gap-1.5">
+            {!isChatPage && (
+              <>
+                {/* Session Model Selector */}
+                <div className="shrink-0 w-[160px]">
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => { void handleModelChange(e.target.value); }}
+                    disabled={disabled || sending || modelApplying}
+                    title={t('composer.modelSelector', { defaultValue: 'Session Model' })}
+                    className="h-10 w-full rounded-xl border px-2 text-xs outline-none bg-white dark:bg-card border-black/10 dark:border-white/10 text-foreground"
+                  >
+                    <option value="">{t('composer.modelAuto', { defaultValue: 'Follow default model' })}</option>
+                    {filteredModelOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className="shrink-0 h-10 rounded-xl px-2.5 text-xs text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10"
+                  disabled={disabled || sending || modelLoading || modelApplying || modelTesting}
+                  onClick={() => { void handleModelTest(); }}
+                  title={t('composer.modelTest', { defaultValue: 'Test' })}
+                >
+                  {modelTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('composer.modelTest', { defaultValue: 'Test' })}
+                </Button>
+              </>
+            )}
             {/* Attach Button */}
             <Button
               variant="ghost"
               size="icon"
+              type="button"
               className={cn(
                 "shrink-0 h-10 w-10 rounded-full transition-colors",
                 isChatPage
@@ -587,45 +1011,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             >
               <Paperclip className="h-4 w-4" />
             </Button>
-
-            {showAgentPicker && (
-              <div ref={pickerRef} className="relative shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    'h-10 w-10 rounded-full text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
-                    (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
-                  )}
-                  onClick={() => setPickerOpen((open) => !open)}
-                  disabled={disabled || sending}
-                  title={t('composer.pickAgent')}
-                >
-                  <AtSign className="h-4 w-4" />
-                </Button>
-                {pickerOpen && (
-                  <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card">
-                    <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
-                      {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {mentionableAgents.map((agent) => (
-                        <AgentPickerItem
-                          key={agent.id}
-                          agent={agent}
-                          selected={agent.id === targetAgentId}
-                          onSelect={() => {
-                            setTargetAgentId(agent.id);
-                            setPickerOpen(false);
-                            textareaRef.current?.focus();
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Textarea - chat-page: 单行起，向上自动增高 */}
             <div className="flex-1 relative min-w-0">
@@ -645,7 +1030,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 className={cn(
                   "resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 leading-relaxed",
                   isChatPage
-                    ? "min-h-[24px] max-h-[192px] text-[14px] text-[#f8fafc] placeholder:text-[#64748b]"
+                    ? "min-h-[36px] max-h-[220px] text-[14px] text-[#f8fafc] placeholder:text-[#64748b]"
                     : "min-h-[40px] max-h-[200px] text-[15px] placeholder:text-muted-foreground/60"
                 )}
                 rows={1}
@@ -677,6 +1062,108 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               )}
             </Button>
           </div>
+          {pendingModelSwitch && (
+            <div className={cn(
+              'mt-3 rounded-lg border px-3 py-2.5',
+              isChatPage
+                ? 'border-[#334155] bg-[#0f172a]/80 text-[#e2e8f0]'
+                : 'border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] text-foreground',
+            )}>
+              <div className="text-[12px] font-semibold">
+                {t('chatView.modelSwitchConfirmTitle', { defaultValue: '确认切换会话模型？' })}
+              </div>
+              <div className={cn(
+                'mt-1 text-[11px]',
+                isChatPage ? 'text-[#94a3b8]' : 'text-muted-foreground',
+              )}>
+                {t('chatView.modelSwitchConfirmBody', {
+                  defaultValue: '当前：{{from}} → 目标：{{to}}。仅影响后续消息，不会重算历史消息。',
+                  from: pendingModelSwitch.from || t('chatView.modelAuto', { defaultValue: '默认模型' }),
+                  to: pendingModelSwitch.to || t('chatView.modelAuto', { defaultValue: '默认模型' }),
+                })}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className={cn(
+                    'h-8 rounded-md px-3 text-xs',
+                    isChatPage
+                      ? 'text-[#cbd5e1] hover:bg-[#1e293b]'
+                      : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10',
+                  )}
+                  disabled={modelApplying}
+                  onClick={cancelModelSwitch}
+                >
+                  {t('chatView.modelSwitchCancel', { defaultValue: '取消' })}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className={cn(
+                    'h-8 rounded-md px-3 text-xs',
+                    isChatPage
+                      ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90',
+                  )}
+                  disabled={modelApplying}
+                  onClick={() => { void confirmModelSwitch(); }}
+                >
+                  {modelApplying
+                    ? t('chatView.modelSwitchApplying', { defaultValue: '切换中...' })
+                    : t('chatView.modelSwitchConfirm', { defaultValue: '确认切换' })}
+                </Button>
+              </div>
+            </div>
+          )}
+          {isChatPage && (
+            <div className="mt-3 flex items-center gap-2">
+              <select
+                value={providerFilter}
+                onChange={(e) => {
+                  const nextProvider = String(e.target.value || '').trim();
+                  setProviderFilter(nextProvider);
+                }}
+                disabled={disabled || sending || modelApplying}
+                title={t('composer.providerFilter', { defaultValue: 'Provider' })}
+                className="h-9 w-[150px] rounded-lg border px-2 text-xs outline-none bg-[#0f172a] border-[#334155] text-[#e2e8f0]"
+              >
+                <option value="">{t('composer.providerAll', { defaultValue: 'All Providers' })}</option>
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+              <div className="w-[150px]">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => { void handleModelChange(e.target.value); }}
+                  disabled={disabled || sending || modelApplying}
+                  title={t('composer.modelSelector', { defaultValue: 'Session Model' })}
+                  className="h-9 w-full rounded-lg border px-2 text-xs outline-none bg-[#0f172a] border-[#334155] text-[#e2e8f0]"
+                >
+                  <option value="">{t('composer.modelAuto', { defaultValue: 'Follow default model' })}</option>
+                  {filteredModelOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                variant="ghost"
+                type="button"
+                className="h-9 rounded-lg px-3 text-xs text-[#93c5fd] hover:bg-[#1d4ed8]/20 hover:text-[#bfdbfe]"
+                disabled={disabled || sending || modelLoading || modelApplying || modelTesting}
+                onClick={() => { void handleModelTest(); }}
+                title={t('composer.modelTest', { defaultValue: 'Test' })}
+              >
+                {modelTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('composer.modelTest', { defaultValue: 'Test' })}
+              </Button>
+            </div>
+          )}
+          {!isChatPage && (modelLoading || modelApplying) && (
+            <div className={cn("absolute end-16 top-3", isChatPage ? "text-[#64748b]" : "text-muted-foreground")}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            </div>
+          )}
         </div>
         {!isChatPage && (
         <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground/60 px-4">
@@ -780,31 +1267,5 @@ export function AttachmentPreview({
         <X className="h-3 w-3" />
       </button>
     </div>
-  );
-}
-
-function AgentPickerItem({
-  agent,
-  selected,
-  onSelect,
-}: {
-  agent: AgentSummary;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'flex w-full flex-col items-start rounded-xl px-3 py-2 text-left transition-colors',
-        selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
-      )}
-    >
-      <span className="text-[14px] font-medium text-foreground">{agent.name}</span>
-      <span className="text-[11px] text-muted-foreground">
-        {agent.modelDisplay}
-      </span>
-    </button>
   );
 }

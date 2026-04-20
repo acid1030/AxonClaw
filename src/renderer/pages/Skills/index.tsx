@@ -999,6 +999,16 @@ export function Skills({ onNavigateTo }: SkillsProps) {
   }, [enableSkill, disableSkill, t]);
 
   const hasInstalledSkills = safeSkills.some(s => !s.isBundled);
+  const [refreshingSkills, setRefreshingSkills] = useState(false);
+
+  const handleRefreshSkills = useCallback(async () => {
+    setRefreshingSkills(true);
+    try {
+      await fetchSkills();
+    } finally {
+      setRefreshingSkills(false);
+    }
+  }, [fetchSkills]);
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
@@ -1029,7 +1039,7 @@ export function Skills({ onNavigateTo }: SkillsProps) {
       const dirPath = result.filePaths[0];
       setLoadingFromDir(true);
       await loadSkillsFromDir(dirPath);
-      toast.success(t('toast.loadedFromDir', { count: 1, defaultValue: '已从工作区目录加载技能' }));
+      toast.success(t('toast.loadedFromDir', { defaultValue: '已添加目录技能' }));
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -1240,14 +1250,32 @@ export function Skills({ onNavigateTo }: SkillsProps) {
           >
             {t('actions.installFromClawHub')}
           </button>
+          <button
+            onClick={handleLoadFromDir}
+            disabled={loadingFromDir}
+            className="h-8 px-3 rounded-lg text-xs font-bold bg-[var(--color-surface-sunken)] hover:bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)] disabled:opacity-60"
+            title={t('actions.addDir', { defaultValue: '添加目录技能' })}
+          >
+            {loadingFromDir ? (
+              <span className="inline-flex items-center gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                {t('actions.addingDir', { defaultValue: '添加中' })}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <FolderPlus className="h-3.5 w-3.5" />
+                {t('actions.addDir', { defaultValue: '添加目录技能' })}
+              </span>
+            )}
+          </button>
           <div className="flex items-center gap-1.5 ml-2 border-l border-[var(--color-border)] pl-2">
             <button
-              onClick={() => fetchSkills()}
-              disabled={loading}
+              onClick={handleRefreshSkills}
+              disabled={loading || refreshingSkills}
               className="h-8 w-8 rounded-lg flex items-center justify-center bg-[var(--color-surface-sunken)] hover:bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)]"
               title={t('refresh')}
             >
-              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              <RefreshCw className={cn('h-4 w-4', (loading || refreshingSkills) && 'animate-spin')} />
             </button>
             <button
               onClick={handleLoadFromDir}
@@ -1391,8 +1419,8 @@ export function Skills({ onNavigateTo }: SkillsProps) {
         {mainCategory === 'plugins' && (
           <PluginsTabContent
             skills={safeSkills}
-            loading={loading}
-            fetchSkills={fetchSkills}
+            loading={loading || refreshingSkills}
+            fetchSkills={handleRefreshSkills}
             handleToggle={handleToggle}
             setSelectedSkill={setSelectedSkill}
             isOnline={isGatewayRunning}

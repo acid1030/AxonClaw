@@ -5,6 +5,10 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { GATEWAY_TOKEN } from './constants';
 
 export interface GatewayStatus {
   state: 'running' | 'stopped' | 'starting' | 'error';
@@ -30,6 +34,17 @@ class GatewayLifecycleManager extends EventEmitter {
   private status: GatewayStatus = { state: 'stopped', port: this.port };
   private startPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
+  private startupFailureReason: string | null = null;
+  private autoRepairTried: boolean = false;
+  private versionSkewRepairAttempted: boolean = false;
+  private configHomeOverride: string | null = null;
+  private readonly requiredOperatorScopes = [
+    'operator.admin',
+    'operator.read',
+    'operator.write',
+    'operator.approvals',
+    'operator.pairing',
+  ];
 
   /**
    * Start the OpenClaw Gateway
@@ -40,7 +55,10 @@ class GatewayLifecycleManager extends EventEmitter {
     
     // Already running
     if (this.status.state === 'running') return;
-    
+
+    // New start attempt: allow one fresh auto-repair retry.
+    this.autoRepairTried = false;
+
     this.startPromise = this.doStart();
     try {
       await this.startPromise;
@@ -51,11 +69,23 @@ class GatewayLifecycleManager extends EventEmitter {
 
   private async doStart(): Promise<void> {
     this.status = { state: 'starting', port: this.port };
+    this.startupFailureReason = null;
+    this.versionSkewRepairAttempted = false;
     
     console.log('[Gateway] Starting OpenClaw Gateway...');
     this.emit('log', 'info', 'Starting OpenClaw Gateway...');
     
     try {
+      const runtimeHome = this.configHomeOverride || os.homedir();
+      try {
+        const changed = this.ensureOperatorScopesInHome(runtimeHome);
+        if (changed) {
+          this.emit('log', 'warn', `Repaired operator scopes in ${path.join(runtimeHome, '.openclaw', 'devices', 'paired.json')}`);
+        }
+      } catch (err) {
+        this.emit('log', 'warn', `Scope auto-repair skipped: ${String(err)}`);
+      }
+
       // Start OpenClaw Gateway as subprocess
       this.process = spawn('openclaw', ['gateway', 'run', '--compact'], {
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -63,11 +93,14 @@ class GatewayLifecycleManager extends EventEmitter {
           ...process.env,
           // Ensure Gateway uses the correct port
           OPENCLAW_GATEWAY_PORT: String(this.port),
+          ...(this.configHomeOverride ? { HOME: this.configHomeOverride } : {}),
         },
       });
+      const child = this.process;
 
       // Handle stdout
-      this.process.stdout?.on('data', (data) => {
+      child.stdout?.on('data', (data) => {
+        if (this.process !== child) return;
         const msg = data.toString().trim();
         if (msg) {
           console.log('[Gateway]', msg);
@@ -76,16 +109,33 @@ class GatewayLifecycleManager extends EventEmitter {
       });
 
       // Handle stderr
-      this.process.stderr?.on('data', (data) => {
+      child.stderr?.on('data', (data) => {
+        if (this.process !== child) return;
         const msg = data.toString().trim();
         if (msg) {
           console.error('[Gateway Error]', msg);
           this.emit('log', 'error', msg);
+          // Version skew is noisy but often non-fatal in runtime, do not kill gateway process here.
+          // Auto-repair logic will still handle truly fatal startup failures.
+          if (msg.includes('Config was last written by a newer OpenClaw') || msg.includes('current version is')) {
+            this.emit('log', 'warn', 'Detected OpenClaw config version skew; keeping gateway process alive and continuing startup checks.');
+            if (!this.versionSkewRepairAttempted) {
+              this.versionSkewRepairAttempted = true;
+              const repaired = this.attemptConfigAutoRepair(msg);
+              if (repaired) {
+                this.emit('log', 'warn', 'Applied one-time config meta repair for version skew (effective on next restart).');
+              }
+            }
+          }
+          if (msg.includes('Unknown config keys') || msg.includes('setupComplete')) {
+            this.startupFailureReason = msg;
+          }
         }
       });
 
       // Handle process exit
-      this.process.on('exit', (code, signal) => {
+      child.on('exit', (code, signal) => {
+        if (this.process !== child) return;
         const wasRunning = this.status.state === 'running';
         this.status = { 
           state: 'stopped', 
@@ -102,7 +152,8 @@ class GatewayLifecycleManager extends EventEmitter {
       });
 
       // Handle process error
-      this.process.on('error', (error) => {
+      child.on('error', (error) => {
+        if (this.process !== child) return;
         console.error('[Gateway] Process error:', error);
         this.status = { state: 'error', port: this.port, error: error.message };
         this.emit('error', error);
@@ -124,6 +175,27 @@ class GatewayLifecycleManager extends EventEmitter {
       
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+
+      // Auto-repair once for common local config incompatibilities.
+      // This prevents "Start Gateway" from getting stuck due to stale keys/version stamps.
+      if (!this.autoRepairTried) {
+        const reason = String(this.startupFailureReason || err.message || '');
+        const repaired = this.attemptConfigAutoRepair(reason);
+        if (repaired) {
+          this.autoRepairTried = true;
+          this.emit('log', 'warn', 'Detected incompatible config; auto-repaired and retrying gateway start once.');
+          if (this.process) {
+            try {
+              this.process.kill('SIGTERM');
+            } catch {
+              // ignore
+            }
+            this.process = null;
+          }
+          return this.doStart();
+        }
+      }
+
       this.status = { state: 'error', port: this.port, error: err.message };
       this.emit('error', err);
       this.emit('log', 'error', `Failed to start: ${err.message}`);
@@ -135,6 +207,98 @@ class GatewayLifecycleManager extends EventEmitter {
       }
       
       throw err;
+    } finally {
+      if (this.status.state === 'running') {
+        this.autoRepairTried = false;
+      }
+    }
+  }
+
+  private attemptConfigAutoRepair(reason: string): boolean {
+    try {
+      const runtimeHome = this.configHomeOverride || os.homedir();
+      const cfgPath = path.join(runtimeHome, '.openclaw', 'openclaw.json');
+      if (!fs.existsSync(cfgPath)) return false;
+
+      const raw = fs.readFileSync(cfgPath, 'utf8');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      let changed = false;
+
+      // 1) Remove schema-invalid setup flags if any.
+      if ('setupComplete' in cfg) {
+        delete (cfg as Record<string, unknown>).setupComplete;
+        changed = true;
+      }
+      const ui = cfg.ui && typeof cfg.ui === 'object' && !Array.isArray(cfg.ui)
+        ? (cfg.ui as Record<string, unknown>)
+        : {};
+      if ('setupComplete' in ui) {
+        delete ui.setupComplete;
+        changed = true;
+      }
+      cfg.ui = ui;
+
+      // 1.1) Remove schema-invalid models.default (OpenClaw 2026.2.x rejects this key).
+      const models = cfg.models && typeof cfg.models === 'object' && !Array.isArray(cfg.models)
+        ? (cfg.models as Record<string, unknown>)
+        : {};
+      if ('default' in models) {
+        delete models.default;
+        changed = true;
+      }
+      cfg.models = models;
+
+      // 2) Downgrade meta stamp when local OpenClaw reports config is from a newer version.
+      const versionMatch = reason.match(/current version is\s*([0-9]+\.[0-9]+\.[0-9]+)/i);
+      if (versionMatch?.[1]) {
+        const currentVersion = versionMatch[1];
+        const meta = cfg.meta && typeof cfg.meta === 'object' && !Array.isArray(cfg.meta)
+          ? (cfg.meta as Record<string, unknown>)
+          : {};
+        if (meta.lastTouchedVersion !== currentVersion) {
+          meta.lastTouchedVersion = currentVersion;
+          meta.lastTouchedAt = new Date().toISOString();
+          cfg.meta = meta;
+          changed = true;
+        }
+      }
+
+      if (!changed) return false;
+
+      const stamp = new Date().toISOString().replace(/[:]/g, '-');
+      const nextJson = JSON.stringify(cfg, null, 2);
+      let wrotePrimaryConfig = false;
+
+      try {
+        fs.copyFileSync(cfgPath, `${cfgPath}.bak.auto-repair.${stamp}`);
+      } catch {
+        // Best-effort backup only; do not block repair on backup permission issues.
+      }
+
+      try {
+        fs.writeFileSync(cfgPath, nextJson, 'utf8');
+        wrotePrimaryConfig = true;
+      } catch {
+        wrotePrimaryConfig = false;
+      }
+
+      if (!wrotePrimaryConfig) {
+        // Fallback for sandboxed/readonly home: run Gateway with an override HOME
+        // pointing to a writable temp config copy.
+        const tmpHome = path.join(os.tmpdir(), 'axonclaw-openclaw-home');
+        const tmpCfgDir = path.join(tmpHome, '.openclaw');
+        const tmpCfgPath = path.join(tmpCfgDir, 'openclaw.json');
+        fs.mkdirSync(tmpCfgDir, { recursive: true });
+        this.syncStateToOverrideHome(tmpHome);
+        fs.writeFileSync(tmpCfgPath, nextJson, 'utf8');
+        this.configHomeOverride = tmpHome;
+      } else if (!this.configHomeOverride) {
+        // Only clear override when we were writing to primary home.
+        this.configHomeOverride = null;
+      }
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -204,6 +368,9 @@ class GatewayLifecycleManager extends EventEmitter {
     const intervalMs = 500;
     
     for (let i = 0; i < maxAttempts; i++) {
+      if (this.startupFailureReason) {
+        throw new Error(this.startupFailureReason);
+      }
       // Check if process is still alive
       if (!this.process || this.process.killed) {
         throw new Error('Gateway process died during startup');
@@ -226,6 +393,121 @@ class GatewayLifecycleManager extends EventEmitter {
     }
     
     throw new Error(`Gateway startup timeout after ${(maxAttempts * intervalMs) / 1000}s`);
+  }
+
+  private mergeScopes(existing: unknown): string[] {
+    const current = Array.isArray(existing)
+      ? existing.map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    for (const scope of this.requiredOperatorScopes) {
+      if (!current.includes(scope)) current.push(scope);
+    }
+    return current;
+  }
+
+  private ensureOperatorScopesInHome(homeDir: string): boolean {
+    const pairedPath = path.join(homeDir, '.openclaw', 'devices', 'paired.json');
+    if (!fs.existsSync(pairedPath)) return false;
+
+    const raw = fs.readFileSync(pairedPath, 'utf8');
+    const json = JSON.parse(raw) as Record<string, Record<string, unknown>>;
+    if (!json || typeof json !== 'object') return false;
+
+    let changed = false;
+    for (const [deviceId, recRaw] of Object.entries(json)) {
+      const rec = (recRaw || {}) as Record<string, unknown>;
+      const role = String(rec.role || '').trim();
+      const clientId = String(rec.clientId || '').trim();
+      if (role !== 'operator' && clientId !== 'gateway-client') continue;
+
+      const nextScopes = this.mergeScopes(rec.scopes);
+      if (JSON.stringify(nextScopes) !== JSON.stringify(rec.scopes ?? [])) {
+        rec.scopes = nextScopes;
+        changed = true;
+      }
+
+      const nextApproved = this.mergeScopes(rec.approvedScopes);
+      if (JSON.stringify(nextApproved) !== JSON.stringify(rec.approvedScopes ?? [])) {
+        rec.approvedScopes = nextApproved;
+        changed = true;
+      }
+
+      const tokens = (rec.tokens && typeof rec.tokens === 'object' && !Array.isArray(rec.tokens))
+        ? (rec.tokens as Record<string, unknown>)
+        : {};
+      const opTokenRaw = (tokens.operator && typeof tokens.operator === 'object' && !Array.isArray(tokens.operator))
+        ? (tokens.operator as Record<string, unknown>)
+        : null;
+      if (opTokenRaw) {
+        const nextTokenScopes = this.mergeScopes(opTokenRaw.scopes);
+        if (JSON.stringify(nextTokenScopes) !== JSON.stringify(opTokenRaw.scopes ?? [])) {
+          opTokenRaw.scopes = nextTokenScopes;
+          tokens.operator = opTokenRaw;
+          rec.tokens = tokens;
+          changed = true;
+        }
+      }
+
+      json[deviceId] = rec;
+    }
+
+    if (!changed) return false;
+    fs.writeFileSync(pairedPath, JSON.stringify(json, null, 2), 'utf8');
+    return true;
+  }
+
+  private syncStateToOverrideHome(tmpHome: string): void {
+    const srcRoot = path.join(os.homedir(), '.openclaw');
+    const dstRoot = path.join(tmpHome, '.openclaw');
+    if (!fs.existsSync(srcRoot)) return;
+    fs.mkdirSync(dstRoot, { recursive: true });
+
+    const copyIfMissing = (from: string, to: string) => {
+      if (!fs.existsSync(from) || fs.existsSync(to)) return;
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.cpSync(from, to, { recursive: true });
+    };
+
+    copyIfMissing(path.join(srcRoot, 'agents'), path.join(dstRoot, 'agents'));
+    copyIfMissing(path.join(srcRoot, 'devices'), path.join(dstRoot, 'devices'));
+    copyIfMissing(path.join(srcRoot, 'identity'), path.join(dstRoot, 'identity'));
+    copyIfMissing(path.join(srcRoot, 'workspace'), path.join(dstRoot, 'workspace'));
+    copyIfMissing(path.join(srcRoot, 'memory'), path.join(dstRoot, 'memory'));
+  }
+
+  repairOperatorScopesNow(): { changed: boolean; runtimeHome: string } {
+    const runtimeHome = this.configHomeOverride || os.homedir();
+    const changed = this.ensureOperatorScopesInHome(runtimeHome);
+    return { changed, runtimeHome };
+  }
+
+  relaxGatewayAuthForLocalNow(): { changed: boolean; runtimeHome: string } {
+    const runtimeHome = this.configHomeOverride || os.homedir();
+    const cfgPath = path.join(runtimeHome, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return { changed: false, runtimeHome };
+    const raw = fs.readFileSync(cfgPath, 'utf8');
+    const cfg = JSON.parse(raw) as Record<string, unknown>;
+    const gateway = (cfg.gateway && typeof cfg.gateway === 'object' && !Array.isArray(cfg.gateway))
+      ? (cfg.gateway as Record<string, unknown>)
+      : {};
+    const auth = (gateway.auth && typeof gateway.auth === 'object' && !Array.isArray(gateway.auth))
+      ? (gateway.auth as Record<string, unknown>)
+      : {};
+    let changed = false;
+    if (String(auth.mode || '').trim().toLowerCase() !== 'token') {
+      auth.mode = 'token';
+      changed = true;
+    }
+    if (String(auth.token || '').trim().length === 0) {
+      auth.token = GATEWAY_TOKEN;
+      changed = true;
+    }
+    gateway.auth = auth;
+    cfg.gateway = gateway;
+    if (changed) {
+      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+    }
+    return { changed, runtimeHome };
   }
 }
 
@@ -268,6 +550,14 @@ export function isGatewayRunning(): boolean {
  */
 export function getGatewayManager(): GatewayLifecycleManager {
   return gatewayLifecycle;
+}
+
+export function repairGatewayOperatorScopes(): { changed: boolean; runtimeHome: string } {
+  return gatewayLifecycle.repairOperatorScopesNow();
+}
+
+export function relaxGatewayLocalAuth(): { changed: boolean; runtimeHome: string } {
+  return gatewayLifecycle.relaxGatewayAuthForLocalNow();
 }
 
 // Re-export types

@@ -10,7 +10,7 @@
     "icon": "restaurant",
     "color": "from-red-500 to-pink-500",
     "tags": ["meals", "recipes", "cooking", "planning"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "newbie": true,
     "costTier": "low"
   },

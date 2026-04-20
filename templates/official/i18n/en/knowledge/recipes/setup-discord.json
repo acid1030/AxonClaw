@@ -1,6 +1,6 @@
 {
   "name": "Connect Discord",
-  "description": "Create a Discord Bot and connect it to OpenClaw gateway via ClawDeckX",
+  "description": "Create a Discord Bot and connect it to OpenClaw gateway via AxonClawX",
   "content": {
     "body": "A Discord Bot needs to be created in the Discord Developer Portal to obtain a Token.\n\n**Prerequisites:**\n- A Discord account\n- A Discord server you manage (to invite the Bot)\n- OpenClaw gateway running with model configured",
     "steps": [
@@ -17,7 +17,7 @@
         "description": "Select \"OAuth2\" → \"URL Generator\" in the left sidebar → Check bot and applications.commands → Under Bot Permissions, check Send Messages, Read Message History, Add Reactions → Copy the generated URL, open it in a browser, select your server and authorize."
       },
       {
-        "title": "Configure in ClawDeckX",
+        "title": "Configure in AxonClawX",
         "description": "Go to Config Center → Channels → Click \"Add Channel\" → Select Discord. Paste the Bot Token in the Token field. If you want the Bot to work only in a specific server, you can fill in the guildId."
       },
       {

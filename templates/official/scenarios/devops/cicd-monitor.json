@@ -10,7 +10,7 @@
     "icon": "rocket_launch",
     "color": "from-blue-500 to-indigo-500",
     "tags": ["cicd", "deployment", "monitoring", "devops"],
-    "author": "ClawDeckX Team",
+    "author": "AxonClawX Team",
     "newbie": false,
     "costTier": "low"
   },

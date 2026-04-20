@@ -18,7 +18,7 @@
 | 隐私/遥测开关 | COMPETITOR_ANALYSIS | PIPELINE-2.4 |
 | 多 Channel 配置 | COMPETITOR_ANALYSIS | PIPELINE-2.2 |
 
-### 1.2 从 ClawDeckX 学习报告
+### 1.2 从 AxonClawX 学习报告
 
 | 借鉴项 | 参考组件 | 集成到任务 |
 |--------|----------|------------|
@@ -29,7 +29,7 @@
 | 服务层封装模式 | services/*.ts | 已有，待完善 |
 | 国际化 13 语言 | locales/*.ts | PIPELINE-2.3 |
 
-### 1.3 从 ClawDeckX 综合分析
+### 1.3 从 AxonClawX 综合分析
 
 | 借鉴项 | 决策 | 集成到任务 |
 |--------|------|------------|
@@ -97,7 +97,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | 无 |
-| **参考** | ClawDeckX StepWizard, COMPETITOR_ANALYSIS |
+| **参考** | AxonClawX StepWizard, COMPETITOR_ANALYSIS |
 | **子任务** | |
 | T1.1.1 | [ ] 创建 StepWizard 组件（多步骤、进度、验证） |
 | T1.1.2 | [ ] 步骤 1：欢迎页 + 产品介绍 |
@@ -125,7 +125,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | PIPELINE-1.2 |
-| **参考** | ClawDeckX ToolsCatalog.tsx |
+| **参考** | AxonClawX ToolsCatalog.tsx |
 | **子任务** | |
 | T1.3.1 | [ ] 技能分类浏览（按类别/标签） |
 | T1.3.2 | [ ] 搜索/过滤 UI |
@@ -139,7 +139,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | PIPELINE-1.2 |
-| **参考** | ClawDeckX CronBuilder, 已有 CronBuilder.tsx |
+| **参考** | AxonClawX CronBuilder, 已有 CronBuilder.tsx |
 | **子任务** | |
 | T1.4.1 | [ ] CronBuilder 集成到 CronView |
 | T1.4.2 | [ ] 预设模板（每小时/每天/每周） |
@@ -181,7 +181,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | 无 |
-| **参考** | ClawDeckX locales/, 已有 i18n.ts |
+| **参考** | AxonClawX locales/, 已有 i18n.ts |
 | **子任务** | |
 | T2.3.1 | [ ] 完善 i18n 框架（zh, en 完整翻译） |
 | T2.3.2 | [ ] 主界面文案替换为 t() |
@@ -205,7 +205,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | 无 |
-| **参考** | ClawDeckX ConfigDiffView.tsx |
+| **参考** | AxonClawX ConfigDiffView.tsx |
 | **子任务** | |
 | T2.5.1 | [ ] ConfigDiffView 组件（Git 风格 diff） |
 | T2.5.2 | [ ] 新增/修改/删除高亮 |
@@ -216,7 +216,7 @@
 | 字段 | 内容 |
 |------|------|
 | **依赖** | PIPELINE-1.2 |
-| **参考** | ClawDeckX Doctor.tsx 简化版, HealthDot |
+| **参考** | AxonClawX Doctor.tsx 简化版, HealthDot |
 | **子任务** | |
 | T2.6.1 | [ ] HealthDot 健康指示器组件 |
 | T2.6.2 | [ ] 诊断项：Node 版本、Gateway 连接、配置验证、端口 |
@@ -409,7 +409,7 @@
 | DEVELOPMENT_PLAN_CONSOLIDATED.md | 开发计划主文档 |
 | AXONCLAW_FEATURE_SPEC.md | 功能规格 |
 | COMPETITOR_ANALYSIS.md | ClawX 竞品分析 |
-| CLAWDECKX_ANALYSIS.md | ClawDeckX 学习 |
+| AXONCLAWX_ANALYSIS.md | AxonClawX 学习 |
 | COMPREHENSIVE_ANALYSIS.md | 综合分析 |
 | DESIGN_GUIDELINES.md | UI 设计规范 |
 

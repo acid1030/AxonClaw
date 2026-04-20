@@ -1,8 +1,10 @@
-// AxonClaw - Main Process Entry Point
+// AxonClawX - Main Process Entry Point
 // Electron Main Process
 
-import { app, BrowserWindow, ipcMain, shell, clipboard, nativeImage } from 'electron';
-import { createHash } from 'crypto';
+import { app, BrowserWindow, ipcMain, shell, clipboard, nativeImage, session, dialog } from 'electron';
+import { createHash, randomBytes } from 'crypto';
+import * as http from 'http';
+import type { Server as HttpServer, IncomingMessage, ServerResponse } from 'http';
 
 // 捕获 EPIPE 等写入已关闭管道错误，避免未处理异常导致进程退出
 process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
@@ -26,6 +28,9 @@ import {
   getGatewayStatus,
   isGatewayRunning,
   getGatewayManager,
+  repairGatewayOperatorScopes,
+  relaxGatewayLocalAuth,
+  type GatewayStatus,
 } from '../gateway/lifecycle';
 import {
   listInstalled,
@@ -37,6 +42,7 @@ import {
   scanSkillsFromDir,
 } from '../gateway/clawhub-cli';
 import { callGatewayRpc, callGatewayRpcWithRetry } from '../gateway/rpc';
+import { buildSignedGatewayDevice } from '../gateway/device-auth';
 import {
   resolveGatewayPort,
   getResolvedGatewayPort,
@@ -53,6 +59,10 @@ import {
   alertSummaryStats,
   getSetting,
   setSetting,
+  listTaskRuns,
+  upsertTaskRun,
+  deleteTaskRun,
+  deleteFinishedTaskRuns,
   loadBootstrapConfig,
   saveBootstrapConfig,
   getConfigFilePath,
@@ -61,6 +71,24 @@ import {
 
 // Global window reference
 let mainWindow: BrowserWindow | null = null;
+let codexAuthWindow: BrowserWindow | null = null;
+const CODEX_AUTH_PARTITION_PERSIST = 'persist:codex-auth';
+let currentCodexAuthPartition = CODEX_AUTH_PARTITION_PERSIST;
+type PendingProviderOAuthState = {
+  provider: string;
+  accountId: string;
+  label?: string;
+  mode?: 'legacy-session' | 'openai-codex-oauth';
+  oauthState?: string;
+  pkceVerifier?: string;
+  authorizationUrl?: string;
+  startedAt?: number;
+};
+
+let pendingProviderOAuth: PendingProviderOAuthState | null = null;
+let pendingProviderOAuthWatcher: NodeJS.Timeout | null = null;
+let pendingProviderOAuthChecking = false;
+let pendingProviderOAuthCallbackServer: HttpServer | null = null;
 let appLocked = false;
 
 const LOCK_AUTH_USERNAME_KEY = 'auth.lock.username';
@@ -72,6 +100,961 @@ const GW_REMOTE_PROTOCOL_KEY = 'gateway.remote.protocol';
 const GW_REMOTE_HOST_KEY = 'gateway.remote.host';
 const GW_REMOTE_PORT_KEY = 'gateway.remote.port';
 const GW_REMOTE_TOKEN_KEY = 'gateway.remote.token';
+
+function pushGatewayRuntimeLog(level: 'info' | 'warn' | 'error' | 'debug', message: string): void {
+  safeSendToRenderer('app:gateway-log', {
+    time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    level: level.toUpperCase(),
+    agent: 'Gateway',
+    message,
+  });
+}
+
+function readRecentGatewayLogLines(limit = 120): string[] {
+  const dirs = [
+    process.platform === 'win32' ? path.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw',
+    path.join(os.homedir(), '.openclaw', 'logs'),
+  ];
+  const collected: Array<{ mtime: number; lines: string[] }> = [];
+
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir)
+        .filter((f) => f.endsWith('.log'))
+        .map((f) => path.join(dir, f));
+      for (const full of files) {
+        try {
+          const st = fs.statSync(full);
+          if (!st.isFile()) continue;
+          const lines = fs.readFileSync(full, 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .slice(-limit);
+          collected.push({ mtime: st.mtimeMs, lines });
+        } catch {
+          // ignore individual file failures
+        }
+      }
+    } catch {
+      // ignore directory failures
+    }
+  }
+
+  if (collected.length === 0) return [];
+  collected.sort((a, b) => b.mtime - a.mtime);
+  return collected[0].lines.slice(-limit);
+}
+
+async function startGatewayWithSelfHeal(): Promise<GatewayStatus & {
+  startSuccess: boolean;
+  selfHealTried?: boolean;
+  selfHealSucceeded?: boolean;
+  diagnostics?: string[];
+  logTail?: string[];
+}> {
+  try {
+    await startGateway();
+    let probe = await callGatewayRpcWithRetry('sessions.list', {}, 12000);
+    if (probe.ok) {
+      return { ...getGatewayStatus(), startSuccess: true };
+    }
+    const probeError = String(probe.error || '');
+    if (!/missing scope|device-required|unauthorized|auth/i.test(probeError)) {
+      return { ...getGatewayStatus(), startSuccess: true };
+    }
+    const diagnostics: string[] = [`startup probe failed: ${probeError}`];
+    pushGatewayRuntimeLog('warn', `Gateway probe failed after startup: ${probeError}`);
+    const repairedScopes = repairGatewayOperatorScopes();
+    diagnostics.push(`scope repair after probe: changed=${repairedScopes.changed} home=${repairedScopes.runtimeHome}`);
+    const relaxedAuth = relaxGatewayLocalAuth();
+    diagnostics.push(`local auth relax after probe: changed=${relaxedAuth.changed} home=${relaxedAuth.runtimeHome}`);
+    try {
+      await stopGateway();
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    await startGateway();
+    probe = await callGatewayRpcWithRetry('sessions.list', {}, 12000);
+    if (!probe.ok) {
+      const finalErr = String(probe.error || 'gateway probe failed after self-heal');
+      const logTail = readRecentGatewayLogLines(120);
+      diagnostics.push(`probe after self-heal failed: ${finalErr}`);
+      return {
+        ...getGatewayStatus(),
+        state: 'error',
+        error: finalErr,
+        startSuccess: false,
+        selfHealTried: true,
+        selfHealSucceeded: false,
+        diagnostics,
+        logTail,
+      };
+    }
+    diagnostics.push('probe after self-heal succeeded');
+    return {
+      ...getGatewayStatus(),
+      startSuccess: true,
+      selfHealTried: true,
+      selfHealSucceeded: true,
+      diagnostics,
+    };
+  } catch (error) {
+    const firstError = String(error);
+    const diagnostics: string[] = [`initial start failed: ${firstError}`];
+    pushGatewayRuntimeLog('error', `Start failed: ${firstError}`);
+
+    let selfHealSucceeded = false;
+    try {
+      sanitizeSetupCompleteKeysInConfig();
+      diagnostics.push('applied config sanitizer (setupComplete cleanup)');
+
+      const repaired = repairGatewayOperatorScopes();
+      diagnostics.push(`operator scope repair: changed=${repaired.changed} home=${repaired.runtimeHome}`);
+
+      try {
+        await stopGateway();
+        diagnostics.push('stopped existing gateway process before retry');
+      } catch (stopErr) {
+        diagnostics.push(`stop before retry skipped: ${String(stopErr)}`);
+      }
+
+      await new Promise((r) => setTimeout(r, 500));
+      await startGateway();
+      selfHealSucceeded = true;
+      diagnostics.push('self-heal restart succeeded');
+      pushGatewayRuntimeLog('info', 'Gateway self-heal succeeded after startup failure');
+      return {
+        ...getGatewayStatus(),
+        startSuccess: true,
+        selfHealTried: true,
+        selfHealSucceeded: true,
+        diagnostics,
+      };
+    } catch (healErr) {
+      const finalError = String(healErr);
+      diagnostics.push(`self-heal retry failed: ${finalError}`);
+      const logTail = readRecentGatewayLogLines(120);
+      if (logTail.length > 0) {
+        pushGatewayRuntimeLog('warn', `Startup failed. Recent log tail lines: ${logTail.length}`);
+        for (const line of logTail.slice(-40)) {
+          pushGatewayRuntimeLog('debug', line);
+        }
+      }
+      return {
+        ...getGatewayStatus(),
+        state: 'error',
+        error: finalError,
+        startSuccess: false,
+        selfHealTried: true,
+        selfHealSucceeded,
+        diagnostics,
+        logTail,
+      };
+    }
+  }
+}
+
+function isWriteRpcMethod(method: string): boolean {
+  const m = String(method || '').trim();
+  if (!m) return false;
+  if (m === 'chat.send' || m === 'chat.abort') return true;
+  if (m.startsWith('agents.')) return true;
+  if (m.startsWith('sessions.') && m !== 'sessions.list' && m !== 'sessions.history') return true;
+  if (m.startsWith('cron.') && m !== 'cron.list' && m !== 'cron.history') return true;
+  if (m.startsWith('channels.') || m.startsWith('providers.') || m.startsWith('skills.')) return true;
+  return false;
+}
+
+function normalizeModelAlias(rawValue: string): string {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+
+  const normalizeLeaf = (leaf: string): string => {
+    let next = String(leaf || '').trim().replace(/cdoex/gi, 'codex');
+    if (/^\d+(?:\.\d+)?-codex$/i.test(next)) {
+      next = `gpt-${next}`;
+    }
+    return next;
+  };
+
+  if (raw.includes('/')) {
+    const [provider, ...rest] = raw.split('/');
+    if (!provider || rest.length === 0) return normalizeLeaf(raw);
+    const normalizedProvider = normalizeProviderAlias(provider);
+    return `${normalizedProvider || provider}/${normalizeLeaf(rest.join('/'))}`;
+  }
+  return normalizeLeaf(raw);
+}
+
+function normalizeModelCommandMessage(rawMessage: string): string {
+  const text = String(rawMessage || '').trim();
+  if (!text.toLowerCase().startsWith('/model ')) return rawMessage;
+  const modelRaw = text.slice('/model '.length).trim();
+  const normalizedModel = normalizeModelAlias(modelRaw);
+  if (!normalizedModel || normalizedModel === modelRaw) return rawMessage;
+  return `/model ${normalizedModel}`;
+}
+
+function allocEphemeralCodexAuthPartition(): string {
+  return `codex-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getCurrentCodexAuthSession() {
+  return session.fromPartition(currentCodexAuthPartition);
+}
+
+async function clearCodexAuthSession(partitionName?: string): Promise<void> {
+  const authSession = session.fromPartition(partitionName || currentCodexAuthPartition);
+  try {
+    await authSession.clearStorageData();
+  } catch (err) {
+    console.warn('[OAuth] clearStorageData failed:', err);
+  }
+  try {
+    await authSession.clearCache();
+  } catch {
+    // ignore cache clear errors
+  }
+  try {
+    const cookies = await authSession.cookies.get({});
+    for (const cookie of cookies) {
+      const domain = String(cookie.domain || '').replace(/^\./, '').trim();
+      if (!domain) continue;
+      const scheme = cookie.secure ? 'https' : 'http';
+      const cookiePath = String(cookie.path || '/').startsWith('/') ? String(cookie.path || '/') : '/';
+      const url = `${scheme}://${domain}${cookiePath}`;
+      try {
+        await authSession.cookies.remove(url, cookie.name);
+      } catch {
+        // ignore per-cookie delete errors
+      }
+    }
+  } catch (err) {
+    console.warn('[OAuth] clear cookies failed:', err);
+  }
+}
+
+const OPENAI_CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const OPENAI_CODEX_AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
+const OPENAI_CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+const OPENAI_CODEX_REDIRECT_URI = 'http://localhost:1455/auth/callback';
+const OPENAI_CODEX_SCOPE = 'openid profile email offline_access';
+const OPENAI_CODEX_JWT_CLAIM_PATH = 'https://api.openai.com/auth';
+
+function toBase64Url(value: Buffer): string {
+  return value.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function decodeBase64UrlToUtf8(input: string): string | null {
+  try {
+    const base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+    const padLen = (4 - (base64.length % 4)) % 4;
+    const padded = base64 + '='.repeat(padLen);
+    return Buffer.from(padded, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+function buildOpenAiCodexPkce(): { verifier: string; challenge: string } {
+  const verifier = toBase64Url(randomBytes(32));
+  const challenge = toBase64Url(createHash('sha256').update(verifier).digest());
+  return { verifier, challenge };
+}
+
+function buildOpenAiCodexAuthorizeUrl(params: { state: string; challenge: string; originator?: string }): string {
+  const url = new URL(OPENAI_CODEX_AUTHORIZE_URL);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', OPENAI_CODEX_OAUTH_CLIENT_ID);
+  url.searchParams.set('redirect_uri', OPENAI_CODEX_REDIRECT_URI);
+  url.searchParams.set('scope', OPENAI_CODEX_SCOPE);
+  url.searchParams.set('code_challenge', params.challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('state', params.state);
+  url.searchParams.set('id_token_add_organizations', 'true');
+  url.searchParams.set('codex_cli_simplified_flow', 'true');
+  url.searchParams.set('originator', params.originator || 'pi');
+  return url.toString();
+}
+
+function parseOpenAiOAuthCodeInput(input: string): { code?: string; state?: string } {
+  const value = String(input || '').trim();
+  if (!value) return {};
+
+  try {
+    const parsed = new URL(value);
+    return {
+      code: parsed.searchParams.get('code') || undefined,
+      state: parsed.searchParams.get('state') || undefined,
+    };
+  } catch {
+    // ignore
+  }
+
+  if (value.includes('#')) {
+    const [code, state] = value.split('#', 2);
+    return { code: code?.trim(), state: state?.trim() };
+  }
+
+  if (value.includes('code=')) {
+    const search = value.startsWith('?') ? value.slice(1) : value;
+    const params = new URLSearchParams(search);
+    return {
+      code: params.get('code') || undefined,
+      state: params.get('state') || undefined,
+    };
+  }
+
+  return { code: value };
+}
+
+function extractOpenAiCodexAccountIdFromToken(token: string): string | null {
+  try {
+    const value = String(token || '').trim();
+    const parts = value.split('.');
+    if (parts.length !== 3) return null;
+    const payloadRaw = decodeBase64UrlToUtf8(parts[1] || '');
+    if (!payloadRaw) return null;
+    const payload = JSON.parse(payloadRaw) as Record<string, unknown>;
+    const authClaimRaw = payload[OPENAI_CODEX_JWT_CLAIM_PATH];
+    const authClaim = (authClaimRaw && typeof authClaimRaw === 'object' && !Array.isArray(authClaimRaw))
+      ? (authClaimRaw as Record<string, unknown>)
+      : null;
+    const accountId = String(
+      authClaim?.chatgpt_account_id
+      || authClaim?.account_id
+      || payload.chatgpt_account_id
+      || payload.account_id
+      || payload.user_id
+      || payload.sub
+      || '',
+    ).trim();
+    return accountId || null;
+  } catch {
+    return null;
+  }
+}
+
+function extractOpenAiCodexEmailFromToken(token: string): string | null {
+  try {
+    const value = String(token || '').trim();
+    const parts = value.split('.');
+    if (parts.length !== 3) return null;
+    const payloadRaw = decodeBase64UrlToUtf8(parts[1] || '');
+    if (!payloadRaw) return null;
+    const payload = JSON.parse(payloadRaw) as Record<string, unknown>;
+    const email = String(payload.email || '').trim();
+    return email || null;
+  } catch {
+    return null;
+  }
+}
+
+function stopPendingProviderOAuthCallbackServer(): void {
+  if (!pendingProviderOAuthCallbackServer) return;
+  try {
+    pendingProviderOAuthCallbackServer.close();
+  } catch {
+    // ignore close errors
+  }
+  pendingProviderOAuthCallbackServer = null;
+}
+
+function ensureOpenAiCodexOAuthProfile(params: {
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresInSec?: number | null;
+  email?: string | null;
+  accountId?: string | null;
+}): { profileId: string; expiresAt: number } {
+  const profileId = 'openai-codex:default';
+  const token = String(params.accessToken || '').trim();
+  if (!token) throw new Error('Missing OpenAI Codex access token');
+
+  const authPath = getMainAgentAuthProfilesPath();
+  const dir = nodePath.dirname(authPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let doc: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(authPath)) {
+      doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    }
+  } catch {
+    doc = {};
+  }
+
+  const profiles = ensureRecord(doc.profiles);
+  const order = ensureRecord(doc.order);
+  const lastGood = ensureRecord(doc.lastGood);
+  const usageStats = ensureRecord(doc.usageStats);
+  const expiresIn = Number.isFinite(Number(params.expiresInSec)) ? Number(params.expiresInSec) : 3600;
+  const expiresAt = Date.now() + Math.max(60, Math.floor(expiresIn)) * 1000;
+
+  const oauthProfile: Record<string, unknown> = {
+    type: 'oauth',
+    provider: 'openai-codex',
+    access: token,
+    expires: expiresAt,
+  };
+  const refresh = String(params.refreshToken || '').trim();
+  if (refresh) oauthProfile.refresh = refresh;
+  const accountId = String(params.accountId || '').trim();
+  if (accountId) oauthProfile.accountId = accountId;
+  const email = String(params.email || '').trim();
+  if (email) oauthProfile.email = email;
+
+  profiles[profileId] = oauthProfile;
+  const currentOrder = Array.isArray(order['openai-codex'])
+    ? (order['openai-codex'] as unknown[]).map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  order['openai-codex'] = [profileId, ...currentOrder.filter((id) => id !== profileId)];
+  lastGood['openai-codex'] = profileId;
+  usageStats[profileId] = {
+    errorCount: 0,
+    lastUsed: Date.now(),
+  };
+
+  const next = {
+    ...doc,
+    version: 1,
+    profiles,
+    order,
+    lastGood,
+    usageStats,
+  };
+  fs.writeFileSync(authPath, JSON.stringify(next, null, 2), 'utf8');
+  return { profileId, expiresAt };
+}
+
+function readOpenAiCodexOAuthProfileState(): {
+  success: boolean;
+  accessToken: string | null;
+  status: number;
+  loginInfo: { loggedIn: boolean; email?: string; userId?: string };
+  error?: string;
+} {
+  try {
+    const authPath = getMainAgentAuthProfilesPath();
+    if (!fs.existsSync(authPath)) {
+      return {
+        success: false,
+        accessToken: null,
+        status: 404,
+        loginInfo: { loggedIn: false },
+        error: 'No OpenAI OAuth profile found',
+      };
+    }
+
+    const doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    const order = ensureRecord(doc.order);
+    const orderedIds = Array.isArray(order['openai-codex'])
+      ? (order['openai-codex'] as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+
+    const candidateIds = Array.from(new Set([
+      ...orderedIds,
+      ...Object.keys(profiles),
+    ]));
+
+    for (const profileId of candidateIds) {
+      const profile = ensureRecord(profiles[profileId]);
+      const provider = String(profile.provider || '').trim().toLowerCase();
+      if (provider !== 'openai-codex' && provider !== 'openai') continue;
+      if (String(profile.type || '').trim() !== 'oauth') continue;
+      const accessToken = String(profile.access || '').trim();
+      if (!accessToken) continue;
+      const accountIdFromToken = extractOpenAiCodexAccountIdFromToken(accessToken);
+
+      const expires = Number(profile.expires);
+      if (Number.isFinite(expires) && expires > 0 && Date.now() >= expires) {
+        return {
+          success: false,
+          accessToken: null,
+          status: 401,
+          loginInfo: { loggedIn: false },
+          error: 'OpenAI OAuth token expired. Please login again.',
+        };
+      }
+
+      const email = String(profile.email || '').trim();
+      const accountId = String(profile.accountId || '').trim();
+      const userId = accountId || accountIdFromToken || undefined;
+      return {
+        success: true,
+        accessToken,
+        status: 200,
+        loginInfo: {
+          loggedIn: true,
+          ...(email ? { email } : {}),
+          ...(userId ? { userId } : {}),
+        },
+      };
+    }
+
+    return {
+      success: false,
+      accessToken: null,
+      status: 404,
+      loginInfo: { loggedIn: false },
+      error: 'No OpenAI OAuth profile found',
+    };
+  } catch (err) {
+    return {
+      success: false,
+      accessToken: null,
+      status: 500,
+      loginInfo: { loggedIn: false },
+      error: String(err),
+    };
+  }
+}
+
+function ensureOpenAiCodexProviderConfig(params?: {
+  accountId?: string | null;
+  label?: string | null;
+  makeDefault?: boolean;
+}): { providerId: string; primaryModel: string; fallbackModels: string[] } {
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const providers = ensureRecord(models.providers);
+
+  const requested = String(params?.accountId || '').trim();
+  const providerId = requested && requested.toLowerCase().includes('codex')
+    ? requested
+    : 'openai-codex';
+  const nowIso = new Date().toISOString();
+  const existing = ensureRecord(providers[providerId]);
+
+  const modelEntries = asModelArray(existing.models);
+  const modelSet = new Set(modelEntries.map((m) => m.id));
+  for (const id of ['gpt-5.3-codex', 'gpt-5.2-codex']) {
+    if (!modelSet.has(id)) {
+      modelEntries.push({ id, name: id });
+      modelSet.add(id);
+    }
+  }
+
+  const nextProvider: Record<string, unknown> = {
+    ...existing,
+    accountId: providerId,
+    vendorId: 'openai',
+    label: String(params?.label || existing.label || 'OpenAI Codex').trim() || 'OpenAI Codex',
+    authMode: 'oauth_browser',
+    baseUrl: 'https://chatgpt.com/backend-api',
+    api: 'openai-codex-responses',
+    apiProtocol: 'openai-codex-responses',
+    model: 'gpt-5.3-codex',
+    models: modelEntries,
+    enabled: existing.enabled !== false,
+    createdAt: existing.createdAt || nowIso,
+    updatedAt: nowIso,
+  };
+  if ('apiKey' in nextProvider) delete nextProvider.apiKey;
+  providers[providerId] = nextProvider;
+  models.providers = providers;
+  if (!models.mode) models.mode = 'merge';
+  cfg.models = models;
+
+  const agents = ensureRecord(cfg.agents);
+  const defaults = ensureRecord(agents.defaults);
+  const modelCfg = ensureRecord(defaults.model);
+  const primaryModel = `${providerId}/gpt-5.3-codex`;
+  const fallbackFromProvider = `${providerId}/gpt-5.2-codex`;
+  const fallbackList = Array.isArray(modelCfg.fallbacks)
+    ? (modelCfg.fallbacks as unknown[]).map((x) => String(x || '').trim()).filter(Boolean)
+    : [];
+  modelCfg.primary = primaryModel;
+  modelCfg.fallbacks = Array.from(new Set([fallbackFromProvider, ...fallbackList.filter((x) => x !== primaryModel)]));
+  defaults.model = modelCfg;
+  agents.defaults = defaults;
+  cfg.agents = agents;
+
+  cfg.meta = {
+    ...ensureRecord(cfg.meta),
+    lastTouchedAt: nowIso,
+  };
+  writeOpenclawConfig(cfg);
+
+  if (params?.makeDefault !== false) {
+    writeDefaultProviderAccountId(providerId);
+  }
+
+  return {
+    providerId,
+    primaryModel,
+    fallbackModels: Array.isArray(modelCfg.fallbacks) ? (modelCfg.fallbacks as string[]) : [fallbackFromProvider],
+  };
+}
+
+async function exchangeOpenAiCodexAuthorizationCode(params: {
+  code: string;
+  verifier: string;
+}): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}> {
+  const formatOAuthErrorMessage = (
+    payload: Record<string, unknown> | null,
+    rawText: string,
+    status: number,
+  ): string => {
+    const directDescription = String(payload?.error_description || '').trim();
+    if (directDescription) return directDescription;
+
+    const directError = payload?.error;
+    if (typeof directError === 'string' && directError.trim()) {
+      return directError.trim();
+    }
+    if (directError && typeof directError === 'object' && !Array.isArray(directError)) {
+      const errorObj = directError as Record<string, unknown>;
+      const message = String(errorObj.message || errorObj.error_description || '').trim();
+      const code = String(errorObj.code || errorObj.type || errorObj.error || '').trim();
+      const requestId = String(
+        errorObj.request_id
+          || errorObj.requestId
+          || errorObj['request-id']
+          || '',
+      ).trim();
+      const parts = [message || code || 'OAuth token exchange failed'];
+      if (code && message && code !== message) parts.push(`code=${code}`);
+      if (requestId) parts.push(`requestId=${requestId}`);
+      return parts.join(' | ');
+    }
+
+    const fromTopLevelRequestId = String(
+      payload?.request_id
+      || payload?.requestId
+      || payload?.['request-id']
+      || '',
+    ).trim();
+    if (fromTopLevelRequestId) {
+      return `requestId=${fromTopLevelRequestId}`;
+    }
+
+    const compactRaw = String(rawText || '').trim();
+    if (compactRaw) {
+      if (compactRaw.length > 1000) return `${compactRaw.slice(0, 1000)}…`;
+      return compactRaw;
+    }
+    return `HTTP ${status}`;
+  };
+
+  const requestBody = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: OPENAI_CODEX_OAUTH_CLIENT_ID,
+    code: params.code,
+    code_verifier: params.verifier,
+    redirect_uri: OPENAI_CODEX_REDIRECT_URI,
+  });
+
+  let response: Response;
+  let networkMode: 'electron-session' | 'node-fetch' = 'node-fetch';
+  try {
+    const electronFetch = session.defaultSession?.fetch;
+    if (typeof electronFetch === 'function') {
+      networkMode = 'electron-session';
+      response = await electronFetch(OPENAI_CODEX_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: requestBody,
+      });
+    } else {
+      response = await fetch(OPENAI_CODEX_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: requestBody,
+      });
+    }
+  } catch (err) {
+    networkMode = 'node-fetch';
+    response = await fetch(OPENAI_CODEX_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: requestBody,
+    });
+    console.warn('[OAuth] electron session fetch failed, fallback to node fetch:', err);
+  }
+
+  const rawText = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(rawText) as Record<string, unknown>;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const message = formatOAuthErrorMessage(payload, rawText, response.status);
+    let proxyInfo = '';
+    try {
+      const resolvedProxy = await session.defaultSession?.resolveProxy?.(OPENAI_CODEX_TOKEN_URL);
+      proxyInfo = resolvedProxy ? ` proxy=${resolvedProxy}` : '';
+    } catch {
+      proxyInfo = '';
+    }
+    console.warn('[OAuth] token exchange failed:', {
+      status: response.status,
+      networkMode,
+      message,
+      payload,
+      proxyInfo,
+    });
+    throw new Error(`OpenAI OAuth token exchange failed: ${message}${proxyInfo ? ` |${proxyInfo.trim()}` : ''}`);
+  }
+
+  const accessToken = String(payload?.access_token || '').trim();
+  const refreshToken = String(payload?.refresh_token || '').trim();
+  const expiresInRaw = Number(payload?.expires_in);
+  const expiresIn = Number.isFinite(expiresInRaw) ? expiresInRaw : 3600;
+  if (!accessToken || !refreshToken) {
+    throw new Error('OpenAI OAuth token response missing access_token or refresh_token');
+  }
+
+  return { accessToken, refreshToken, expiresIn };
+}
+
+async function finalizePendingOpenAiOAuthByCode(
+  codeInput: string,
+  source: 'manual' | 'callback',
+): Promise<{
+  provider: string;
+  accountId: string;
+  loginInfo: { loggedIn: true; email?: string; userId?: string };
+  accessToken: string;
+}> {
+  const pending = pendingProviderOAuth;
+  if (!pending || pending.provider !== 'openai' || pending.mode !== 'openai-codex-oauth') {
+    throw new Error('No pending OpenAI OAuth flow');
+  }
+  const verifier = String(pending.pkceVerifier || '').trim();
+  const expectedState = String(pending.oauthState || '').trim();
+  if (!verifier || !expectedState) {
+    throw new Error('OpenAI OAuth state is invalid. Please restart login.');
+  }
+
+  const parsed = parseOpenAiOAuthCodeInput(codeInput);
+  const code = String(parsed.code || '').trim();
+  const incomingState = String(parsed.state || '').trim();
+  if (!code) {
+    throw new Error('Missing OAuth authorization code');
+  }
+  if (incomingState && incomingState !== expectedState) {
+    throw new Error('OAuth state mismatch. Please restart login.');
+  }
+
+  const exchanged = await exchangeOpenAiCodexAuthorizationCode({
+    code,
+    verifier,
+  });
+  const accountIdFromToken = extractOpenAiCodexAccountIdFromToken(exchanged.accessToken);
+  const email = extractOpenAiCodexEmailFromToken(exchanged.accessToken);
+  const userId = accountIdFromToken || undefined;
+
+  ensureOpenAiCodexOAuthProfile({
+    accessToken: exchanged.accessToken,
+    refreshToken: exchanged.refreshToken,
+    expiresInSec: exchanged.expiresIn,
+    email,
+    accountId: accountIdFromToken,
+  });
+  const providerCfg = ensureOpenAiCodexProviderConfig({
+    accountId: pending.accountId,
+    label: pending.label,
+    makeDefault: true,
+  });
+
+  const successPayload = {
+    provider: 'openai',
+    accountId: providerCfg.providerId,
+    loginInfo: {
+      loggedIn: true as const,
+      ...(email ? { email } : {}),
+      ...(userId ? { userId } : {}),
+    },
+    accessToken: exchanged.accessToken,
+  };
+
+  pendingProviderOAuth = null;
+  stopPendingProviderOAuthWatcher();
+  if (source === 'manual') {
+    stopPendingProviderOAuthCallbackServer();
+  }
+  safeSendToRenderer('oauth:success', successPayload);
+  return successPayload;
+}
+
+function startPendingProviderOAuthCallbackServer(): void {
+  stopPendingProviderOAuthCallbackServer();
+  const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+    try {
+      const url = new URL(req.url || '', 'http://localhost:1455');
+      if (url.pathname !== '/auth/callback') {
+        res.statusCode = 404;
+        res.end('Not found');
+        return;
+      }
+
+      const pending = pendingProviderOAuth;
+      if (!pending || pending.provider !== 'openai' || pending.mode !== 'openai-codex-oauth') {
+        res.statusCode = 410;
+        res.end('OAuth session expired');
+        return;
+      }
+
+      const expectedState = String(pending.oauthState || '').trim();
+      const state = String(url.searchParams.get('state') || '').trim();
+      const code = String(url.searchParams.get('code') || '').trim();
+      if (!code) {
+        res.statusCode = 400;
+        res.end('Missing authorization code');
+        return;
+      }
+      if (!expectedState || !state || state !== expectedState) {
+        res.statusCode = 400;
+        res.end('State mismatch');
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end('<!doctype html><html><body><p>Authentication successful. Return to AxonClawX.</p></body></html>');
+
+      void finalizePendingOpenAiOAuthByCode(code, 'callback').catch((err) => {
+        safeSendToRenderer('oauth:error', { message: String(err) });
+      }).finally(() => {
+        stopPendingProviderOAuthCallbackServer();
+      });
+    } catch (err) {
+      res.statusCode = 500;
+      res.end('OAuth callback error');
+      safeSendToRenderer('oauth:error', { message: String(err) });
+    }
+  });
+
+  server.on('error', (err) => {
+    console.warn('[OAuth] callback server failed:', err);
+    safeSendToRenderer('oauth:error', { message: `OAuth callback server error: ${String(err)}` });
+  });
+
+  // Do not force IPv4-only host here; allow localhost to resolve via IPv4/IPv6.
+  server.listen(1455);
+  pendingProviderOAuthCallbackServer = server;
+}
+
+async function openCodexAuthWindow(options?: { forceReauth?: boolean; url?: string; title?: string }): Promise<void> {
+  const forceReauth = Boolean(options?.forceReauth);
+
+  if (forceReauth) {
+    if (codexAuthWindow && !codexAuthWindow.isDestroyed()) {
+      codexAuthWindow.destroy();
+      codexAuthWindow = null;
+    }
+    const previousPartition = currentCodexAuthPartition;
+    currentCodexAuthPartition = allocEphemeralCodexAuthPartition();
+    await clearCodexAuthSession(previousPartition).catch(() => {});
+    await clearCodexAuthSession(CODEX_AUTH_PARTITION_PERSIST).catch(() => {});
+    await clearCodexAuthSession(currentCodexAuthPartition).catch(() => {});
+  }
+
+  const targetUrl = String(options?.url || '').trim()
+    || (forceReauth ? 'https://chatgpt.com/auth/login' : 'https://chatgpt.com');
+
+  if (codexAuthWindow && !codexAuthWindow.isDestroyed()) {
+    codexAuthWindow.focus();
+    void codexAuthWindow.loadURL(targetUrl).catch((err) => {
+      console.warn('[OAuth] failed to navigate auth window:', err);
+    });
+    return;
+  }
+
+  codexAuthWindow = new BrowserWindow({
+    width: 1180,
+    height: 840,
+    title: options?.title || 'OpenAI 登录',
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: currentCodexAuthPartition,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  codexAuthWindow.on('closed', () => {
+    codexAuthWindow = null;
+  });
+
+  void codexAuthWindow.loadURL(targetUrl).catch((err) => {
+    console.warn('[OAuth] failed to load login page:', err);
+  });
+}
+
+async function openOpenAiAuthorizationUrl(authorizationUrl: string, forceReauth = false): Promise<'external' | 'embedded'> {
+  const url = String(authorizationUrl || '').trim();
+  if (!url) throw new Error('Missing authorization URL');
+  try {
+    await shell.openExternal(url);
+    return 'external';
+  } catch (err) {
+    console.warn('[OAuth] failed to open external browser, fallback to embedded window:', err);
+    await openCodexAuthWindow({ forceReauth, url, title: 'OpenAI 登录' });
+    return 'embedded';
+  }
+}
+
+function stopPendingProviderOAuthWatcher(): void {
+  if (pendingProviderOAuthWatcher) {
+    clearInterval(pendingProviderOAuthWatcher);
+    pendingProviderOAuthWatcher = null;
+  }
+  pendingProviderOAuthChecking = false;
+}
+
+function startPendingProviderOAuthWatcher(): void {
+  stopPendingProviderOAuthWatcher();
+  const runOnce = async () => {
+    if (pendingProviderOAuthChecking) return;
+    if (!pendingProviderOAuth || pendingProviderOAuth.provider !== 'openai' || pendingProviderOAuth.mode !== 'legacy-session') {
+      stopPendingProviderOAuthWatcher();
+      return;
+    }
+    pendingProviderOAuthChecking = true;
+    try {
+      const tokenState = await readCodexSessionToken();
+      if (!tokenState.success) return;
+      const quick = applyCodexQuickConnect({
+        providerId: 'openai',
+        providerBaseUrl: 'https://api.openai.com/v1',
+        providerApi: 'openai-completions',
+        accessToken: tokenState.accessToken || undefined,
+        sessionPayload: tokenState.sessionPayload || undefined,
+      });
+      const successPayload = {
+        accountId: pendingProviderOAuth.accountId,
+        provider: 'openai',
+        loginInfo: tokenState.loginInfo,
+        ...quick,
+      };
+      safeSendToRenderer('oauth:success', successPayload);
+      pendingProviderOAuth = null;
+      stopPendingProviderOAuthWatcher();
+    } catch {
+      // ignore transient read failures
+    } finally {
+      pendingProviderOAuthChecking = false;
+    }
+  };
+
+  pendingProviderOAuthWatcher = setInterval(() => {
+    void runOnce();
+  }, 1500);
+  void runOnce();
+}
 
 function hashLockPassword(password: string): string {
   return createHash('sha256').update(`AxonClawX:${password}`).digest('hex');
@@ -94,6 +1077,12 @@ function verifyLockCredentials(username: string, password: string): boolean {
   return username === storedUsername && inputHash === storedHash;
 }
 
+function ensureDatabaseReady(): void {
+  if (isInitialized()) return;
+  initDatabase();
+  ensureLockAuthSeed();
+}
+
 type GatewayConnectionSettings = {
   mode: 'local' | 'remote';
   protocol: 'ws' | 'wss';
@@ -101,6 +1090,84 @@ type GatewayConnectionSettings = {
   port: number;
   token: string;
 };
+
+function readGatewayConnectionFromAxonConfig(axonCfg: Record<string, unknown>): Partial<GatewayConnectionSettings> {
+  const axon = ensureRecord(axonCfg);
+  const conn = ensureRecord(axon.gatewayConnection);
+  const mode = String(conn.mode || '').toLowerCase() === 'remote' ? 'remote' : 'local';
+  const protocol = String(conn.protocol || '').toLowerCase() === 'wss' ? 'wss' : 'ws';
+  const host = String(conn.host || '').trim();
+  const portRaw = Number(conn.port);
+  const token = String(conn.token || '').trim();
+  const port = Number.isFinite(portRaw) && portRaw > 0 && portRaw <= 65535 ? portRaw : undefined;
+  return { mode, protocol, host, port, token };
+}
+
+function persistGatewayConnectionToConfig(settings: Partial<GatewayConnectionSettings>): void {
+  const cfg = readAxonclawxConfig();
+  const axon = ensureRecord(cfg.axonclawx);
+  const prev = ensureRecord(axon.gatewayConnection);
+  const next: Record<string, unknown> = { ...prev };
+  if (typeof settings.mode === 'string') next.mode = settings.mode;
+  if (typeof settings.protocol === 'string') next.protocol = settings.protocol;
+  if (typeof settings.host === 'string') next.host = settings.host;
+  if (typeof settings.port === 'number' && Number.isFinite(settings.port)) next.port = settings.port;
+  if (typeof settings.token === 'string') next.token = settings.token;
+  axon.gatewayConnection = next;
+  axon.lastSetupAt = new Date().toISOString();
+  cfg.axonclawx = axon;
+  writeAxonclawxConfig(cfg);
+}
+
+function persistSetupCompleteToConfig(value: boolean): void {
+  const cfg = readAxonclawxConfig();
+  const axon = ensureRecord(cfg.axonclawx);
+  axon.setupComplete = value;
+  if (value) axon.lastSetupAt = new Date().toISOString();
+  cfg.axonclawx = axon;
+  writeAxonclawxConfig(cfg);
+}
+
+function sanitizeSetupCompleteKeysInConfig(): void {
+  try {
+    const cfg = readOpenclawConfig();
+    let changed = false;
+    const legacyAxon = ensureRecord(cfg.axonclawx);
+    if (Object.keys(legacyAxon).length > 0) {
+      const axonCfg = readAxonclawxConfig();
+      const currentAxon = ensureRecord(axonCfg.axonclawx);
+      axonCfg.axonclawx = {
+        ...legacyAxon,
+        ...currentAxon,
+      };
+      writeAxonclawxConfig(axonCfg);
+      delete (cfg as Record<string, unknown>).axonclawx;
+      changed = true;
+    }
+    if ('setupComplete' in cfg) {
+      delete (cfg as Record<string, unknown>).setupComplete;
+      changed = true;
+    }
+    const ui = ensureRecord(cfg.ui);
+    if ('setupComplete' in ui) {
+      delete ui.setupComplete;
+      cfg.ui = ui;
+      changed = true;
+    }
+    const models = ensureRecord(cfg.models);
+    if ('default' in models) {
+      delete models.default;
+      cfg.models = models;
+      changed = true;
+    }
+    if (changed) {
+      console.log('[Main] Sanitizing invalid keys in openclaw config');
+      writeOpenclawConfig(cfg);
+    }
+  } catch (err) {
+    console.warn('[Main] Failed to sanitize openclaw config:', err);
+  }
+}
 
 function getGatewayConnectionSettings(): GatewayConnectionSettings {
   const localDefaults: GatewayConnectionSettings = {
@@ -112,17 +1179,31 @@ function getGatewayConnectionSettings(): GatewayConnectionSettings {
   };
 
   try {
+    const cfg = readAxonclawxConfig();
+    const fromConfig = readGatewayConnectionFromAxonConfig(cfg.axonclawx as Record<string, unknown>);
+    if (fromConfig.mode === 'remote' && fromConfig.host) {
+      return {
+        mode: 'remote',
+        protocol: fromConfig.protocol === 'wss' ? 'wss' : 'ws',
+        host: fromConfig.host,
+        port: typeof fromConfig.port === 'number' ? fromConfig.port : 18789,
+        token: fromConfig.token || GATEWAY_TOKEN,
+      };
+    }
+  } catch {
+    // fall through to db compatibility
+  }
+
+  try {
     if (!isInitialized()) return localDefaults;
     const mode = (getSetting(GW_MODE_KEY) || 'local').toLowerCase() === 'remote' ? 'remote' : 'local';
     if (mode === 'local') return localDefaults;
-
     const protocolRaw = (getSetting(GW_REMOTE_PROTOCOL_KEY) || 'ws').toLowerCase();
     const protocol: 'ws' | 'wss' = protocolRaw === 'wss' ? 'wss' : 'ws';
     const host = (getSetting(GW_REMOTE_HOST_KEY) || '').trim();
     const portRaw = parseInt(getSetting(GW_REMOTE_PORT_KEY) || '', 10);
     const token = (getSetting(GW_REMOTE_TOKEN_KEY) || '').trim() || GATEWAY_TOKEN;
     const port = Number.isFinite(portRaw) && portRaw > 0 && portRaw <= 65535 ? portRaw : 18789;
-
     if (!host) return localDefaults;
     return { mode, protocol, host, port, token };
   } catch {
@@ -130,58 +1211,115 @@ function getGatewayConnectionSettings(): GatewayConnectionSettings {
   }
 }
 
-function getGatewayAuthToken(): string {
-  return getGatewayConnectionSettings().token;
+function readTokenFromOpenclawConfig(homeDir: string): string {
+  try {
+    const cfgPath = path.join(homeDir, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return '';
+    const json = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as Record<string, unknown>;
+    const gateway = (json.gateway && typeof json.gateway === 'object' && !Array.isArray(json.gateway))
+      ? (json.gateway as Record<string, unknown>)
+      : {};
+    const auth = (gateway.auth && typeof gateway.auth === 'object' && !Array.isArray(gateway.auth))
+      ? (gateway.auth as Record<string, unknown>)
+      : {};
+    return String(auth.token || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function readDeviceTokenFromIdentity(homeDir: string): string {
+  try {
+    const authPath = path.join(homeDir, '.openclaw', 'identity', 'device-auth.json');
+    if (!fs.existsSync(authPath)) return '';
+    const json = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    const tokens = (json.tokens && typeof json.tokens === 'object' && !Array.isArray(json.tokens))
+      ? (json.tokens as Record<string, unknown>)
+      : {};
+    const operator = (tokens.operator && typeof tokens.operator === 'object' && !Array.isArray(tokens.operator))
+      ? (tokens.operator as Record<string, unknown>)
+      : {};
+    return String(operator.token || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildGatewayConnectAuth(preferToken?: string): { token?: string; deviceToken?: string } {
+  const cfg = getGatewayConnectionSettings();
+  const localHome = os.homedir();
+  const localToken = cfg.mode === 'local' ? readTokenFromOpenclawConfig(localHome) : '';
+  const token = String(preferToken || '').trim() || String(cfg.token || '').trim() || localToken || GATEWAY_TOKEN;
+  const deviceToken = cfg.mode === 'local' ? readDeviceTokenFromIdentity(localHome) : '';
+  const auth: { token?: string; deviceToken?: string } = {};
+  if (token) auth.token = token;
+  if (deviceToken) auth.deviceToken = deviceToken;
+  return auth;
 }
 
 function applyCustomAppIcon(): void {
   if (process.platform !== 'darwin') return;
   const appDir = path.dirname(app.getAppPath());
+  const preferredIcon = path.join(process.cwd(), 'designUI', 'image', 'icon.icns');
   const candidates = [
-    path.join(process.resourcesPath, 'clawLogo1.png'),
-    path.join(process.resourcesPath, 'designUI', 'image', 'clawLogo1.png'),
+    preferredIcon,
+    path.join(app.getAppPath(), 'designUI', 'image', 'icon.icns'),
+    path.join(process.resourcesPath, 'designUI', 'image', 'icon.icns'),
     path.join(process.resourcesPath, 'icon.icns'),
     path.join(process.resourcesPath, 'build', 'icon.icns'),
     path.join(appDir, 'icon.icns'),
     path.join(appDir, 'build', 'icon.icns'),
-    path.join(app.getAppPath(), 'build', 'icon.icns'),
-    path.join(app.getAppPath(), 'designUI', 'image', 'icon.icns'),
-    path.join(app.getAppPath(), 'designUI', 'image', 'clawLogo1.png'),
     path.join(process.cwd(), 'build', 'icon.icns'),
-    path.join(process.cwd(), 'designUI', 'image', 'icon.icns'),
+    // PNG fallbacks (icon.png extracted from icns, square app icon)
+    path.join(process.cwd(), 'public', 'icon-512.png'),
+    path.join(process.cwd(), 'public', 'icon.png'),
+    path.join(app.getAppPath(), 'public', 'icon-512.png'),
+    path.join(app.getAppPath(), 'public', 'icon.png'),
+    path.join(process.resourcesPath, 'icon.png'),
+    path.join(process.resourcesPath, 'clawLogo1.png'),
+    path.join(process.resourcesPath, 'designUI', 'image', 'clawLogo1.png'),
+    path.join(app.getAppPath(), 'build', 'icon.icns'),
+    path.join(app.getAppPath(), 'designUI', 'image', 'clawLogo1.png'),
     path.join(process.cwd(), 'designUI', 'image', 'clawLogo1.png'),
   ];
-  const iconPath = candidates.find((p) => fs.existsSync(p));
-  if (!iconPath) return;
-  try {
-    // dev 模式下 PNG 兼容性更好，优先直接按路径设置
-    app.dock.setIcon(iconPath);
-    const icon = nativeImage.createFromPath(iconPath);
-    if (!icon.isEmpty()) {
-      console.log('[Main] App icon:', iconPath);
+  for (const iconPath of candidates) {
+    if (!fs.existsSync(iconPath)) continue;
+    try {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (icon.isEmpty()) continue;
       app.dock.setIcon(icon);
+      console.log('[Main] App icon:', iconPath);
+      return;
+    } catch {
+      // try next candidate
     }
-  } catch (err) {
-    console.warn('[Main] Failed to set dock icon:', err);
   }
+  console.warn('[Main] No valid dock icon found in candidates');
 }
 
 function resolveWindowIconPath(): string | undefined {
   const appDir = path.dirname(app.getAppPath());
+  const preferredIcon = path.join(process.cwd(), 'designUI', 'image', 'icon.icns');
   const candidates = [
+    preferredIcon,
+    path.join(app.getAppPath(), 'designUI', 'image', 'icon.icns'),
+    path.join(process.resourcesPath, 'designUI', 'image', 'icon.icns'),
     path.join(process.resourcesPath, 'icon.icns'),
     path.join(process.resourcesPath, 'build', 'icon.icns'),
-    path.join(process.resourcesPath, 'icon.ico'),
-    path.join(process.resourcesPath, 'build', 'icon.ico'),
     path.join(appDir, 'icon.icns'),
     path.join(appDir, 'build', 'icon.icns'),
+    path.join(app.getAppPath(), 'build', 'icon.icns'),
+    path.join(process.cwd(), 'build', 'icon.icns'),
+    // PNG fallbacks (for dev mode where public/ is served directly)
+    path.join(process.cwd(), 'public', 'icon.png'),
+    path.join(app.getAppPath(), 'public', 'icon.png'),
+    path.join(process.resourcesPath, 'icon.png'),
+    // ICO fallbacks (Windows)
+    path.join(process.resourcesPath, 'icon.ico'),
+    path.join(process.resourcesPath, 'build', 'icon.ico'),
+    path.join(app.getAppPath(), 'build', 'icon.ico'),
     path.join(appDir, 'icon.ico'),
     path.join(appDir, 'build', 'icon.ico'),
-    path.join(app.getAppPath(), 'build', 'icon.icns'),
-    path.join(app.getAppPath(), 'designUI', 'image', 'icon.icns'),
-    path.join(app.getAppPath(), 'build', 'icon.ico'),
-    path.join(process.cwd(), 'build', 'icon.icns'),
-    path.join(process.cwd(), 'designUI', 'image', 'icon.icns'),
     path.join(process.cwd(), 'build', 'icon.ico'),
   ];
   return candidates.find((p) => fs.existsSync(p));
@@ -234,14 +1372,64 @@ function createWindow(): BrowserWindow {
     applyCustomAppIcon();
   }
 
-  // Development: Load from Vite dev server
-  if (process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL) {
-    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-    win.loadURL(devUrl);
-    win.webContents.openDevTools();
+  const rendererEntry = path.join(__dirname, '../../dist/renderer/index.html');
+  const devServerUrl = (process.env.VITE_DEV_SERVER_URL || '').trim();
+  const hasDevServerUrl = /^https?:\/\//.test(devServerUrl);
+  const isDevLike = process.env.NODE_ENV === 'development' || hasDevServerUrl;
+  const shouldAutoOpenDevTools = process.env.AXONCLAW_OPEN_DEVTOOLS === '1';
+  const devUrl = hasDevServerUrl ? devServerUrl : '';
+  let fallbackTried = false;
+
+  const fallbackToBuiltRenderer = (): void => {
+    if (fallbackTried) return;
+    fallbackTried = true;
+    if (fs.existsSync(rendererEntry)) {
+      void win.loadFile(rendererEntry).catch((err) => {
+        console.error('[Main] Failed to load built renderer fallback:', err);
+      });
+      return;
+    }
+    const msg = encodeURIComponent(
+      `Renderer failed to load.\nTried dev server: ${devUrl || '(none)'}\nMissing built file: ${rendererEntry}\n\nPlease start Vite (npm run dev) or build renderer (npm run build).`,
+    );
+    void win.loadURL(`data:text/plain;charset=utf-8,${msg}`).catch(() => {});
+  };
+
+  if (isDevLike) {
+    // Development: must use the explicit Vite URL injected by electron:dev.
+    if (!hasDevServerUrl) {
+      const msg = encodeURIComponent(
+        'Development server URL is missing.\nPlease run this app with `npm run electron:dev`.',
+      );
+      void win.loadURL(`data:text/plain;charset=utf-8,${msg}`).catch(() => {});
+      return win;
+    }
+
+    // Development: load only the resolved Vite URL to avoid attaching to unrelated local services.
+    win.webContents.once('did-fail-load', (_event, _errorCode, errorDescription, validatedURL) => {
+      if (validatedURL?.startsWith(devUrl)) {
+        console.warn('[Main] Dev server load failed:', errorDescription, validatedURL);
+        const msg = encodeURIComponent(
+          `Dev renderer failed to load.\nURL: ${devUrl}\nError: ${errorDescription}`,
+        );
+        void win.loadURL(`data:text/plain;charset=utf-8,${msg}`).catch(() => {});
+      }
+    });
+    void win.loadURL(devUrl).catch((err) => {
+      console.warn('[Main] loadURL failed:', err);
+      const msg = encodeURIComponent(
+        `Dev renderer failed to load.\nURL: ${devUrl}\nError: ${String(err)}`,
+      );
+      void win.loadURL(`data:text/plain;charset=utf-8,${msg}`).catch(() => {});
+    });
+    if (shouldAutoOpenDevTools) {
+      win.webContents.openDevTools();
+    }
   } else {
     // Production: Load from built files
-    win.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
+    void win.loadFile(rendererEntry).catch((err) => {
+      console.error('[Main] Failed to load renderer:', err);
+    });
   }
 
   // 开发者工具快捷键：Cmd+Option+I (Mac) / Ctrl+Shift+I (Win/Linux)
@@ -264,8 +1452,8 @@ function createWindow(): BrowserWindow {
   });
   win.webContents.on('will-navigate', (e, url) => {
     // 仅允许导航到应用自身地址（dev server 或 file://），阻止其他任何导航（blob:, data:, about:blank 等）
-    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-    const isAppUrl = url.startsWith(devUrl) || url.startsWith('file://');
+    const allowDevUrl = hasDevServerUrl ? devServerUrl : '';
+    const isAppUrl = (allowDevUrl ? url.startsWith(allowDevUrl) : false) || url.startsWith('file://');
     if (!isAppUrl) {
       e.preventDefault();
     }
@@ -278,7 +1466,7 @@ function createWindow(): BrowserWindow {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
-  console.log('[Main] Initializing AxonClaw...');
+  console.log('[Main] Initializing AxonClawX...');
 
   // 初始化数据库（默认 SQLite，路径可通过 AXONCLAW_DB_PATH 或后续启动配置选择）
   try {
@@ -286,6 +1474,32 @@ async function initialize(): Promise<void> {
     ensureLockAuthSeed();
   } catch (err) {
     console.error('[Main] Database init failed:', err);
+  }
+
+  // Cleanup legacy fields that break OpenClaw schema validation.
+  sanitizeSetupCompleteKeysInConfig();
+
+  // Remove previously persisted invalid OpenAI browser session tokens from runtime auth/config.
+  try {
+    const sanitized = sanitizeInvalidOpenAiCredentialArtifacts();
+    if (sanitized.configChanged || sanitized.profileChanged) {
+      console.warn(
+        `[Main] Sanitized invalid OpenAI auth artifacts: configKeys=${sanitized.removedConfigKeys}, profiles=${sanitized.removedProfiles}`,
+      );
+    }
+  } catch (err) {
+    console.warn('[Main] sanitize invalid openai credentials skipped:', err);
+  }
+
+  // Repair: ensure provider apiKey in openclaw.json is mirrored into
+  // main agent auth-profiles.json (runtime auth source for recent OpenClaw builds).
+  try {
+    const synced = syncMainAgentAuthProfilesFromConfig();
+    if (synced.changed > 0) {
+      console.log('[Main] Synced auth profiles from config for providers:', synced.providers.join(', '));
+    }
+  } catch (err) {
+    console.warn('[Main] auth profile sync skipped:', err);
   }
 
   // 启动时主动探测 OpenClaw 进程端口，确保 /api/agents 等请求使用正确端口
@@ -318,15 +1532,31 @@ async function initialize(): Promise<void> {
   gatewayManager.on('error', (error) => {
     console.error('[Main] Gateway error:', error);
     safeSendToRenderer('gateway:error', error.message);
+    pushGatewayRuntimeLog('error', error.message);
+  });
+
+  gatewayManager.on('log', (level, message) => {
+    pushGatewayRuntimeLog(level === 'info' ? 'info' : level === 'warn' ? 'warn' : 'error', message);
   });
   
   // 程序启动时自动启动网关（若未运行）
   if (!isGatewayRunning()) {
     console.log('[Main] Auto-starting Gateway...');
     try {
-      await startGateway();
-      console.log('[Main] Gateway started');
-      safeSendToRenderer('gateway:status', getGatewayStatus());
+      const status = await startGatewayWithSelfHeal();
+      if (!status.startSuccess) {
+        console.error('[Main] Gateway auto-start failed with diagnostics:', status.error);
+        safeSendToRenderer('gateway:status', status);
+        safeSendToRenderer('gateway:error', status.error || 'Gateway auto-start failed');
+        if (status.logTail?.length) {
+          for (const line of status.logTail.slice(-40)) {
+            pushGatewayRuntimeLog('debug', line);
+          }
+        }
+      } else {
+        console.log('[Main] Gateway started');
+        safeSendToRenderer('gateway:status', getGatewayStatus());
+      }
     } catch (err) {
       console.error('[Main] Gateway auto-start failed:', err);
       safeSendToRenderer('gateway:status', {
@@ -391,8 +1621,7 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.handle('gateway:start', async () => {
   try {
-    await startGateway();
-    return getGatewayStatus();
+    return await startGatewayWithSelfHeal();
   } catch (error) {
     const status = getGatewayStatus();
     status.error = String(error);
@@ -411,19 +1640,48 @@ ipcMain.handle('gateway:stop', async () => {
   }
 });
 
-ipcMain.handle('gateway:status', () => {
-  // AxonClaw 连接已有 OpenClaw Gateway，未自启进程时也返回 running
+ipcMain.handle('gateway:status', async () => {
   const status = getGatewayStatus();
-  const port = getResolvedGatewayPort();
-  if (status.state === 'stopped' && !status.error) {
-    return { ...status, state: 'running' as const, port };
+  const cfg = getGatewayConnectionSettings();
+  if (cfg.mode === 'remote') {
+    return { ...status, port: cfg.port || status.port || getResolvedGatewayPort() };
   }
-  return { ...status, port };
+  try {
+    const probe = await resolveGatewayPort();
+    if (probe.success && probe.port) {
+      setResolvedGatewayPort(probe.port);
+      persistGatewayConnectionToConfig({
+        mode: 'local',
+        protocol: 'ws',
+        host: '127.0.0.1',
+        port: probe.port,
+      });
+      return {
+        ...status,
+        state: 'running',
+        port: probe.port,
+      };
+    }
+  } catch {
+    // fall back to lifecycle status
+  }
+  return { ...status, port: status.port || getResolvedGatewayPort() };
+});
+
+ipcMain.handle('gateway:getControlUiUrl', async () => {
+  return getGatewayControlUiInfo();
+});
+
+ipcMain.handle('settings:get', async (_event, payload?: { key?: string }) => {
+  const key = String(payload?.key || '').trim();
+  if (key === 'gatewayToken') {
+    return getGatewayControlUiInfo().token;
+  }
+  return null;
 });
 
 ipcMain.handle('gateway:isRunning', () => {
-  // AxonClaw 连接外部 Gateway，视为始终运行
-  return isGatewayRunning() || true;
+  return isGatewayRunning();
 });
 
 // 真实连接检测：多端口探测（配置端口 + 18789/18791/18792），成功后缓存端口
@@ -435,13 +1693,22 @@ ipcMain.handle('gateway:checkConnection', async () => {
       return { success: result.success, port: cfg.port, error: result.error };
     }
     const result = await resolveGatewayPort();
+    if (result.success && result.port) {
+      setResolvedGatewayPort(result.port);
+      persistGatewayConnectionToConfig({
+        mode: 'local',
+        protocol: 'ws',
+        host: '127.0.0.1',
+        port: result.port,
+      });
+    }
     return { success: result.success, port: result.port, error: result.error };
   } catch (e) {
     return { success: false, error: String(e) };
   }
 });
 
-// 重启 Gateway（AxonClaw 连接外部时，实际执行 stop + start 子进程）
+// 重启 Gateway（AxonClawX 连接外部时，实际执行 stop + start 子进程）
 ipcMain.handle('gateway:restart', async () => {
   try {
     await stopGateway();
@@ -473,13 +1740,109 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
     throw new Error('gateway:rpc invalid args');
   }
 
+  // Backward-compatible params normalization:
+  // older renderer code may still send sessions.patch.modelId, but gateway only accepts model.
+  if (method === 'sessions.patch' && params && typeof params === 'object') {
+    const normalized = { ...params } as Record<string, unknown> & { modelId?: unknown };
+    const modelIdRaw = typeof normalized.modelId === 'string' ? normalized.modelId.trim() : '';
+    const modelRaw = typeof normalized.model === 'string' ? normalized.model.trim() : '';
+    const normalizedModelRaw = normalizeModelAlias(modelRaw);
+    const normalizedModelIdRaw = normalizeModelAlias(modelIdRaw);
+    if (!normalizedModelRaw && normalizedModelIdRaw) {
+      normalized.model = normalizedModelIdRaw;
+    } else if (normalizedModelRaw) {
+      normalized.model = normalizedModelRaw;
+    }
+    if ('modelId' in normalized) {
+      delete normalized.modelId;
+    }
+    params = normalized;
+  }
+
+  if (method === 'chat.send' && params && typeof params === 'object') {
+    const normalized = { ...params } as Record<string, unknown>;
+    const messageRaw = typeof normalized.message === 'string' ? normalized.message : '';
+    const normalizedMessage = normalizeModelCommandMessage(messageRaw);
+    if (normalizedMessage !== messageRaw) {
+      normalized.message = normalizedMessage;
+    }
+    params = normalized;
+  }
+
   console.log(`[GatewayRPC] ${method}`, params);
-  
+  const writeMethod = isWriteRpcMethod(method);
+
+  // 非 chat.send 走统一 RPC 内核（含重试/端口重探测），避免多套 WS 链路分叉导致不一致。
+  if (method !== 'chat.send') {
+    const result = await callGatewayRpcWithRetry(method, params, timeout);
+
+    if (method === 'sessions.list') {
+      const req = (params && typeof params === 'object') ? (params as Record<string, unknown>) : {};
+      const safeLimit = Math.min(Math.max(Number(req.limit) || 500, 1), 2000);
+      const payload = (result.result && typeof result.result === 'object')
+        ? (result.result as Record<string, unknown>)
+        : {};
+      const sessions = Array.isArray(payload.sessions)
+        ? (payload.sessions as Array<Record<string, unknown>>)
+        : [];
+      const merged = mergeSessionsWithLocalFallback(sessions, safeLimit);
+      return {
+        ...result,
+        success: true,
+        ok: true,
+        result: {
+          ...payload,
+          sessions: merged,
+        },
+      };
+    }
+
+    if (method === 'chat.history') {
+      const payload = (result.result && typeof result.result === 'object')
+        ? (result.result as Record<string, unknown>)
+        : {};
+      const remoteMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      const req = (params && typeof params === 'object') ? (params as Record<string, unknown>) : {};
+      const fallbackMessages = readLocalSessionHistory(req.sessionKey, Number(req.limit) || 200);
+      if (remoteMessages.length === 0 && fallbackMessages.length > 0) {
+        return {
+          success: true,
+          ok: true,
+          result: {
+            ...payload,
+            messages: fallbackMessages,
+            total: fallbackMessages.length,
+            localFallback: true,
+          },
+        };
+      }
+    }
+
+    return result;
+  }
+
+  // chat.send 保留流式事件透传到渲染进程
+  let wsUrl = getGatewayWsUrl();
+  const gwCfg = getGatewayConnectionSettings();
+  if (gwCfg.mode === 'local') {
+    const probe = await resolveGatewayPort();
+    if (probe.success && probe.port) {
+      setResolvedGatewayPort(probe.port);
+      persistGatewayConnectionToConfig({
+        mode: 'local',
+        protocol: 'ws',
+        host: '127.0.0.1',
+        port: probe.port,
+      });
+      wsUrl = `ws://127.0.0.1:${probe.port}/ws`;
+    }
+  }
+
   return new Promise((resolve) => {
     let resolved = false;
     let streamingChat = false; // chat.send 流式模式，收到首包后保持连接转发事件
     const WebSocket = require('ws');
-    const ws = new WebSocket(getGatewayWsUrl());
+    const ws = new WebSocket(wsUrl);
 
     const timeoutId = setTimeout(() => {
       if (!resolved) {
@@ -500,6 +1863,17 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
         
         // 处理 challenge
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          const auth = buildGatewayConnectAuth();
+          const scopes = ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'];
+          const nonce = String(msg?.payload?.nonce || '');
+          const device = buildSignedGatewayDevice(
+            nonce,
+            auth.token ?? auth.deviceToken ?? null,
+            'gateway-client',
+            'ui',
+            'operator',
+            scopes,
+          );
           ws.send(JSON.stringify({
             type: 'req',
             id: 'connect-' + Date.now(),
@@ -508,9 +1882,10 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
               minProtocol: 3,
               maxProtocol: 3,
               client: { id: 'gateway-client', displayName: 'ClawX', version: '0.1.0', platform: process.platform, mode: 'ui' },
-              auth: { token: getGatewayAuthToken() },
+              auth,
+              ...(device ? { device } : {}),
               role: 'operator',
-              scopes: ['operator.admin'],
+              scopes,
             },
           }));
           return;
@@ -522,8 +1897,36 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
             resolved = true;
             clearTimeout(timeoutId);
             ws.close();
-            resolve({ success: false, ok: false, error: String(msg.error?.message ?? msg.error ?? 'Connect failed') });
+            resolve({
+              success: false,
+              ok: false,
+              error: String(
+                msg.error?.message
+                  ?? msg.error?.details?.code
+                  ?? msg.error?.code
+                  ?? msg.error
+                  ?? 'Connect failed'
+              ),
+            });
             return;
+          }
+          // Log granted scopes for debugging scope errors
+          const grantedScopes = msg.result?.scopes ?? msg.payload?.scopes;
+          console.log(`[GatewayRPC] ${method} connect ok, grantedScopes=${JSON.stringify(grantedScopes ?? 'not-provided')}`);
+          // Check if operator.write was actually granted (when scopes are provided)
+          if (Array.isArray(grantedScopes) && !grantedScopes.includes('operator.write')) {
+            console.warn(`[GatewayRPC] ${method} operator.write NOT in granted scopes:`, grantedScopes);
+            if (writeMethod) {
+              resolved = true;
+              clearTimeout(timeoutId);
+              ws.close();
+              resolve({
+                success: false,
+                ok: false,
+                error: `missing scope: operator.write (granted: ${grantedScopes.join(', ')})`,
+              });
+              return;
+            }
           }
           // 发送实际请求
           ws.send(JSON.stringify({
@@ -572,7 +1975,34 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
           const payload = (msg.payload ?? msg.data ?? msg) as Record<string, unknown>;
           const ev = String(msg.event);
           const phase = payload.phase;
-          const state = payload.state ?? (ev.endsWith('.delta') ? 'delta' : ev.endsWith('.final') ? 'final' : undefined);
+          const state = payload.state
+            ?? (ev.endsWith('.delta')
+              ? 'delta'
+              : ev.endsWith('.final')
+                ? 'final'
+                : ev.endsWith('.error')
+                  ? 'error'
+                  : ev.endsWith('.aborted') || ev.endsWith('.abort')
+                    ? 'aborted'
+                    : undefined);
+          const errorMessage = (() => {
+            if (typeof payload.errorMessage === 'string' && payload.errorMessage.trim()) return payload.errorMessage.trim();
+            if (typeof payload.error === 'string' && payload.error.trim()) return payload.error.trim();
+            if (payload.error && typeof payload.error === 'object') {
+              const errorObj = payload.error as Record<string, unknown>;
+              if (typeof errorObj.message === 'string' && errorObj.message.trim()) return errorObj.message.trim();
+            }
+            if (payload.message && typeof payload.message === 'object') {
+              const msgObj = payload.message as Record<string, unknown>;
+              if (typeof msgObj.errorMessage === 'string' && msgObj.errorMessage.trim()) return msgObj.errorMessage.trim();
+              if (typeof msgObj.error === 'string' && msgObj.error.trim()) return msgObj.error.trim();
+              if (msgObj.error && typeof msgObj.error === 'object') {
+                const msgErrObj = msgObj.error as Record<string, unknown>;
+                if (typeof msgErrObj.message === 'string' && msgErrObj.message.trim()) return msgErrObj.message.trim();
+              }
+            }
+            return undefined;
+          })();
           safeSendToRenderer('gateway:notification', {
             method: 'agent',
             params: {
@@ -582,6 +2012,7 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
               runId: payload.runId,
               sessionKey: payload.sessionKey,
               message: payload.message,
+              errorMessage,
             },
           });
           // 发送到日志页面：Gateway 是否发送 delta
@@ -604,8 +2035,11 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
             message: `event=${ev} phase=${phase ?? '?'} state=${state ?? '?'} hasMessage=${hasMessage}${messagePreview ? ` preview=${JSON.stringify(messagePreview)}` : ''}`,
           });
           // 收到完成事件后关闭连接
-          const donePhases = ['completed', 'done', 'finished', 'end'];
-          const isDone = (phase && donePhases.includes(String(phase))) || state === 'final';
+          const donePhases = ['completed', 'done', 'finished', 'end', 'error', 'aborted', 'abort', 'failed'];
+          const isDone = (phase && donePhases.includes(String(phase)))
+            || state === 'final'
+            || state === 'error'
+            || state === 'aborted';
           if (isDone) {
             ws.close();
           }
@@ -635,6 +2069,55 @@ ipcMain.handle('gateway:rpc', async (_event, methodOrPayload: unknown, paramsOrU
   });
 });
 
+// chat:sendWithMedia — read local files and pass them inline to gateway chat.send
+ipcMain.handle('chat:sendWithMedia', async (_event, payload: {
+  sessionKey: string;
+  message: string;
+  deliver?: boolean;
+  idempotencyKey?: string;
+  timeoutMs?: number;
+  media?: Array<{ filePath: string; mimeType: string; fileName: string }>;
+}) => {
+  try {
+    const fs = require('fs');
+    const mediaContent: Array<{ fileName: string; mimeType: string; data: string }> = [];
+    if (payload.media && payload.media.length > 0) {
+      for (const m of payload.media) {
+        try {
+          const buf = fs.readFileSync(m.filePath);
+          mediaContent.push({
+            fileName: m.fileName,
+            mimeType: m.mimeType,
+            data: buf.toString('base64'),
+          });
+        } catch (err) {
+          console.error(`[chat:sendWithMedia] Failed to read file ${m.filePath}:`, err);
+        }
+      }
+    }
+
+    // Build message with embedded media for the gateway
+    const rpcParams: Record<string, unknown> = {
+      sessionKey: payload.sessionKey,
+      message: payload.message,
+      deliver: payload.deliver ?? false,
+      idempotencyKey: payload.idempotencyKey,
+    };
+    if (mediaContent.length > 0) {
+      rpcParams.media = mediaContent;
+    }
+
+    // Reuse the gateway:rpc IPC handler via direct call
+    const { callGatewayRpcWithRetry } = require('../gateway/rpc');
+    const timeoutMs = Math.max(30_000, Number(payload.timeoutMs) || 120_000);
+    const result = await callGatewayRpcWithRetry('chat.send', rpcParams, timeoutMs);
+    return result;
+  } catch (err) {
+    console.error('[chat:sendWithMedia] Error:', err);
+    return { success: false, ok: false, error: String(err) };
+  }
+});
+
 // Skills management
 const SKILLS_DIR = path.join(os.homedir(), '.openclaw', 'skills');
 
@@ -643,6 +2126,14 @@ ipcMain.handle('skills:openFolder', async () => {
 });
 
 ipcMain.handle('openclaw:getSkillsDir', () => SKILLS_DIR);
+
+ipcMain.handle('dialog:open', async (_event, options?: Electron.OpenDialogOptions) => {
+  const targetWindow = BrowserWindow.getFocusedWindow() || mainWindow || undefined;
+  if (targetWindow) {
+    return dialog.showOpenDialog(targetWindow, options ?? {});
+  }
+  return dialog.showOpenDialog(options ?? {});
+});
 
 ipcMain.handle('setup:scan-environment', async () => {
   const checkCommand = async (cmd: string): Promise<{ installed: boolean; version?: string; path?: string }> => {
@@ -770,30 +2261,144 @@ ipcMain.handle('setup:save-remote-gateway', async (_event, payload: {
     return { success: false, error: 'Invalid remote endpoint' };
   }
 
-  setSetting(GW_MODE_KEY, 'remote');
-  setSetting(GW_REMOTE_PROTOCOL_KEY, protocol);
-  setSetting(GW_REMOTE_HOST_KEY, host);
-  setSetting(GW_REMOTE_PORT_KEY, String(port));
-  setSetting(GW_REMOTE_TOKEN_KEY, token);
+  // Setup flow must not hard-fail on optional local DB writes (native module may be unavailable).
+  try {
+    if (isInitialized()) {
+      setSetting(GW_MODE_KEY, 'remote');
+      setSetting(GW_REMOTE_PROTOCOL_KEY, protocol);
+      setSetting(GW_REMOTE_HOST_KEY, host);
+      setSetting(GW_REMOTE_PORT_KEY, String(port));
+      setSetting(GW_REMOTE_TOKEN_KEY, token);
+    }
+  } catch (err) {
+    console.warn('[setup] save remote gateway to database failed:', err);
+  }
+  persistGatewayConnectionToConfig({ mode: 'remote', protocol, host, port, token });
   return { success: true };
 });
 
 ipcMain.handle('setup:connect-local-gateway', async () => {
-  setSetting(GW_MODE_KEY, 'local');
+  // Do not block connection on DB native-module loading issues.
   try {
-    const status = getGatewayStatus();
-    if (status.state !== 'running') {
-      await startGateway();
+    if (isInitialized()) {
+      setSetting(GW_MODE_KEY, 'local');
     }
-  } catch {
-    // ignore start failure, still probe connection below
+  } catch (err) {
+    console.warn('[setup] set local gateway mode in database failed:', err);
   }
-  const probe = await resolveGatewayPort();
+  persistGatewayConnectionToConfig({
+    mode: 'local',
+    protocol: 'ws',
+    host: '127.0.0.1',
+    port: getResolvedGatewayPort(),
+  });
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  let probe = await resolveGatewayPort();
+  if (!probe.success) {
+    let startError = '';
+    try {
+      const status = getGatewayStatus();
+      if (status.state !== 'running') {
+        console.log('[setup] local gateway not reachable, trying to start Gateway...');
+        await startGateway();
+      }
+    } catch (err) {
+      startError = String(err);
+      console.warn('[setup] start gateway failed during connect-local-gateway:', err);
+    }
+
+    // Gateway startup can take a few seconds; retry probing before reporting failure.
+    for (let i = 0; i < 10; i += 1) {
+      await wait(1200);
+      probe = await resolveGatewayPort();
+      if (probe.success) break;
+    }
+
+    if (!probe.success && startError) {
+      probe = {
+        success: false,
+        error: `${probe.error || 'Gateway 连接失败'}；自动启动失败：${startError}`,
+      };
+    }
+  }
+
+  if (probe.success && probe.port) {
+    persistGatewayConnectionToConfig({
+      mode: 'local',
+      protocol: 'ws',
+      host: '127.0.0.1',
+      port: probe.port,
+    });
+  }
+
+  // Verify local gateway scopes. If running but missing operator.read/write,
+  // repair paired scopes and restart once.
+  if (probe.success) {
+    try {
+      const scopeCheck = await callGatewayRpcWithRetry('sessions.list', {}, 12000);
+      const scopeErr = String(scopeCheck.error || '');
+      if (
+        !scopeCheck.ok
+        && (
+          scopeErr.includes('missing scope: operator.')
+          || /device-required|not_paired|device identity required|unauthorized|auth/i.test(scopeErr)
+        )
+      ) {
+        const repaired = repairGatewayOperatorScopes();
+        const relaxed = relaxGatewayLocalAuth();
+        console.warn('[setup] local gateway auth/scope issue; repaired=', repaired, 'relaxed=', relaxed);
+        try {
+          await stopGateway();
+        } catch {
+          // ignore
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        await startGateway();
+        const reprobe = await resolveGatewayPort();
+        if (reprobe.success && reprobe.port) {
+          probe = reprobe;
+          persistGatewayConnectionToConfig({
+            mode: 'local',
+            protocol: 'ws',
+            host: '127.0.0.1',
+            port: reprobe.port,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[setup] scope verification skipped:', err);
+    }
+  }
+
   return {
     success: !!probe.success,
     port: probe.port,
     error: probe.error,
   };
+});
+
+ipcMain.handle('setup:repair-local-gateway-scopes', async () => {
+  try {
+    const repaired = repairGatewayOperatorScopes();
+    try {
+      await stopGateway();
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    await startGateway();
+    const probe = await resolveGatewayPort();
+    return {
+      success: !!probe.success,
+      port: probe.port,
+      changed: repaired.changed,
+      runtimeHome: repaired.runtimeHome,
+      error: probe.error,
+    };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
 });
 
 ipcMain.handle('setup:install-local-openclaw', async () => {
@@ -825,7 +2430,19 @@ ipcMain.handle('setup:install-local-openclaw', async () => {
     return { success: false, error: probe.error || 'Gateway failed to start', logs };
   }
 
-  setSetting(GW_MODE_KEY, 'local');
+  try {
+    if (isInitialized()) {
+      setSetting(GW_MODE_KEY, 'local');
+    }
+  } catch (err) {
+    console.warn('[setup] set local mode after install failed:', err);
+  }
+  persistGatewayConnectionToConfig({
+    mode: 'local',
+    protocol: 'ws',
+    host: '127.0.0.1',
+    port: probe.port ?? getResolvedGatewayPort(),
+  });
   return { success: true, port: probe.port, logs };
 });
 
@@ -912,113 +2529,86 @@ ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   }
 });
 
-// Sessions list - 代理到 OpenClaw Gateway
-ipcMain.handle('sessions.list', async (_event, { limit, agentId }) => {
-  console.log('[SessionsList] Fetching sessions...');
-  
-  return new Promise((resolve, reject) => {
-    let resolved = false;
-    const WebSocket = require('ws');
-    const ws = new WebSocket(getGatewayWsUrl());
+ipcMain.handle('codex:open-login', async (_event, payload?: { forceReauth?: boolean; url?: string; title?: string }) => {
+  try {
+    const data = (payload || {}) as { forceReauth?: boolean; url?: string; title?: string };
+    const maybeUrl = typeof data.url === 'string' ? data.url : '';
+    if (/auth\.openai\.com\/oauth\/authorize/i.test(maybeUrl)) {
+      const mode = await openOpenAiAuthorizationUrl(maybeUrl, Boolean(data.forceReauth));
+      return { success: true, mode };
+    }
+    await openCodexAuthWindow({
+      forceReauth: Boolean(data.forceReauth),
+      url: maybeUrl || undefined,
+      title: typeof data.title === 'string' ? data.title : undefined,
+    });
+    return { success: true, mode: 'embedded' as const };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
 
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        console.error('[SessionsList] Timeout');
-        ws.close();
-        resolve({ sessions: [] }); // 超时返回空数组而不是 reject
-      }
-    }, 10000);
-    
-    ws.on('open', () => {
-      console.log('[SessionsList] WebSocket opened');
-    });
-    
-    ws.on('message', (data: Buffer) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        console.log('[SessionsList] Message:', msg.type, msg.event || msg.id || '');
-        
-        // 处理 challenge
-        if (msg.type === 'event' && msg.event === 'connect.challenge') {
-          console.log('[SessionsList] Got challenge, sending connect...');
-          ws.send(JSON.stringify({
-            type: 'req',
-            id: 'connect-' + Date.now(),
-            method: 'connect',
-            params: {
-              minProtocol: 3,
-              maxProtocol: 3,
-              client: { 
-                id: 'gateway-client', 
-                displayName: 'ClawX', 
-                version: '0.1.0',
-                platform: process.platform,
-                mode: 'ui',
-              },
-              auth: { token: getGatewayAuthToken() },
-              role: 'operator',
-              scopes: ['operator.admin'],
-            },
-          }));
-          return;
-        }
-        
-        // 处理 connect 响应
-        if (msg.type === 'res' && String(msg.id).startsWith('connect-')) {
-          console.log('[SessionsList] Connect response:', msg.ok ? 'SUCCESS' : 'FAILED');
-          if (!msg.ok) {
-            resolved = true;
-            clearTimeout(timeout);
-            ws.close();
-            resolve({ sessions: [] });
-            return;
-          }
-          // 发送 sessions.list 请求
-          console.log('[SessionsList] Sending sessions.list request...');
-          ws.send(JSON.stringify({
-            type: 'req',
-            id: 'sessions-' + Date.now(),
-            method: 'sessions.list',
-            params: { limit: limit || 50, agentId: agentId || 'main' },
-          }));
-          return;
-        }
-        
-        // 处理 sessions.list 响应
-        if (msg.type === 'res' && String(msg.id).startsWith('sessions-')) {
-          if (!resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            ws.close();
-            const sessions = msg.payload?.sessions || msg.result?.sessions || [];
-            console.log('[SessionsList] Found', sessions.length, 'sessions');
-            resolve({ sessions });
-          }
-        }
-      } catch (err) {
-        console.error('[SessionsList] Parse error:', err);
-      }
-    });
-    
-    ws.on('error', (err: Error) => {
-      console.error('[SessionsList] WebSocket error:', err.message);
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        resolve({ sessions: [] });
-      }
-    });
-    
-    ws.on('close', (code: number, reason: Buffer) => {
-      console.log('[SessionsList] WebSocket closed:', code, reason.toString());
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        resolve({ sessions: [] });
-      }
-    });
-  });
+// Sessions list - 代理到 OpenClaw Gateway
+ipcMain.handle('sessions.list', async (_event, payload: {
+  limit?: number;
+  agentId?: string;
+  activeMinutes?: number;
+  includeDerivedTitles?: boolean;
+  includeLastMessage?: boolean;
+  includeGlobal?: boolean;
+  includeUnknown?: boolean;
+  search?: string;
+  label?: string;
+  spawnedBy?: string;
+}) => {
+  try {
+    const {
+      limit,
+      agentId,
+      activeMinutes,
+      includeDerivedTitles,
+      includeLastMessage,
+      includeGlobal,
+      includeUnknown,
+      search,
+      label,
+      spawnedBy,
+    } = payload || {};
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 1000);
+    const safeActiveMinutes = Number.isFinite(Number(activeMinutes))
+      ? Math.min(Math.max(Number(activeMinutes), 1), 52560000)
+      : 5256000; // 10 years
+    const listParams: Record<string, unknown> = {
+      limit: safeLimit,
+      activeMinutes: safeActiveMinutes,
+      includeDerivedTitles: includeDerivedTitles !== false,
+      includeLastMessage: includeLastMessage !== false,
+    };
+    if (agentId) listParams.agentId = agentId;
+    if (typeof includeGlobal === 'boolean') listParams.includeGlobal = includeGlobal;
+    if (typeof includeUnknown === 'boolean') listParams.includeUnknown = includeUnknown;
+    if (typeof search === 'string' && search.trim()) listParams.search = search.trim();
+    if (typeof label === 'string' && label.trim()) listParams.label = label.trim();
+    if (typeof spawnedBy === 'string' && spawnedBy.trim()) listParams.spawnedBy = spawnedBy.trim();
+
+    const result = await callGatewayRpcWithRetry('sessions.list', listParams, 15000);
+    if (!result.ok) {
+      console.warn('[SessionsList] RPC failed:', result.error);
+      const localOnly = mergeSessionsWithLocalFallback([], safeLimit);
+      return { sessions: localOnly, error: result.error };
+    }
+    const data = (result.result ?? {}) as Record<string, unknown>;
+    const sessions = Array.isArray(data.sessions)
+      ? (data.sessions as Array<Record<string, unknown>>)
+      : [];
+    const merged = mergeSessionsWithLocalFallback(sessions, safeLimit);
+    return { sessions: merged };
+  } catch (err) {
+    console.warn('[SessionsList] Unexpected error:', err);
+    const localOnly = mergeSessionsWithLocalFallback([], 500);
+    return { sessions: localOnly, error: String(err) };
+  }
 });
 
 // Host API proxy - Gateway REST API（端口从 openclaw.json 或连接探测结果动态解析）
@@ -1028,19 +2618,19 @@ function getGatewayApiBase(): string {
   return `${httpProtocol}://${cfg.host}:${cfg.port}`;
 }
 
-/** ClawDeckX 默认 HTTP 端口，WebSocket 失败时可尝试从此处获取 agents */
-const CLAWDECKX_HTTP_PORT = 18080;
+/** AxonClawX 默认 HTTP 端口，WebSocket 失败时可尝试从此处获取 agents */
+const AXONCLAWX_HTTP_PORT = 18080;
 
-/** 从 ClawDeckX HTTP API (18080) 获取 agents，WebSocket RPC 失败时的回退 */
-async function fetchAgentsFromClawDeckX(): Promise<{
+/** 从 AxonClawX HTTP API (18080) 获取 agents，WebSocket RPC 失败时的回退 */
+async function fetchAgentsFromAxonClawX(): Promise<{
   agents: Array<{ id: string; name?: string; isDefault?: boolean; modelDisplay?: string; inheritedModel?: boolean; workspace?: string; agentDir?: string; mainSessionKey?: string; channelTypes?: string[] }>;
   defaultAgentId: string;
   configuredChannelTypes: string[];
   channelOwners: Record<string, string>;
 } | null> {
-  const bases = [`http://127.0.0.1:${CLAWDECKX_HTTP_PORT}`, `http://127.0.0.1:${getResolvedGatewayPort()}`];
+  const bases = [`http://127.0.0.1:${AXONCLAWX_HTTP_PORT}`, `http://127.0.0.1:${getResolvedGatewayPort()}`];
   for (const base of bases) {
-    // ClawDeckX 使用 POST /api/v1/gw/proxy { method: 'agents.list', params: {} }，与 gwApi.agents() 一致
+    // AxonClawX 使用 POST /api/v1/gw/proxy { method: 'agents.list', params: {} }，与 gwApi.agents() 一致
     try {
       const res = await fetch(`${base}/api/v1/gw/proxy`, {
         method: 'POST',
@@ -1104,7 +2694,7 @@ async function fetchAgentsFromClawDeckX(): Promise<{
     } catch {
       /* try next base */
     }
-    // 兼容旧版或非 ClawDeckX 的 GET 接口
+    // 兼容旧版或非 AxonClawX 的 GET 接口
     for (const apiPath of ['/api/agents', '/api/config', '/config']) {
       try {
         const res = await fetch(`${base}${apiPath}`, { signal: AbortSignal.timeout(5000) });
@@ -1174,7 +2764,214 @@ async function fetchAgentsFromClawDeckX(): Promise<{
 }
 function getGatewayWsUrl(): string {
   const cfg = getGatewayConnectionSettings();
+  if (cfg.mode === 'local') {
+    const port = getResolvedGatewayPort();
+    return `ws://127.0.0.1:${port}/ws`;
+  }
   return `${cfg.protocol}://${cfg.host}:${cfg.port}/ws`;
+}
+
+function parseSessionIdFromKey(sessionKeyRaw: unknown): string | null {
+  const sessionKey = String(sessionKeyRaw || '').trim();
+  if (!sessionKey) return null;
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRe.test(sessionKey)) return sessionKey;
+  const parts = sessionKey.split(':').filter(Boolean);
+  const tail = parts[parts.length - 1] || '';
+  if (uuidRe.test(tail)) return tail;
+  return null;
+}
+
+function extractTextFromContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    const texts = (content as Array<Record<string, unknown>>)
+      .map((b) => (typeof b?.text === 'string' ? b.text : ''))
+      .filter(Boolean);
+    return texts.join(' ').trim();
+  }
+  return '';
+}
+
+type LocalSessionSummary = {
+  key: string;
+  displayName?: string;
+  label?: string;
+  updatedAt: number;
+  model?: string;
+};
+
+function readLocalSessionSummaries(limit = 1000): LocalSessionSummary[] {
+  const roots = [
+    path.join(os.homedir(), '.openclaw', 'agents'),
+  ];
+  const sessions: LocalSessionSummary[] = [];
+
+  for (const agentsRoot of roots) {
+    if (!fs.existsSync(agentsRoot)) continue;
+    let agentIds: string[] = [];
+    try {
+      agentIds = fs.readdirSync(agentsRoot).filter((name) => {
+        const full = path.join(agentsRoot, name);
+        try {
+          return fs.statSync(full).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      continue;
+    }
+
+    for (const agentId of agentIds) {
+      const dir = path.join(agentsRoot, agentId, 'sessions');
+      if (!fs.existsSync(dir)) continue;
+      let files: string[] = [];
+      try {
+        files = fs.readdirSync(dir)
+          .filter((name) => name.endsWith('.jsonl') && !name.endsWith('.deleted.jsonl'));
+      } catch {
+        continue;
+      }
+
+      for (const name of files) {
+        const id = name.replace(/\.jsonl$/i, '');
+        const sessionKey = `agent:${agentId}:${id}`;
+        const full = path.join(dir, name);
+        try {
+          const raw = fs.readFileSync(full, 'utf8');
+          const lines = raw.split(/\r?\n/).filter(Boolean);
+          if (lines.length === 0) continue;
+
+          let updatedAt = 0;
+          let firstUserText = '';
+          let modelText = '';
+          for (const line of lines) {
+            let obj: Record<string, unknown> | null = null;
+            try {
+              obj = JSON.parse(line) as Record<string, unknown>;
+            } catch {
+              continue;
+            }
+            const ts = Date.parse(String(obj.timestamp || ''));
+            if (Number.isFinite(ts) && ts > updatedAt) updatedAt = ts;
+
+            if (!modelText && obj.type === 'model_change') {
+              const provider = String(obj.provider || '').trim();
+              const modelId = String(obj.modelId || '').trim();
+              if (provider || modelId) modelText = [provider, modelId].filter(Boolean).join('/');
+            }
+
+            if (!firstUserText && obj.type === 'message') {
+              const msg = (obj.message && typeof obj.message === 'object')
+                ? (obj.message as Record<string, unknown>)
+                : null;
+              if (msg && msg.role === 'user') {
+                firstUserText = extractTextFromContent(msg.content).slice(0, 80);
+              }
+            }
+          }
+
+          if (!updatedAt) {
+            const st = fs.statSync(full);
+            updatedAt = st.mtimeMs;
+          }
+
+          sessions.push({
+            key: sessionKey,
+            displayName: firstUserText || id,
+            label: firstUserText || undefined,
+            updatedAt,
+            model: modelText || undefined,
+          });
+        } catch {
+          // skip bad session files
+        }
+      }
+    }
+  }
+
+  sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return sessions.slice(0, Math.max(1, limit));
+}
+
+function readLocalSessionHistory(sessionKeyRaw: unknown, limit = 200): Array<Record<string, unknown>> {
+  const sessionId = parseSessionIdFromKey(sessionKeyRaw);
+  if (!sessionId) return [];
+
+  const matchAgent = String(sessionKeyRaw || '').startsWith('agent:')
+    ? String(sessionKeyRaw).split(':')[1] || 'main'
+    : 'main';
+
+  const candidateFiles = [
+    path.join(os.homedir(), '.openclaw', 'agents', matchAgent, 'sessions', `${sessionId}.jsonl`),
+    path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions', `${sessionId}.jsonl`),
+    path.join(os.homedir(), '.openclaw', 'agents', matchAgent, 'sessions', `${sessionId}.deleted.jsonl`),
+    path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions', `${sessionId}.deleted.jsonl`),
+  ];
+  const existing = candidateFiles.find((f) => fs.existsSync(f));
+  if (!existing) return [];
+
+  try {
+    const lines = fs.readFileSync(existing, 'utf8').split(/\r?\n/).filter(Boolean);
+    const messages: Array<Record<string, unknown>> = [];
+    for (const line of lines) {
+      let obj: Record<string, unknown> | null = null;
+      try {
+        obj = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (obj.type !== 'message') continue;
+      const msg = (obj.message && typeof obj.message === 'object')
+        ? (obj.message as Record<string, unknown>)
+        : null;
+      if (!msg) continue;
+      if (typeof msg.timestamp !== 'number') {
+        const ts = Date.parse(String(obj.timestamp || ''));
+        if (Number.isFinite(ts)) msg.timestamp = Math.floor(ts);
+      }
+      messages.push(msg);
+    }
+    if (messages.length <= limit) return messages;
+    return messages.slice(messages.length - limit);
+  } catch {
+    return [];
+  }
+}
+
+function mergeSessionsWithLocalFallback(
+  gatewaySessions: Array<Record<string, unknown>>,
+  limit: number,
+): Array<Record<string, unknown>> {
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const s of gatewaySessions) {
+    const key = String(s?.key || '').trim();
+    if (!key) continue;
+    merged.set(key, s);
+  }
+
+  const locals = readLocalSessionSummaries(limit);
+  for (const s of locals) {
+    if (merged.has(s.key)) continue;
+    merged.set(s.key, {
+      key: s.key,
+      kind: 'direct',
+      displayName: s.displayName || s.key,
+      label: s.label || undefined,
+      updatedAt: s.updatedAt,
+      model: s.model || undefined,
+      localFallback: true,
+    });
+  }
+
+  const out = Array.from(merged.values());
+  out.sort((a, b) => {
+    const ta = Number(a?.updatedAt || 0);
+    const tb = Number(b?.updatedAt || 0);
+    return tb - ta;
+  });
+  return out.slice(0, Math.max(1, limit));
 }
 
 async function testGatewayWsConnection(
@@ -1206,6 +3003,17 @@ async function testGatewayWsConnection(
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
+          const auth = buildGatewayConnectAuth(token);
+          const scopes = ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'];
+          const nonce = String(msg?.payload?.nonce || '');
+          const device = buildSignedGatewayDevice(
+            nonce,
+            auth.token ?? auth.deviceToken ?? null,
+            'gateway-client',
+            'ui',
+            'operator',
+            scopes,
+          );
           ws.send(JSON.stringify({
             type: 'req',
             id: 'setup-connect-' + Date.now(),
@@ -1220,9 +3028,10 @@ async function testGatewayWsConnection(
                 platform: process.platform,
                 mode: 'ui',
               },
-              auth: { token },
+              auth,
+              ...(device ? { device } : {}),
               role: 'operator',
-              scopes: ['operator.admin'],
+              scopes,
             },
           }));
           return;
@@ -1232,6 +3041,21 @@ async function testGatewayWsConnection(
           if (msg.ok) {
             done({ success: true });
           } else {
+            const errCode = String(msg?.error?.code || '').toUpperCase();
+            const errDetail = String(msg?.error?.details?.code || '').toUpperCase();
+            const errText = String(msg?.error?.message ?? msg?.error ?? '').toLowerCase();
+            const deviceRequired = (
+              errCode === 'NOT_PAIRED'
+              || errDetail === 'DEVICE_IDENTITY_REQUIRED'
+              || errDetail === 'PAIRING_REQUIRED'
+              || errText.includes('device identity required')
+              || errText.includes('pairing required')
+            );
+            const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+            if (deviceRequired && isLoopback) {
+              done({ success: true });
+              return;
+            }
             done({ success: false, error: String(msg.error?.message ?? msg.error ?? 'Authentication failed') });
           }
         }
@@ -1254,6 +3078,7 @@ async function testGatewayWsConnection(
 // 保存 path 模块引用，避免在 hostapi:fetch handler 中被同名参数遮蔽
 const nodePath = path;
 const OPENCLAW_CFG_PATH = nodePath.join(os.homedir(), '.openclaw', 'openclaw.json');
+const AXONCLAWX_CFG_PATH = nodePath.join(os.homedir(), '.openclaw', 'axonclawx.json');
 
 function parseOpenclawConfigText(raw: string): Record<string, unknown> {
   try {
@@ -1280,7 +3105,43 @@ function readOpenclawConfig(): Record<string, unknown> {
   return {};
 }
 
+function readAxonclawxConfig(): Record<string, unknown> {
+  try {
+    if (fs.existsSync(AXONCLAWX_CFG_PATH)) {
+      const raw = fs.readFileSync(AXONCLAWX_CFG_PATH, 'utf8');
+      return parseOpenclawConfigText(raw);
+    }
+  } catch (err) {
+    console.warn('[HostAPI] read axonclawx config failed:', err);
+  }
+  return {};
+}
+
+function writeAxonclawxConfig(config: Record<string, unknown>): void {
+  const dir = nodePath.dirname(AXONCLAWX_CFG_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(AXONCLAWX_CFG_PATH, JSON.stringify(config, null, 2), 'utf8');
+}
+
 function writeOpenclawConfig(config: Record<string, unknown>): void {
+  // Global guard: OpenClaw schema rejects setupComplete at root/ui and rejects axonclawx.
+  if ('setupComplete' in config) {
+    delete (config as Record<string, unknown>).setupComplete;
+  }
+  if ('axonclawx' in config) {
+    delete (config as Record<string, unknown>).axonclawx;
+  }
+  const ui = ensureRecord(config.ui);
+  if ('setupComplete' in ui) {
+    delete ui.setupComplete;
+  }
+  config.ui = ui;
+  const models = ensureRecord(config.models);
+  if ('default' in models) {
+    delete models.default;
+  }
+  config.models = models;
+
   const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   try {
@@ -1315,6 +3176,663 @@ function asModelArray(value: unknown): Array<{ id: string; name?: string }> {
     .filter(Boolean) as Array<{ id: string; name?: string }>;
 }
 
+function asFlexibleModelArray(value: unknown): Array<{ id: string; name?: string }> {
+  if (!Array.isArray(value)) return [];
+  const models: Array<{ id: string; name?: string }> = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      const id = item.trim();
+      if (!id) continue;
+      models.push({ id, name: id });
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const id = typeof rec.id === 'string' ? rec.id.trim() : '';
+    if (!id) continue;
+    const name = typeof rec.name === 'string' && rec.name.trim() ? rec.name.trim() : id;
+    models.push({ id, name });
+  }
+  const dedup = new Map<string, { id: string; name?: string }>();
+  for (const model of models) dedup.set(model.id, model);
+  return Array.from(dedup.values());
+}
+
+type LocalProviderAuthMode = 'api_key' | 'oauth_device' | 'oauth_browser' | 'local';
+type LocalProviderCategory = 'official' | 'compatible' | 'local' | 'custom';
+
+type LocalProviderVendorInfo = {
+  id: string;
+  name: string;
+  icon: string;
+  placeholder: string;
+  model?: string;
+  requiresApiKey: boolean;
+  category: LocalProviderCategory;
+  envVar?: string;
+  supportedAuthModes: LocalProviderAuthMode[];
+  defaultAuthMode: LocalProviderAuthMode;
+  supportsMultipleAccounts: boolean;
+  defaultBaseUrl?: string;
+  showBaseUrl?: boolean;
+  showModelId?: boolean;
+  isOAuth?: boolean;
+  supportsApiKey?: boolean;
+};
+
+type LocalProviderAccount = {
+  id: string;
+  vendorId: string;
+  label: string;
+  authMode: LocalProviderAuthMode;
+  baseUrl?: string;
+  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  model?: string;
+  fallbackModels?: string[];
+  fallbackAccountIds?: string[];
+  enabled: boolean;
+  isDefault: boolean;
+  metadata?: {
+    region?: string;
+    email?: string;
+    resourceUrl?: string;
+    customModels?: string[];
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+type LocalProviderStatus = {
+  id: string;
+  name: string;
+  type: string;
+  baseUrl?: string;
+  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  model?: string;
+  fallbackModels?: string[];
+  fallbackProviderIds?: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  hasKey: boolean;
+  keyMasked: string | null;
+};
+
+const LOCAL_PROVIDER_VENDORS: LocalProviderVendorInfo[] = [
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    icon: '🤖',
+    placeholder: 'sk-ant-api03-...',
+    model: 'Claude',
+    requiresApiKey: true,
+    category: 'official',
+    envVar: 'ANTHROPIC_API_KEY',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    icon: '💚',
+    placeholder: 'sk-proj-...',
+    model: 'GPT',
+    requiresApiKey: true,
+    category: 'official',
+    envVar: 'OPENAI_API_KEY',
+    supportedAuthModes: ['oauth_browser', 'api_key'],
+    defaultAuthMode: 'oauth_browser',
+    supportsMultipleAccounts: false,
+    isOAuth: true,
+    supportsApiKey: true,
+    defaultBaseUrl: 'https://api.openai.com/v1',
+  },
+  {
+    id: 'google',
+    name: 'Google',
+    icon: '🔷',
+    placeholder: 'AIza...',
+    model: 'Gemini',
+    requiresApiKey: true,
+    category: 'official',
+    envVar: 'GOOGLE_API_KEY',
+    supportedAuthModes: ['oauth_browser', 'api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    isOAuth: true,
+    supportsApiKey: true,
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    icon: '🌐',
+    placeholder: 'sk-or-v1-...',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    category: 'compatible',
+    envVar: 'OPENROUTER_API_KEY',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+  },
+  {
+    id: 'ark',
+    name: 'ByteDance Ark',
+    icon: 'A',
+    placeholder: 'ark-api-key',
+    model: 'Doubao',
+    requiresApiKey: true,
+    category: 'compatible',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+  },
+  {
+    id: 'moonshot',
+    name: 'Moonshot',
+    icon: '🌙',
+    placeholder: 'sk-...',
+    model: 'Kimi',
+    requiresApiKey: true,
+    category: 'compatible',
+    envVar: 'MOONSHOT_API_KEY',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+  },
+  {
+    id: 'siliconflow',
+    name: 'SiliconFlow',
+    icon: '🌊',
+    placeholder: 'sk-...',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    category: 'compatible',
+    envVar: 'SILICONFLOW_API_KEY',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+  },
+  {
+    id: 'minimax-portal',
+    name: 'MiniMax',
+    icon: '☁️',
+    placeholder: 'sk-...',
+    model: 'MiniMax',
+    requiresApiKey: false,
+    category: 'compatible',
+    supportedAuthModes: ['oauth_browser', 'api_key'],
+    defaultAuthMode: 'oauth_browser',
+    supportsMultipleAccounts: false,
+    isOAuth: true,
+    supportsApiKey: true,
+  },
+  {
+    id: 'minimax-portal-cn',
+    name: 'MiniMax (CN)',
+    icon: '☁️',
+    placeholder: 'sk-...',
+    model: 'MiniMax',
+    requiresApiKey: false,
+    category: 'compatible',
+    supportedAuthModes: ['oauth_browser', 'api_key'],
+    defaultAuthMode: 'oauth_browser',
+    supportsMultipleAccounts: false,
+    isOAuth: true,
+    supportsApiKey: true,
+  },
+  {
+    id: 'qwen-portal',
+    name: 'Qwen',
+    icon: '☁️',
+    placeholder: 'sk-...',
+    model: 'Qwen',
+    requiresApiKey: false,
+    category: 'compatible',
+    supportedAuthModes: ['oauth_browser', 'api_key'],
+    defaultAuthMode: 'oauth_browser',
+    supportsMultipleAccounts: false,
+    isOAuth: true,
+    supportsApiKey: true,
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    icon: '🦙',
+    placeholder: 'Not required',
+    model: 'Local',
+    requiresApiKey: false,
+    category: 'local',
+    supportedAuthModes: ['local'],
+    defaultAuthMode: 'local',
+    supportsMultipleAccounts: false,
+    supportsApiKey: false,
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    showBaseUrl: true,
+    showModelId: true,
+  },
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    icon: '🔮',
+    placeholder: 'Not required',
+    model: 'Claude (Local)',
+    requiresApiKey: false,
+    category: 'local',
+    supportedAuthModes: ['local', 'api_key'],
+    defaultAuthMode: 'local',
+    supportsMultipleAccounts: false,
+    supportsApiKey: true,
+    defaultBaseUrl: 'http://localhost:3210/v1',
+    showBaseUrl: true,
+    showModelId: true,
+  },
+  {
+    id: 'custom',
+    name: 'Custom',
+    icon: '⚙️',
+    placeholder: 'API key...',
+    requiresApiKey: true,
+    category: 'custom',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: true,
+    supportsApiKey: true,
+    showBaseUrl: true,
+    showModelId: true,
+  },
+];
+
+const LOCAL_PROVIDER_VENDOR_MAP = new Map(
+  LOCAL_PROVIDER_VENDORS.map((vendor) => [vendor.id, vendor]),
+);
+
+function getProviderVendorInfo(providerId: string): LocalProviderVendorInfo {
+  const normalized = normalizeProviderAlias(providerId);
+  const direct = LOCAL_PROVIDER_VENDOR_MAP.get(normalized);
+  if (direct) return direct;
+  return {
+    id: normalized || providerId || 'custom',
+    name: normalized || providerId || 'Custom',
+    icon: '⚙️',
+    placeholder: 'API key...',
+    requiresApiKey: true,
+    category: 'custom',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: true,
+    supportsApiKey: true,
+    showBaseUrl: true,
+    showModelId: true,
+  };
+}
+
+function maskProviderKey(apiKey: string): string | null {
+  const value = String(apiKey || '').trim();
+  if (!value) return null;
+  if (value.length <= 8) return `${value.slice(0, 2)}***${value.slice(-1)}`;
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+function inferLocalProviderAuthMode(providerId: string, providerObj: Record<string, unknown>): LocalProviderAuthMode {
+  const authRaw = String(providerObj.authMode || '').trim();
+  if (authRaw === 'api_key' || authRaw === 'oauth_device' || authRaw === 'oauth_browser' || authRaw === 'local') {
+    return authRaw;
+  }
+  const normalized = normalizeProviderAlias(providerId);
+  if (normalized === 'ollama' || normalized === 'claude-code') {
+    return 'local';
+  }
+  const hasApiKey = String(providerObj.apiKey || '').trim().length > 0;
+  if (normalized === 'openai' && !hasApiKey) {
+    return 'oauth_browser';
+  }
+  return 'api_key';
+}
+
+function hasUsableOAuthCredentialForProvider(providerId: string): boolean {
+  const normalizedProvider = normalizeProviderAlias(providerId);
+  if (!normalizedProvider) return false;
+  const authPath = getMainAgentAuthProfilesPath();
+  if (!fs.existsSync(authPath)) return false;
+
+  try {
+    const raw = fs.readFileSync(authPath, 'utf8');
+    const doc = JSON.parse(raw) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    const aliases = providerAliasSet(normalizedProvider);
+
+    for (const profileRaw of Object.values(profiles)) {
+      const profile = ensureRecord(profileRaw);
+      const profileProvider = normalizeProviderAlias(String(profile.provider || '').trim());
+      if (!profileProvider || !aliases.has(profileProvider)) continue;
+      const profileType = String(profile.type || '').trim();
+      if (profileType === 'api_key') {
+        const key = String(profile.key || '').trim();
+        if (key) return true;
+        continue;
+      }
+      if (profileType === 'oauth') {
+        const access = String(profile.access || '').trim();
+        if (!access) continue;
+        const expires = Number(profile.expires);
+        if (Number.isFinite(expires) && expires > 0 && Date.now() >= expires) continue;
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+function getMaskedApiKeyFromAuthProfiles(providerId: string): string | null {
+  const normalizedProvider = normalizeProviderAlias(providerId);
+  if (!normalizedProvider) return null;
+  const authPath = getMainAgentAuthProfilesPath();
+  if (!fs.existsSync(authPath)) return null;
+
+  try {
+    const raw = fs.readFileSync(authPath, 'utf8');
+    const doc = JSON.parse(raw) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    const aliases = providerAliasSet(normalizedProvider);
+
+    for (const profileRaw of Object.values(profiles)) {
+      const profile = ensureRecord(profileRaw);
+      const profileProvider = normalizeProviderAlias(String(profile.provider || '').trim());
+      if (!profileProvider || !aliases.has(profileProvider)) continue;
+      if (String(profile.type || '').trim() !== 'api_key') continue;
+      const key = String(profile.key || '').trim();
+      if (!key) continue;
+      return maskProviderKey(key);
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function findProviderConfigKeyByAccountId(
+  providersNode: Record<string, unknown>,
+  accountId: string,
+): string | null {
+  const id = String(accountId || '').trim();
+  if (!id) return null;
+  if (id in providersNode) return id;
+  for (const [providerKey, providerRaw] of Object.entries(providersNode)) {
+    const provider = ensureRecord(providerRaw);
+    const storedAccountId = String(provider.accountId || '').trim();
+    if (storedAccountId && storedAccountId === id) return providerKey;
+  }
+  const normalized = normalizeProviderAlias(id);
+  for (const providerKey of Object.keys(providersNode)) {
+    if (normalizeProviderAlias(providerKey) === normalized) return providerKey;
+  }
+  return null;
+}
+
+function readDefaultProviderAccountId(): string | null {
+  const axonCfg = readAxonclawxConfig();
+  const axon = ensureRecord(axonCfg);
+  const auth = ensureRecord(axon.auth);
+  const axonDefault = String(auth.defaultProviderAccountId || '').trim();
+  if (axonDefault) return axonDefault;
+
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const legacyDefault = String(
+    models.defaultProviderAccountId
+      || models.defaultAccountId
+      || models.defaultProviderId
+      || '',
+  ).trim();
+  return legacyDefault || null;
+}
+
+function writeDefaultProviderAccountId(accountId: string | null): void {
+  const axonCfg = readAxonclawxConfig();
+  const axon = ensureRecord(axonCfg);
+  const auth = ensureRecord(axon.auth);
+  const nextId = String(accountId || '').trim();
+  if (nextId) {
+    auth.defaultProviderAccountId = nextId;
+  } else if ('defaultProviderAccountId' in auth) {
+    delete auth.defaultProviderAccountId;
+  }
+  axon.auth = auth;
+  writeAxonclawxConfig(axon);
+}
+
+function scoreLocalProviderAccountCandidate(
+  account: LocalProviderAccount,
+  status: LocalProviderStatus | undefined,
+  defaultAccountId: string | null,
+): number {
+  let score = 0;
+  if (account.id === defaultAccountId) score += 100;
+  if (account.isDefault) score += 20;
+  if (account.authMode === 'local') score += 10;
+  if (status?.hasKey) score += 10;
+  if (account.enabled) score += 2;
+  return score;
+}
+
+function compareLocalProviderCandidates(
+  left: { account: LocalProviderAccount; status?: LocalProviderStatus },
+  right: { account: LocalProviderAccount; status?: LocalProviderStatus },
+  defaultAccountId: string | null,
+): number {
+  const leftScore = scoreLocalProviderAccountCandidate(left.account, left.status, defaultAccountId);
+  const rightScore = scoreLocalProviderAccountCandidate(right.account, right.status, defaultAccountId);
+  if (leftScore !== rightScore) return leftScore - rightScore;
+  const leftUpdatedAt = String(left.account.updatedAt || '');
+  const rightUpdatedAt = String(right.account.updatedAt || '');
+  if (leftUpdatedAt !== rightUpdatedAt) return leftUpdatedAt.localeCompare(rightUpdatedAt);
+  return String(left.account.id || '').localeCompare(String(right.account.id || ''));
+}
+
+function dedupeLocalProviderSnapshotRecords(
+  accounts: LocalProviderAccount[],
+  statuses: LocalProviderStatus[],
+  defaultAccountId: string | null,
+): { accounts: LocalProviderAccount[]; statuses: LocalProviderStatus[] } {
+  const statusMap = new Map(statuses.map((item) => [item.id, item]));
+  const pickedByKey = new Map<string, { account: LocalProviderAccount; status?: LocalProviderStatus }>();
+
+  for (const account of accounts) {
+    const vendorId = normalizeProviderAlias(String(account.vendorId || '').trim());
+    if (!vendorId) continue;
+    const vendorInfo = getProviderVendorInfo(vendorId);
+    const allowMultiple = Boolean(vendorInfo.supportsMultipleAccounts);
+    const key = allowMultiple ? `account:${account.id}` : `vendor:${vendorId}`;
+    const candidate = { account, status: statusMap.get(account.id) };
+    const existing = pickedByKey.get(key);
+    if (!existing) {
+      pickedByKey.set(key, candidate);
+      continue;
+    }
+    if (compareLocalProviderCandidates(candidate, existing, defaultAccountId) > 0) {
+      pickedByKey.set(key, candidate);
+    }
+  }
+
+  const dedupedAccounts = Array.from(pickedByKey.values()).map((entry) => ({
+    ...entry.account,
+    isDefault: entry.account.id === defaultAccountId,
+  }));
+  const dedupedStatuses = dedupedAccounts
+    .map((account) => statusMap.get(account.id))
+    .filter(Boolean) as LocalProviderStatus[];
+
+  return {
+    accounts: dedupedAccounts,
+    statuses: dedupedStatuses,
+  };
+}
+
+function readLocalProviderSnapshot(): {
+  accounts: LocalProviderAccount[];
+  statuses: LocalProviderStatus[];
+  vendors: LocalProviderVendorInfo[];
+  defaultAccountId: string | null;
+} {
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const providersNode = ensureRecord(models.providers);
+  const nowIso = new Date().toISOString();
+  const defaultAccountId = readDefaultProviderAccountId();
+  const accounts: LocalProviderAccount[] = [];
+  const statuses: LocalProviderStatus[] = [];
+
+  for (const [providerKey, providerRaw] of Object.entries(providersNode)) {
+    const provider = ensureRecord(providerRaw);
+    const vendorId = normalizeProviderAlias(String(provider.vendorId || providerKey).trim() || providerKey);
+    if (!vendorId) continue;
+    const vendorInfo = getProviderVendorInfo(vendorId);
+    const accountId = String(provider.accountId || providerKey).trim() || providerKey;
+    const label = String(provider.label || vendorInfo.name || vendorId).trim() || vendorId;
+    const authMode = inferLocalProviderAuthMode(vendorId, provider);
+    const modelList = asFlexibleModelArray(provider.models);
+    const model = String(provider.model || '').trim() || modelList[0]?.id || '';
+    const fallbackModels = Array.isArray(provider.fallbackModels)
+      ? (provider.fallbackModels as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    const fallbackAccountIds = Array.isArray(provider.fallbackAccountIds)
+      ? (provider.fallbackAccountIds as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    const fallbackProviderIds = Array.isArray(provider.fallbackProviderIds)
+      ? (provider.fallbackProviderIds as unknown[]).map((v) => normalizeProviderAlias(String(v || '').trim())).filter(Boolean)
+      : [];
+    const enabled = provider.enabled !== false;
+    const createdAt = typeof provider.createdAt === 'string' && provider.createdAt.trim()
+      ? provider.createdAt
+      : nowIso;
+    const updatedAt = typeof provider.updatedAt === 'string' && provider.updatedAt.trim()
+      ? provider.updatedAt
+      : nowIso;
+    const baseUrl = typeof provider.baseUrl === 'string' && provider.baseUrl.trim()
+      ? provider.baseUrl.trim()
+      : undefined;
+    const apiProtocol = (() => {
+      const raw = typeof provider.apiProtocol === 'string'
+        ? provider.apiProtocol
+        : (typeof provider.api === 'string' ? provider.api : '');
+      const normalized = raw.trim();
+      if (normalized === 'openai-completions' || normalized === 'openai-responses' || normalized === 'anthropic-messages') {
+        return normalized;
+      }
+      return undefined;
+    })();
+    const apiKey = String(provider.apiKey || '').trim();
+    const hasProfileCredential = hasUsableOAuthCredentialForProvider(vendorId);
+    const hasKey = Boolean(apiKey) || authMode === 'local' || hasProfileCredential;
+    const keyMasked = apiKey
+      ? maskProviderKey(apiKey)
+      : getMaskedApiKeyFromAuthProfiles(vendorId);
+
+    const account: LocalProviderAccount = {
+      id: accountId,
+      vendorId,
+      label,
+      authMode,
+      baseUrl,
+      apiProtocol,
+      model: model || undefined,
+      fallbackModels: fallbackModels.length ? fallbackModels : undefined,
+      fallbackAccountIds: (fallbackAccountIds.length ? fallbackAccountIds : fallbackProviderIds.length ? fallbackProviderIds : undefined),
+      enabled,
+      isDefault: defaultAccountId === accountId,
+      metadata: {
+        email: typeof provider.email === 'string' ? provider.email : undefined,
+      },
+      createdAt,
+      updatedAt,
+    };
+
+    const status: LocalProviderStatus = {
+      id: accountId,
+      name: label,
+      type: vendorId,
+      baseUrl,
+      apiProtocol,
+      model: model || undefined,
+      fallbackModels: fallbackModels.length ? fallbackModels : undefined,
+      fallbackProviderIds: fallbackProviderIds.length
+        ? fallbackProviderIds
+        : (fallbackAccountIds.length ? fallbackAccountIds : undefined),
+      enabled,
+      createdAt,
+      updatedAt,
+      hasKey,
+      keyMasked,
+    };
+
+    accounts.push(account);
+    statuses.push(status);
+  }
+
+  const deduped = dedupeLocalProviderSnapshotRecords(accounts, statuses, defaultAccountId);
+  accounts.length = 0;
+  statuses.length = 0;
+  accounts.push(...deduped.accounts);
+  statuses.push(...deduped.statuses);
+
+  const existingVendorIds = new Set(accounts.map((item) => normalizeProviderAlias(item.vendorId)));
+  const authOnlyProviders = readMainAgentAuthProfileProviders();
+  for (const authEntry of authOnlyProviders) {
+    const providerId = normalizeProviderAlias(authEntry.providerId);
+    if (!providerId || existingVendorIds.has(providerId)) continue;
+    const hasOAuthCredential = hasUsableOAuthCredentialForProvider(providerId);
+    const hasAnyCredential = Boolean(authEntry.keyMasked) || hasOAuthCredential;
+    if (!hasAnyCredential) continue;
+    const vendorInfo = getProviderVendorInfo(providerId);
+    const createdAt = nowIso;
+    const updatedAt = nowIso;
+    const account: LocalProviderAccount = {
+      id: providerId,
+      vendorId: providerId,
+      label: vendorInfo.name || providerId,
+      authMode: providerId === 'ollama' || providerId === 'claude-code' ? 'local' : 'api_key',
+      enabled: true,
+      isDefault: defaultAccountId === providerId,
+      createdAt,
+      updatedAt,
+    };
+    const status: LocalProviderStatus = {
+      id: providerId,
+      name: account.label,
+      type: providerId,
+      enabled: true,
+      createdAt,
+      updatedAt,
+      hasKey: hasAnyCredential,
+      keyMasked: authEntry.keyMasked,
+    };
+    accounts.push(account);
+    statuses.push(status);
+    existingVendorIds.add(providerId);
+  }
+
+  accounts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  statuses.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  return {
+    accounts,
+    statuses,
+    vendors: LOCAL_PROVIDER_VENDORS,
+    defaultAccountId,
+  };
+}
+
 function findCodexLikeProviderId(providers: Record<string, unknown>): string | null {
   for (const [providerId, providerValue] of Object.entries(providers)) {
     const provider = ensureRecord(providerValue);
@@ -1327,6 +3845,463 @@ function findCodexLikeProviderId(providers: Record<string, unknown>): string | n
     }
   }
   return null;
+}
+
+function normalizeProviderAlias(providerId: string): string {
+  const value = String(providerId || '').trim();
+  if (!value) return '';
+  const lower = value.toLowerCase();
+  if (lower === 'openai-codex') return 'openai';
+  return value;
+}
+
+function providerAliasSet(providerId: string): Set<string> {
+  const normalized = normalizeProviderAlias(providerId);
+  const aliases = new Set<string>([normalized]);
+  if (normalized === 'openai') aliases.add('openai-codex');
+  if (normalized === 'openai-codex') aliases.add('openai');
+  return aliases;
+}
+
+function isLikelyOpenAiApiKey(rawValue: string): boolean {
+  const value = String(rawValue || '').trim();
+  if (!value) return false;
+  return /^sk-[A-Za-z0-9._-]{10,}$/.test(value);
+}
+
+function isLikelyEncryptedSessionToken(rawValue: string): boolean {
+  const value = String(rawValue || '').trim();
+  if (!value || !value.startsWith('eyJ')) return false;
+  // JWE-like token often has double dot between protected header and IV.
+  if (value.includes('..')) return true;
+  // non-API-key JWT/JWE style token.
+  return value.split('.').length >= 3;
+}
+
+function isAcceptedProviderApiKey(providerId: string, rawValue: string): boolean {
+  const normalizedProvider = normalizeProviderAlias(providerId);
+  const value = String(rawValue || '').trim();
+  if (!normalizedProvider || !value) return false;
+  if (normalizedProvider === 'openai' || normalizedProvider === 'openai-codex') {
+    return isLikelyOpenAiApiKey(value);
+  }
+  return true;
+}
+
+function providerApiKeyValidationMessage(providerId: string): string {
+  const normalizedProvider = normalizeProviderAlias(providerId);
+  if (normalizedProvider === 'openai' || normalizedProvider === 'openai-codex') {
+    return 'OpenAI authentication requires an API key (sk-...). Browser session tokens are not supported in API key mode.';
+  }
+  return 'Invalid API key.';
+}
+
+function sanitizeInvalidOpenAiCredentialArtifacts(): {
+  configChanged: boolean;
+  profileChanged: boolean;
+  removedConfigKeys: number;
+  removedProfiles: number;
+} {
+  let configChanged = false;
+  let removedConfigKeys = 0;
+  try {
+    const cfg = readOpenclawConfig();
+    const models = ensureRecord(cfg.models);
+    const providers = ensureRecord(models.providers);
+    for (const [providerId, providerRaw] of Object.entries(providers)) {
+      const normalizedProvider = normalizeProviderAlias(providerId);
+      if (normalizedProvider !== 'openai' && normalizedProvider !== 'openai-codex') continue;
+      const provider = ensureRecord(providerRaw);
+      const apiKey = String(provider.apiKey || '').trim();
+      if (!apiKey) continue;
+      if (!isLikelyOpenAiApiKey(apiKey)) {
+        delete provider.apiKey;
+        providers[providerId] = provider;
+        configChanged = true;
+        removedConfigKeys += 1;
+      }
+    }
+    if (configChanged) {
+      models.providers = providers;
+      cfg.models = models;
+      cfg.meta = {
+        ...ensureRecord(cfg.meta),
+        lastTouchedAt: new Date().toISOString(),
+      };
+      writeOpenclawConfig(cfg);
+    }
+  } catch (err) {
+    console.warn('[Main] sanitize openai config credentials failed:', err);
+  }
+
+  let profileChanged = false;
+  let removedProfiles = 0;
+  try {
+    const authPath = getMainAgentAuthProfilesPath();
+    if (!fs.existsSync(authPath)) {
+      return { configChanged, profileChanged, removedConfigKeys, removedProfiles };
+    }
+    const doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    const order = ensureRecord(doc.order);
+    const lastGood = ensureRecord(doc.lastGood);
+    const usageStats = ensureRecord(doc.usageStats);
+
+    for (const profileId of Object.keys(profiles)) {
+      const profile = ensureRecord(profiles[profileId]);
+      const providerId = normalizeProviderAlias(String(profile.provider || '').trim());
+      if (providerId !== 'openai' && providerId !== 'openai-codex') continue;
+      if (String(profile.type || '') !== 'api_key') continue;
+      const key = String(profile.key || '').trim();
+      if (!key) continue;
+      if (!isLikelyOpenAiApiKey(key)) {
+        delete profiles[profileId];
+        delete usageStats[profileId];
+        removedProfiles += 1;
+        profileChanged = true;
+      }
+    }
+
+    for (const alias of ['openai', 'openai-codex']) {
+      const currentOrder = Array.isArray(order[alias])
+        ? (order[alias] as unknown[]).map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const nextOrder = currentOrder.filter((profileId) => !!profiles[profileId]);
+      if (nextOrder.length !== currentOrder.length) {
+        order[alias] = nextOrder;
+        profileChanged = true;
+      }
+      if (lastGood[alias] && !profiles[String(lastGood[alias])]) {
+        delete lastGood[alias];
+        profileChanged = true;
+      }
+    }
+
+    if (profileChanged) {
+      const next = {
+        ...doc,
+        version: 1,
+        profiles,
+        order,
+        lastGood,
+        usageStats,
+      };
+      fs.writeFileSync(authPath, JSON.stringify(next, null, 2), 'utf8');
+    }
+  } catch (err) {
+    console.warn('[Main] sanitize openai auth profiles failed:', err);
+  }
+
+  return { configChanged, profileChanged, removedConfigKeys, removedProfiles };
+}
+
+function getMainAgentAuthProfilesPath(): string {
+  return nodePath.join(os.homedir(), '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+}
+
+function readMainAgentAuthProfileProviders(): Array<{ providerId: string; keyMasked: string | null }> {
+  const authPath = getMainAgentAuthProfilesPath();
+  if (!fs.existsSync(authPath)) return [];
+
+  try {
+    const raw = fs.readFileSync(authPath, 'utf8');
+    const doc = JSON.parse(raw) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    const providerMap = new Map<string, { providerId: string; keyMasked: string | null }>();
+
+    for (const profileRaw of Object.values(profiles)) {
+      const profile = ensureRecord(profileRaw);
+      const providerId = normalizeProviderAlias(String(profile.provider || '').trim());
+      if (!providerId) continue;
+      const key = String(profile.key || '').trim();
+      const keyMasked = key ? maskProviderKey(key) : null;
+      if (!providerMap.has(providerId)) {
+        providerMap.set(providerId, { providerId, keyMasked });
+        continue;
+      }
+      const prev = providerMap.get(providerId);
+      if (prev && !prev.keyMasked && keyMasked) {
+        providerMap.set(providerId, { providerId, keyMasked });
+      }
+    }
+
+    return Array.from(providerMap.values());
+  } catch {
+    return [];
+  }
+}
+
+function ensureMainAgentAuthProfile(providerId: string, apiKey: string, source = 'config-sync'): boolean {
+  const normalizedProvider = normalizeProviderAlias(providerId);
+  const key = String(apiKey || '').trim();
+  if (!normalizedProvider || !key) return false;
+  if ((normalizedProvider === 'openai' || normalizedProvider === 'openai-codex') && !isLikelyOpenAiApiKey(key)) {
+    return false;
+  }
+
+  const authPath = getMainAgentAuthProfilesPath();
+  const dir = nodePath.dirname(authPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let doc: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(authPath)) {
+      doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    }
+  } catch {
+    doc = {};
+  }
+
+  const profiles = ensureRecord(doc.profiles);
+  const order = ensureRecord(doc.order);
+  const lastGood = ensureRecord(doc.lastGood);
+  const usageStats = ensureRecord(doc.usageStats);
+
+  const aliases = providerAliasSet(normalizedProvider);
+  for (const pid of aliases) {
+    const profileId = `${pid}:default`;
+    profiles[profileId] = {
+      type: 'api_key',
+      provider: pid,
+      key,
+      source,
+    };
+
+    const currentOrder = Array.isArray(order[pid]) ? (order[pid] as unknown[]).map((x) => String(x || '').trim()).filter(Boolean) : [];
+    const nextOrder = [profileId, ...currentOrder.filter((id) => id !== profileId)];
+    order[pid] = nextOrder;
+    lastGood[pid] = profileId;
+
+    const prevStats = ensureRecord(usageStats[profileId]);
+    usageStats[profileId] = {
+      errorCount: typeof prevStats.errorCount === 'number' ? prevStats.errorCount : 0,
+      lastUsed: typeof prevStats.lastUsed === 'number' ? prevStats.lastUsed : Date.now(),
+    };
+  }
+
+  const next = {
+    ...doc,
+    version: 1,
+    profiles,
+    order,
+    lastGood,
+    usageStats,
+  };
+  fs.writeFileSync(authPath, JSON.stringify(next, null, 2), 'utf8');
+  return true;
+}
+
+function syncMainAgentAuthProfilesFromConfig(): { changed: number; providers: string[] } {
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const providers = ensureRecord(models.providers);
+  let changed = 0;
+  const changedProviders: string[] = [];
+
+  for (const [providerIdRaw, providerRaw] of Object.entries(providers)) {
+    const providerId = normalizeProviderAlias(providerIdRaw);
+    const provider = ensureRecord(providerRaw);
+    const apiKey = String(provider.apiKey || '').trim();
+    if (!providerId || !apiKey) continue;
+    if (ensureMainAgentAuthProfile(providerId, apiKey, 'config-sync')) {
+      changed += 1;
+      changedProviders.push(providerId);
+    }
+  }
+
+  return { changed, providers: Array.from(new Set(changedProviders)) };
+}
+
+function hasValidOpenAiApiKeyInConfig(): boolean {
+  try {
+    const cfg = readOpenclawConfig();
+    const models = ensureRecord(cfg.models);
+    const providers = ensureRecord(models.providers);
+    for (const [providerId, providerRaw] of Object.entries(providers)) {
+      const normalizedProvider = normalizeProviderAlias(providerId);
+      if (normalizedProvider !== 'openai' && normalizedProvider !== 'openai-codex') continue;
+      const provider = ensureRecord(providerRaw);
+      const apiKey = String(provider.apiKey || '').trim();
+      if (isLikelyOpenAiApiKey(apiKey)) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function hasValidOpenAiApiKeyInAuthProfiles(): boolean {
+  try {
+    const authPath = getMainAgentAuthProfilesPath();
+    if (!fs.existsSync(authPath)) return false;
+    const doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+    const profiles = ensureRecord(doc.profiles);
+    for (const profileRaw of Object.values(profiles)) {
+      const profile = ensureRecord(profileRaw);
+      if (String(profile.type || '') !== 'api_key') continue;
+      const providerId = normalizeProviderAlias(String(profile.provider || '').trim());
+      if (providerId !== 'openai' && providerId !== 'openai-codex') continue;
+      const key = String(profile.key || '').trim();
+      if (isLikelyOpenAiApiKey(key)) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function getOpenAiCredentialStatus(): {
+  hasValidApiKey: boolean;
+  configHasValidApiKey: boolean;
+  profileHasValidApiKey: boolean;
+} {
+  const configHasValidApiKey = hasValidOpenAiApiKeyInConfig();
+  const profileHasValidApiKey = hasValidOpenAiApiKeyInAuthProfiles();
+  return {
+    hasValidApiKey: configHasValidApiKey || profileHasValidApiKey,
+    configHasValidApiKey,
+    profileHasValidApiKey,
+  };
+}
+
+function clearMainAgentAuthProfilesByProvider(providerId: string): boolean {
+  const normalized = normalizeProviderAlias(providerId);
+  if (!normalized) return false;
+  const authPath = getMainAgentAuthProfilesPath();
+  if (!fs.existsSync(authPath)) return false;
+
+  let doc: Record<string, unknown> = {};
+  try {
+    doc = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+
+  const aliases = providerAliasSet(normalized);
+  const profiles = ensureRecord(doc.profiles);
+  const order = ensureRecord(doc.order);
+  const lastGood = ensureRecord(doc.lastGood);
+  const usageStats = ensureRecord(doc.usageStats);
+
+  let changed = false;
+  for (const profileId of Object.keys(profiles)) {
+    const profile = ensureRecord(profiles[profileId]);
+    const profileProvider = normalizeProviderAlias(String(profile.provider || '').trim());
+    if (!profileProvider || !aliases.has(profileProvider)) continue;
+    delete profiles[profileId];
+    delete usageStats[profileId];
+    changed = true;
+  }
+
+  for (const alias of aliases) {
+    const currentOrder = Array.isArray(order[alias]) ? (order[alias] as unknown[]).map((x) => String(x || '').trim()).filter(Boolean) : [];
+    const nextOrder = currentOrder.filter((pid) => !!profiles[pid]);
+    if (nextOrder.length !== currentOrder.length) {
+      order[alias] = nextOrder;
+      changed = true;
+    }
+    if (lastGood[alias] && !profiles[String(lastGood[alias])]) {
+      delete lastGood[alias];
+      changed = true;
+    }
+  }
+
+  if (!changed) return false;
+  const next = {
+    ...doc,
+    version: 1,
+    profiles,
+    order,
+    lastGood,
+    usageStats,
+  };
+  fs.writeFileSync(authPath, JSON.stringify(next, null, 2), 'utf8');
+  return true;
+}
+
+function clearProviderApiKeyFromConfig(providerId: string): boolean {
+  const normalized = normalizeProviderAlias(providerId);
+  if (!normalized) return false;
+  const aliases = providerAliasSet(normalized);
+  const cfg = readOpenclawConfig();
+  const models = ensureRecord(cfg.models);
+  const providers = ensureRecord(models.providers);
+  let changed = false;
+
+  for (const [rawProviderId, providerRaw] of Object.entries(providers)) {
+    const providerAlias = normalizeProviderAlias(rawProviderId);
+    if (!aliases.has(providerAlias)) continue;
+    const provider = ensureRecord(providerRaw);
+    if ('apiKey' in provider) {
+      delete provider.apiKey;
+      providers[rawProviderId] = provider;
+      changed = true;
+    }
+  }
+
+  if (!changed) return false;
+  models.providers = providers;
+  cfg.models = models;
+  cfg.meta = {
+    ...ensureRecord(cfg.meta),
+    lastTouchedAt: new Date().toISOString(),
+  };
+  writeOpenclawConfig(cfg);
+  return true;
+}
+
+async function logoutCodexAuth(options?: { clearProviderAuth?: boolean }): Promise<{
+  clearedSession: boolean;
+  clearedConfigAuth: boolean;
+  clearedRuntimeAuth: boolean;
+}> {
+  pendingProviderOAuth = null;
+  stopPendingProviderOAuthWatcher();
+  stopPendingProviderOAuthCallbackServer();
+  if (codexAuthWindow && !codexAuthWindow.isDestroyed()) {
+    codexAuthWindow.destroy();
+    codexAuthWindow = null;
+  }
+  const oldPartition = currentCodexAuthPartition;
+  await clearCodexAuthSession(oldPartition).catch(() => {});
+  await clearCodexAuthSession(CODEX_AUTH_PARTITION_PERSIST).catch(() => {});
+  // 退出后切到新的临时分区，确保后续登录不会继承旧状态。
+  currentCodexAuthPartition = allocEphemeralCodexAuthPartition();
+  await clearCodexAuthSession(currentCodexAuthPartition).catch(() => {});
+
+  const clearProviderAuth = options?.clearProviderAuth !== false;
+  let clearedConfigAuth = false;
+  let clearedRuntimeAuth = false;
+  if (clearProviderAuth) {
+    clearedConfigAuth = clearProviderApiKeyFromConfig('openai');
+    try {
+      clearedRuntimeAuth = clearMainAgentAuthProfilesByProvider('openai');
+    } catch {
+      clearedRuntimeAuth = false;
+    }
+  }
+
+  return { clearedSession: true, clearedConfigAuth, clearedRuntimeAuth };
+}
+
+async function getCodexAuthDebugState(): Promise<{
+  currentPartition: string;
+  currentCookies: number;
+  persistentCookies: number;
+  windowAlive: boolean;
+}> {
+  const current = session.fromPartition(currentCodexAuthPartition);
+  const persistent = session.fromPartition(CODEX_AUTH_PARTITION_PERSIST);
+  const [currentCookies, persistentCookies] = await Promise.all([
+    current.cookies.get({}),
+    persistent.cookies.get({}),
+  ]);
+  return {
+    currentPartition: currentCodexAuthPartition,
+    currentCookies: currentCookies.length,
+    persistentCookies: persistentCookies.length,
+    windowAlive: Boolean(codexAuthWindow && !codexAuthWindow.isDestroyed()),
+  };
 }
 
 async function detectCodexCli(): Promise<{ installed: boolean; path?: string; version?: string }> {
@@ -1348,6 +4323,350 @@ async function detectCodexCli(): Promise<{ installed: boolean; path?: string; ve
   }
 }
 
+async function detectClaudeCodeCli(): Promise<{ installed: boolean; path?: string; version?: string }> {
+  try {
+    const { stdout: pathRaw } = await execAsync('command -v claude || true', { timeout: 3000 });
+    const claudePath = pathRaw.trim();
+    if (!claudePath) return { installed: false };
+
+    let version = '';
+    try {
+      const { stdout: verRaw } = await execAsync('claude --version', { timeout: 5000 });
+      version = verRaw.trim();
+    } catch {
+      // ignore version probe failures
+    }
+    return { installed: true, path: claudePath, version };
+  } catch {
+    return { installed: false };
+  }
+}
+
+type OpenClawDoctorMode = 'diagnose' | 'fix';
+
+type OpenClawDoctorResult = {
+  mode: OpenClawDoctorMode;
+  success: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  command: string;
+  cwd: string;
+  durationMs: number;
+  timedOut?: boolean;
+  error?: string;
+};
+
+type SelfTestStatus = 'pass' | 'warn' | 'fail';
+
+type SelfTestCheck = {
+  id: string;
+  name: string;
+  status: SelfTestStatus;
+  detail: string;
+  durationMs: number;
+  autoFixed?: boolean;
+};
+
+type SelfTestReport = {
+  success: boolean;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  summary: {
+    passed: number;
+    warned: number;
+    failed: number;
+  };
+  checks: SelfTestCheck[];
+};
+
+function getGatewayControlUiInfo(): {
+  success: true;
+  mode: 'local' | 'remote';
+  protocol: 'ws' | 'wss';
+  host: string;
+  port: number;
+  token: string;
+  url: string;
+  wsUrl: string;
+} {
+  const cfg = getGatewayConnectionSettings();
+  const protocol: 'ws' | 'wss' = cfg.mode === 'remote' ? cfg.protocol : 'ws';
+  const host = cfg.mode === 'remote' ? cfg.host : '127.0.0.1';
+  const port = cfg.mode === 'remote' ? cfg.port : getResolvedGatewayPort();
+  const auth = buildGatewayConnectAuth(cfg.token);
+  const token = String(auth.token || cfg.token || GATEWAY_TOKEN).trim() || GATEWAY_TOKEN;
+  const httpProtocol = protocol === 'wss' ? 'https' : 'http';
+  return {
+    success: true,
+    mode: cfg.mode,
+    protocol,
+    host,
+    port,
+    token,
+    url: `${httpProtocol}://${host}:${port}`,
+    wsUrl: `${protocol}://${host}:${port}/ws`,
+  };
+}
+
+async function runOpenClawDoctor(mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> {
+  const command = mode === 'fix' ? 'openclaw doctor --fix --json' : 'openclaw doctor --json';
+  const startedAt = Date.now();
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: mode === 'fix' ? 180000 : 120000,
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    return {
+      mode,
+      success: true,
+      exitCode: 0,
+      stdout: String(stdout || ''),
+      stderr: String(stderr || ''),
+      command,
+      cwd: process.cwd(),
+      durationMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    const e = err as Error & {
+      code?: number;
+      killed?: boolean;
+      signal?: string;
+      stdout?: string;
+      stderr?: string;
+    };
+    const stderrText = String(e?.stderr || '');
+    const stdoutText = String(e?.stdout || '');
+    const timedOut = !!(e?.killed && String(e?.signal || '').toUpperCase() === 'SIGTERM');
+    return {
+      mode,
+      success: false,
+      exitCode: typeof e?.code === 'number' ? e.code : null,
+      stdout: stdoutText,
+      stderr: stderrText,
+      command,
+      cwd: process.cwd(),
+      durationMs: Date.now() - startedAt,
+      timedOut,
+      error: e?.message || String(err),
+    };
+  }
+}
+
+async function runGatewaySkillsSelfTest(options?: { autoStartGateway?: boolean }): Promise<SelfTestReport> {
+  const startedAt = Date.now();
+  const startedIso = new Date(startedAt).toISOString();
+  const autoStartGateway = options?.autoStartGateway !== false;
+  const gatewayConn = getGatewayConnectionSettings();
+  const checks: SelfTestCheck[] = [];
+
+  const runCheck = async (
+    id: string,
+    name: string,
+    executor: () => Promise<{ status: SelfTestStatus; detail: string; autoFixed?: boolean }>,
+  ): Promise<void> => {
+    const checkStart = Date.now();
+    try {
+      const result = await executor();
+      checks.push({
+        id,
+        name,
+        status: result.status,
+        detail: result.detail,
+        durationMs: Date.now() - checkStart,
+        autoFixed: result.autoFixed,
+      });
+    } catch (err) {
+      checks.push({
+        id,
+        name,
+        status: 'fail',
+        detail: String(err),
+        durationMs: Date.now() - checkStart,
+      });
+    }
+  };
+
+  await runCheck('control-ui', 'Control UI endpoint config', async () => {
+    const info = getGatewayControlUiInfo();
+    if (!info.token) {
+      return { status: 'fail', detail: 'Gateway token is empty' };
+    }
+    return { status: 'pass', detail: `${info.mode} ${info.host}:${info.port}` };
+  });
+
+  await runCheck('openclaw-cli', 'OpenClaw CLI', async () => {
+    try {
+      const { stdout } = await execAsync('openclaw --version', { timeout: 10000 });
+      const version = String(stdout || '').trim();
+      if (!version) return { status: 'warn', detail: 'openclaw command exists but version output is empty' };
+      return { status: 'pass', detail: version };
+    } catch (err) {
+      return { status: 'fail', detail: `openclaw unavailable: ${String(err)}` };
+    }
+  });
+
+  await runCheck('gateway-port-resolve', 'Gateway port resolve', async () => {
+    if (gatewayConn.mode === 'remote') {
+      return { status: 'pass', detail: `remote endpoint ${gatewayConn.protocol}://${gatewayConn.host}:${gatewayConn.port}` };
+    }
+    const probe = await resolveGatewayPort();
+    if (probe.success && probe.port) {
+      return { status: 'pass', detail: `resolved port ${probe.port}` };
+    }
+    return { status: 'warn', detail: probe.error || 'Gateway port resolve failed (will try auto-start)' };
+  });
+
+  await runCheck('gateway-start', 'Gateway start / reconnect chain', async () => {
+    if (gatewayConn.mode === 'remote') {
+      const tested = await testGatewayWsConnection(
+        gatewayConn.protocol,
+        gatewayConn.host,
+        gatewayConn.port,
+        gatewayConn.token,
+        8000,
+      );
+      return tested.success
+        ? { status: 'pass', detail: 'remote gateway reachable' }
+        : { status: 'fail', detail: tested.error || 'remote gateway unreachable' };
+    }
+
+    const probe = await resolveGatewayPort();
+    if (probe.success && probe.port) {
+      return { status: 'pass', detail: `already reachable at ${probe.port}` };
+    }
+    if (!autoStartGateway) {
+      return { status: 'warn', detail: 'gateway not reachable and autoStartGateway=false' };
+    }
+    const status = await startGatewayWithSelfHeal();
+    if (status.startSuccess) {
+      const fixed = !!status.selfHealTried && !!status.selfHealSucceeded;
+      return {
+        status: fixed ? 'warn' : 'pass',
+        detail: fixed ? 'started after self-heal' : 'started successfully',
+        autoFixed: fixed,
+      };
+    }
+    return { status: 'fail', detail: status.error || 'Gateway start failed' };
+  });
+
+  await runCheck('gateway-health', 'Gateway /health check', async () => {
+    if (gatewayConn.mode === 'remote') {
+      return { status: 'warn', detail: 'skipped HTTP /health in remote mode' };
+    }
+    try {
+      const res = await fetch(`${getGatewayApiBase()}/health`, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) {
+        return { status: 'fail', detail: `health status=${res.status}` };
+      }
+      const json = await res.json().catch(() => ({}));
+      const uptime = typeof json?.uptime === 'number' ? ` uptime=${json.uptime}` : '';
+      return { status: 'pass', detail: `ok${uptime}` };
+    } catch (err) {
+      return { status: 'fail', detail: String(err) };
+    }
+  });
+
+  await runCheck('gateway-rpc-sessions', 'Gateway RPC sessions.list', async () => {
+    const first = await callGatewayRpcWithRetry('sessions.list', { limit: 1 }, 12000);
+    if (first.ok) {
+      return { status: 'pass', detail: 'sessions.list succeeded' };
+    }
+
+    const firstErr = String(first.error || '');
+    const needsFix = /missing scope: operator\.|device-required|not_paired|unauthorized|auth/i.test(firstErr);
+    if (!needsFix) {
+      return { status: 'fail', detail: firstErr || 'sessions.list failed' };
+    }
+
+    const repaired = repairGatewayOperatorScopes();
+    const relaxed = relaxGatewayLocalAuth();
+    try {
+      await stopGateway();
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    await startGateway();
+    const second = await callGatewayRpcWithRetry('sessions.list', { limit: 1 }, 12000);
+    if (second.ok) {
+      return {
+        status: 'warn',
+        detail: `recovered after scope/auth repair (scopeChanged=${repaired.changed}, authChanged=${relaxed.changed})`,
+        autoFixed: true,
+      };
+    }
+    return { status: 'fail', detail: second.error || firstErr || 'sessions.list failed after repair' };
+  });
+
+  await runCheck('skills-list-installed', 'Skills list installed', async () => {
+    const skills = await listInstalled();
+    return { status: 'pass', detail: `installed skills=${skills.length}` };
+  });
+
+  await runCheck('skills-managed-scan', 'Skills managed dir scan', async () => {
+    const skillsDir = getSkillsDir();
+    if (!fs.existsSync(skillsDir)) {
+      return { status: 'warn', detail: `skills dir not found: ${skillsDir}` };
+    }
+    const scanned = scanSkillsFromDir(skillsDir);
+    return { status: 'pass', detail: `scanned ${scanned.length} skill(s) from ${skillsDir}` };
+  });
+
+  await runCheck('skills-load-from-dir-probe', 'Skills load-from-dir probe', async () => {
+    const tmpRoot = nodePath.join(os.tmpdir(), 'axonclawx-selftest-skill');
+    const tmpSkillDir = nodePath.join(tmpRoot, 'sample-selftest-skill');
+    try {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      fs.mkdirSync(tmpSkillDir, { recursive: true });
+      fs.writeFileSync(
+        nodePath.join(tmpSkillDir, 'SKILL.md'),
+        [
+          '---',
+          'name: "selftest-skill"',
+          'description: "Synthetic skill for smoke test"',
+          '---',
+          '',
+          '# Self Test Skill',
+          '',
+          'This is a synthetic skill used by AxonClawX smoke tests.',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      const scanned = scanSkillsFromDir(tmpRoot);
+      if (scanned.length === 0) {
+        return { status: 'fail', detail: 'scanSkillsFromDir returned 0 for synthetic skill dir' };
+      }
+      return { status: 'pass', detail: `detected ${scanned.length} synthetic skill(s)` };
+    } finally {
+      try {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
+  });
+
+  const passed = checks.filter((c) => c.status === 'pass').length;
+  const warned = checks.filter((c) => c.status === 'warn').length;
+  const failed = checks.filter((c) => c.status === 'fail').length;
+  const finishedAtMs = Date.now();
+  return {
+    success: failed === 0,
+    startedAt: startedIso,
+    finishedAt: new Date(finishedAtMs).toISOString(),
+    durationMs: finishedAtMs - startedAt,
+    summary: {
+      passed,
+      warned,
+      failed,
+    },
+    checks,
+  };
+}
+
 function extractChatgptAccessToken(raw?: string): string {
   const text = (raw || '').trim();
   if (!text) return '';
@@ -1365,6 +4684,201 @@ function extractChatgptAccessToken(raw?: string): string {
   return m?.[1]?.trim() || '';
 }
 
+function hasLoggedInUserInSessionPayload(raw?: string): boolean {
+  const text = (raw || '').trim();
+  if (!text || !text.startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const user = parsed.user;
+    return !!(user && typeof user === 'object');
+  } catch {
+    return false;
+  }
+}
+
+type CodexLoginInfo = {
+  loggedIn: boolean;
+  userId?: string;
+  email?: string;
+  name?: string;
+  image?: string;
+  expires?: string;
+  sessionCookiePresent?: boolean;
+  source?: 'session-api' | 'cookie' | 'unknown';
+};
+
+function parseCodexLoginInfo(raw?: string, cookieToken?: string): CodexLoginInfo {
+  const info: CodexLoginInfo = {
+    loggedIn: false,
+    source: 'unknown',
+  };
+
+  if (cookieToken) {
+    info.sessionCookiePresent = true;
+  }
+
+  const text = (raw || '').trim();
+  if (text && text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const user = (parsed.user && typeof parsed.user === 'object' && !Array.isArray(parsed.user))
+        ? (parsed.user as Record<string, unknown>)
+        : null;
+      const accessToken = typeof parsed.accessToken === 'string' ? parsed.accessToken.trim() : '';
+
+      if (user) {
+        const id = String(user.id || '').trim();
+        const email = String(user.email || '').trim();
+        const name = String(user.name || '').trim();
+        const image = String(user.image || '').trim();
+        if (id) info.userId = id;
+        if (email) info.email = email;
+        if (name) info.name = name;
+        if (image) info.image = image;
+      }
+
+      const expires = typeof parsed.expires === 'string' ? parsed.expires.trim() : '';
+      if (expires) info.expires = expires;
+
+      if (user || accessToken) {
+        info.loggedIn = true;
+        info.source = 'session-api';
+      }
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  if (!info.loggedIn && cookieToken) {
+    info.loggedIn = true;
+    info.source = 'cookie';
+  }
+  return info;
+}
+
+function extractChatgptSessionCookieToken(
+  cookies: Array<{ name: string; value: string }>,
+): string {
+  const preferredNames = [
+    '__Secure-next-auth.session-token',
+    'next-auth.session-token',
+    '__Secure-authjs.session-token',
+    'authjs.session-token',
+  ];
+  for (const name of preferredNames) {
+    const token = cookies.find((c) => c.name === name)?.value?.trim();
+    if (token) return token;
+  }
+  const fuzzy = cookies.find((c) => c.name.toLowerCase().includes('session-token'))?.value?.trim();
+  return fuzzy || '';
+}
+
+async function readCodexSessionToken(): Promise<{
+  success: boolean;
+  accessToken: string | null;
+  sessionPayload: string | null;
+  status: number;
+  loginInfo: CodexLoginInfo;
+  error?: string;
+}> {
+  const parsePayloadResult = (
+    status: number,
+    text: string,
+    cookieToken?: string,
+  ) => {
+    const loginInfo = parseCodexLoginInfo(text, cookieToken);
+    const token = extractChatgptAccessToken(text);
+    return {
+      success: !!token,
+      accessToken: token || null,
+      sessionPayload: text || null,
+      status,
+      loginInfo,
+      error: token
+        ? undefined
+        : (loginInfo.loggedIn
+          ? `Login detected but no usable access token returned by session API (status=${status}).`
+          : `No usable token found in session response (status=${status}).`),
+    };
+  };
+
+  try {
+    const authSession = getCurrentCodexAuthSession();
+    const allCookies = await authSession.cookies.get({});
+    const cookies = allCookies.filter((c) => (c.domain || '').includes('chatgpt.com'));
+    const cookieToken = extractChatgptSessionCookieToken(cookies);
+    console.log(`[OAuth] cookie scan: total=${allCookies.length}, chatgpt=${cookies.length}, hasSessionToken=${cookieToken ? 'yes' : 'no'}`);
+    const sessionFetch = (authSession as unknown as { fetch?: typeof fetch }).fetch;
+
+    // 1) Preferred: use Chromium network stack in the target partition.
+    if (typeof sessionFetch === 'function') {
+      try {
+        const res = await sessionFetch('https://chatgpt.com/api/auth/session', {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+        });
+        const text = await res.text();
+        const parsed = parsePayloadResult(res.status, text, cookieToken);
+        if (parsed.success) return parsed;
+      } catch {
+        // continue to next fallback
+      }
+    }
+
+    // 2) Fallback: execute in the login window context (same partition cookies).
+    if (codexAuthWindow && !codexAuthWindow.isDestroyed()) {
+      try {
+        const result = await codexAuthWindow.webContents.executeJavaScript(
+          `(async () => {
+            try {
+              const r = await fetch('https://chatgpt.com/api/auth/session', { credentials: 'include' });
+              const text = await r.text();
+              return { ok: r.ok, status: r.status, text };
+            } catch (e) {
+              return { ok: false, status: 0, text: String(e) };
+            }
+          })()`,
+          true,
+        ) as { status?: number; text?: string };
+        const parsed = parsePayloadResult(Number(result?.status || 0), String(result?.text || ''), cookieToken);
+        if (parsed.success) return parsed;
+      } catch {
+        // continue to next fallback
+      }
+    }
+
+    // 3) Last fallback: node fetch with manually assembled cookie header.
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ').trim();
+    if (!cookieHeader) {
+      return {
+        success: false,
+        accessToken: null,
+        sessionPayload: null,
+        status: 401,
+        loginInfo: parseCodexLoginInfo(undefined),
+        error: 'No chatgpt.com cookies in Electron auth session. Please login in the in-app ChatGPT window.',
+      };
+    }
+    const res = await fetch('https://chatgpt.com/api/auth/session', {
+      method: 'GET',
+      headers: { accept: 'application/json', cookie: cookieHeader },
+    });
+    const text = await res.text();
+    const parsed = parsePayloadResult(res.status, text, cookieToken);
+    if (parsed.success) return parsed;
+    return parsed;
+  } catch (err) {
+    return {
+      success: false,
+      accessToken: null,
+      sessionPayload: null,
+      status: 500,
+      loginInfo: parseCodexLoginInfo(undefined),
+      error: String(err),
+    };
+  }
+}
+
 function applyCodexQuickConnect(options?: {
   providerId?: string;
   providerBaseUrl?: string;
@@ -1380,6 +4894,7 @@ function applyCodexQuickConnect(options?: {
   fallbackModels: string[];
   createdProvider: boolean;
   addedModels: string[];
+  credentialAccepted: boolean;
 } {
   const preferredModel = (options?.preferredModel || 'gpt-5.4').trim();
   const fallbackModel = (options?.fallbackModel || 'gpt-5.3-codex').trim();
@@ -1388,7 +4903,7 @@ function applyCodexQuickConnect(options?: {
   const models = ensureRecord(cfg.models);
   const providers = ensureRecord(models.providers);
 
-  let providerId = options?.providerId?.trim() || findCodexLikeProviderId(providers) || 'custom-codex-plus';
+  let providerId = normalizeProviderAlias(options?.providerId?.trim() || 'openai');
   let createdProvider = false;
 
   let provider = ensureRecord(providers[providerId]);
@@ -1409,9 +4924,19 @@ function applyCodexQuickConnect(options?: {
   }
   const derivedAccessToken = extractChatgptAccessToken(options?.accessToken)
     || extractChatgptAccessToken(options?.sessionPayload);
-  const finalApiKey = (options?.apiKey?.trim() || derivedAccessToken || '').trim();
+  const explicitApiKey = String(options?.apiKey || '').trim();
+  const candidateApiKey = (explicitApiKey || derivedAccessToken || '').trim();
+  const acceptsOpenAiLikeKey = providerId !== 'openai' && providerId !== 'openai-codex'
+    ? true
+    : isLikelyOpenAiApiKey(candidateApiKey);
+  const finalApiKey = acceptsOpenAiLikeKey ? candidateApiKey : '';
   if (finalApiKey) {
     provider.apiKey = finalApiKey;
+  } else if ((providerId === 'openai' || providerId === 'openai-codex')) {
+    const existingKey = String(provider.apiKey || '').trim();
+    if (existingKey && !isLikelyOpenAiApiKey(existingKey) && isLikelyEncryptedSessionToken(existingKey)) {
+      delete provider.apiKey;
+    }
   }
 
   const existingModels = asModelArray(provider.models);
@@ -1436,7 +4961,6 @@ function applyCodexQuickConnect(options?: {
   const defaults = ensureRecord(agents.defaults);
   const modelCfg = ensureRecord(defaults.model);
 
-  const prevPrimary = typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
   const nextPrimary = `${providerId}/${preferredModel}`;
   const nextFallbackFromProvider = `${providerId}/${fallbackModel}`;
 
@@ -1444,14 +4968,16 @@ function applyCodexQuickConnect(options?: {
     ? modelCfg.fallbacks.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
     : [];
 
+  const acceptedProviderPrefixes = Array.from(providerAliasSet(providerId)).map((pid) => `${pid}/`);
   const nextFallbacks = Array.from(new Set([
-    ...fallbackList,
     nextFallbackFromProvider,
-    prevPrimary,
+    ...fallbackList.filter((x) => acceptedProviderPrefixes.some((prefix) => x.startsWith(prefix))),
   ].filter((x) => !!x && x !== nextPrimary)));
 
-  modelCfg.primary = nextPrimary;
-  modelCfg.fallbacks = nextFallbacks;
+  if (finalApiKey) {
+    modelCfg.primary = nextPrimary;
+    modelCfg.fallbacks = nextFallbacks;
+  }
   defaults.model = modelCfg;
   agents.defaults = defaults;
   cfg.agents = agents;
@@ -1463,12 +4989,21 @@ function applyCodexQuickConnect(options?: {
 
   writeOpenclawConfig(cfg);
 
+  if (finalApiKey) {
+    try {
+      ensureMainAgentAuthProfile(providerId, finalApiKey, 'codex-quick-connect');
+    } catch (err) {
+      console.warn('[HostAPI] failed to sync auth-profiles for quick-connect:', err);
+    }
+  }
+
   return {
     providerId,
-    primaryModel: nextPrimary,
-    fallbackModels: nextFallbacks,
+    primaryModel: String(modelCfg.primary || nextPrimary),
+    fallbackModels: Array.isArray(modelCfg.fallbacks) ? (modelCfg.fallbacks as string[]) : nextFallbacks,
     createdProvider,
     addedModels,
+    credentialAccepted: !!finalApiKey,
   };
 }
 
@@ -1549,31 +5084,362 @@ function enrichConfigFromLatestBackup(config: Record<string, unknown>, configPat
   }
 }
 
-function getUiSettingsFromConfig(config: Record<string, unknown>): { language: string; theme: string } {
+function getUiSettingsFromConfig(config: Record<string, unknown>): { language: string; theme: string; setupComplete: boolean } {
   const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
   const language = typeof ui.language === 'string' && ui.language.trim() ? ui.language.trim() : 'zh';
   const themeRaw = typeof ui.theme === 'string' ? ui.theme.trim().toLowerCase() : 'system';
   const theme = themeRaw === 'light' || themeRaw === 'dark' || themeRaw === 'system' ? themeRaw : 'system';
-  return { language, theme };
+  const setupComplete = Boolean(ui.setupComplete);
+  return { language, theme, setupComplete };
+}
+
+function getSetupCompleteFromConfig(config: Record<string, unknown>): boolean {
+  const topLevel = config.setupComplete;
+  if (typeof topLevel === 'boolean') return topLevel;
+  const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  if (typeof ui.setupComplete === 'boolean') return ui.setupComplete;
+  const axonCfg = readAxonclawxConfig();
+  const axon = ((axonCfg.axonclawx as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  if (typeof axon.setupComplete === 'boolean') return axon.setupComplete;
+  return false;
+}
+
+type MultiAgentDeployTemplateAgent = {
+  id: string;
+  name: string;
+  role: string;
+  agentId?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  soul?: string;
+  user?: string;
+  skills?: Array<{
+    name: string;
+    permissions?: string[];
+    config?: Record<string, unknown>;
+  }>;
+  model?: string;
+  workspace?: string;
+};
+
+type MultiAgentDeployTemplate = {
+  id?: string;
+  name?: string;
+  description?: string;
+  agents?: MultiAgentDeployTemplateAgent[];
+  requirements?: {
+    skills?: string[];
+    channels?: string[];
+  };
+  skills?: Array<{
+    name: string;
+    permissions?: string[];
+    config?: Record<string, unknown>;
+  }>;
+  cronJobs?: Array<{
+    name: string;
+    schedule: string;
+    task: string;
+    enabled?: boolean;
+    timezone?: string;
+  }>;
+  integrations?: Array<{
+    service: string;
+    permissions?: string[];
+  }>;
+  workflow?: {
+    type?: string;
+    description?: string;
+    steps?: Array<{
+      agent?: string;
+      agents?: string[];
+      action?: string;
+      parallel?: boolean;
+      condition?: string;
+      trigger?: string;
+    }>;
+  };
+};
+
+type MultiAgentDeployRequest = {
+  template?: MultiAgentDeployTemplate;
+  prefix?: string;
+  skipExisting?: boolean;
+  dryRun?: boolean;
+};
+
+type MultiAgentDeployResult = {
+  success: boolean;
+  deployedCount: number;
+  errors: string[];
+  localFallback: boolean;
+  mode: 'deploy' | 'preview';
+  prefix?: string;
+  templateId?: string;
+  message?: string;
+};
+
+function buildMultiAgentBlock({
+  prefix,
+  template,
+  member,
+  runtimeAgentId,
+  agentIdMap,
+}: {
+  prefix: string;
+  template: MultiAgentDeployTemplate;
+  member: MultiAgentDeployTemplateAgent;
+  runtimeAgentId: string;
+  agentIdMap: Record<string, string>;
+}): { soul: string; heartbeat: string; user: string; blockStart: string } {
+  const blockStart = `<!-- multi-agent:${prefix}:${member.id} -->`;
+  const blockEnd = `<!-- /multi-agent:${prefix}:${member.id} -->`;
+  const templateSkills = template.skills ?? [];
+  const memberSkills = member.skills ?? [];
+  const mergedSkills = [...templateSkills, ...memberSkills].filter((s) => s?.name);
+  const integrations = template.integrations ?? [];
+  const cronJobs = template.cronJobs ?? [];
+  const reqSkills = template.requirements?.skills ?? [];
+  const reqChannels = template.requirements?.channels ?? [];
+  const workflowSteps = (template.workflow?.steps ?? []).map((step, index) => {
+    const displayAgents = step.agents?.length
+      ? step.agents.map((id) => `${id}(${agentIdMap[id] || id})`).join(', ')
+      : step.agent
+        ? `${step.agent}(${agentIdMap[step.agent] || step.agent})`
+        : `${member.id}(${runtimeAgentId})`;
+    const agentLabel = displayAgents;
+    const flags = step.parallel ? ' [parallel]' : '';
+    const condition = step.condition ? ` | if ${step.condition}` : '';
+    const trigger = step.trigger ? ` | trigger ${step.trigger}` : '';
+    return `${index + 1}. ${agentLabel}: ${step.action || 'Execute task'}${flags}${condition}${trigger}`;
+  });
+  const memberSummary = [
+    `- ID: ${member.id}`,
+    `- Name: ${member.name}`,
+    `- Role: ${member.role}`,
+    member.description ? `- Description: ${member.description}` : '',
+    member.soul ? `- Soul Snippet: ${member.soul}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const agentList = (template.agents ?? [])
+    .map((agent) => `- **${agent.id}** -> \`${agentIdMap[agent.id] || agent.id}\`: ${agent.name}${agent.role ? ` - ${agent.role}` : ''}`)
+    .join('\n');
+  const workflowSummary = workflowSteps.length > 0 ? workflowSteps.join('\n') : '- No workflow steps defined';
+
+  const soul = `\n${blockStart}\n## ${template.name || 'Multi-Agent Workflow'}\n\n${template.description || template.workflow?.description || ''}\n\n### Team Member\n${memberSummary}\n\n### Available Members\n${agentList || `- ${member.id}`}\n\n### Workflow\n${workflowSummary}\n\n### How To Use\nUse the \`sessions_spawn\` tool to delegate tasks to the right member.\n${blockEnd}\n`;
+  const heartbeat = `\n${blockStart}\n## ${template.name || 'Multi-Agent Workflow'}\n\n${workflowSteps.length > 0 ? workflowSteps.map((line) => `- [ ] ${line}`).join('\n') : '- [ ] Review and define workflow steps'}\n${blockEnd}\n`;
+  const user = `\n${blockStart}
+## Runtime Preset
+
+- Runtime Agent ID: \`${runtimeAgentId}\`
+- Recommended Model: ${member.model || 'inherit default'}
+- Workspace: ${member.workspace || 'inherit default'}
+- Required Skills: ${reqSkills.length ? reqSkills.join(', ') : 'none'}
+- Required Channels: ${reqChannels.length ? reqChannels.join(', ') : 'none'}
+
+### Skills
+${mergedSkills.length > 0
+  ? mergedSkills.map((s) => `- ${s.name} | perms: ${(s.permissions || []).join(', ') || 'default'} | config: ${JSON.stringify(s.config || {})}`).join('\n')
+  : '- none'}
+
+### Integrations
+${integrations.length > 0
+  ? integrations.map((it) => `- ${it.service}: ${(it.permissions || []).join(', ') || 'default'}`).join('\n')
+  : '- none'}
+
+### Cron Jobs
+${cronJobs.length > 0
+  ? cronJobs.map((job) => `- ${job.name}: ${job.schedule} | ${job.task}`).join('\n')
+  : '- none'}
+
+${member.user ? `### Member Notes\n${member.user}\n` : ''}
+${blockEnd}\n`;
+  return { soul, heartbeat, user, blockStart };
+}
+
+async function applyLocalMultiAgentDeployment(request: MultiAgentDeployRequest): Promise<MultiAgentDeployResult> {
+  const template = request.template;
+  const prefix = String(request.prefix || template?.id || 'multi-agent').trim() || 'multi-agent';
+  const members = template?.agents ?? [];
+  const dryRun = Boolean(request.dryRun);
+  const skipExisting = request.skipExisting !== false;
+
+  if (!template || members.length === 0) {
+    return {
+      success: false,
+      deployedCount: 0,
+      errors: ['Multi-agent deploy payload is missing template.agents'],
+      localFallback: true,
+      mode: dryRun ? 'preview' : 'deploy',
+      prefix,
+      templateId: template?.id,
+    };
+  }
+
+  const listResult = await callGatewayRpcWithRetry('agents.list', {}, 8000);
+  const existingAgentsRaw = listResult.ok && Array.isArray(listResult.result) ? listResult.result as Array<Record<string, unknown>> : [];
+  let knownAgentIds = new Set(existingAgentsRaw.map((a) => String(a.id || '').trim()).filter(Boolean));
+
+  const ensureAgent = async (member: MultiAgentDeployTemplateAgent): Promise<string> => {
+    const explicitId = String(member.agentId || '').trim();
+    if (explicitId) return explicitId;
+    const preferred = String(member.id || '').trim();
+    if (preferred && knownAgentIds.has(preferred)) return preferred;
+
+    const before = new Set(knownAgentIds);
+    const createResult = await callGatewayRpcWithRetry('agents.create', {
+      name: member.name || `${prefix}-${member.id}`,
+      workspace: member.workspace || `${prefix}/${member.id}`,
+      emoji: '🤖',
+    }, 10000);
+    if (!createResult.ok) {
+      throw new Error(createResult.error || `Failed to create agent for ${member.id}`);
+    }
+    const refresh = await callGatewayRpcWithRetry('agents.list', {}, 8000);
+    if (refresh.ok && Array.isArray(refresh.result)) {
+      const all = refresh.result as Array<Record<string, unknown>>;
+      const ids = all.map((a) => String(a.id || '').trim()).filter(Boolean);
+      knownAgentIds = new Set(ids);
+      const added = ids.find((id) => !before.has(id));
+      if (added) return added;
+      const byName = all.find((a) => String(a.name || '').trim() === String(member.name || '').trim());
+      if (byName?.id) return String(byName.id);
+    }
+    if (preferred) return preferred;
+    throw new Error(`Unable to resolve runtime agent id for ${member.id}`);
+  };
+
+  const runtimeMap: Record<string, string> = {};
+  for (const member of members) {
+    runtimeMap[member.id] = await ensureAgent(member);
+  }
+
+  const prepared = members.map((member) => {
+    const runtimeAgentId = runtimeMap[member.id] || member.id;
+    return {
+      member,
+      runtimeAgentId,
+      blocks: buildMultiAgentBlock({ prefix, template, member, runtimeAgentId, agentIdMap: runtimeMap }),
+    };
+  });
+
+  if (dryRun) {
+    return {
+      success: true,
+      deployedCount: prepared.length,
+      errors: [],
+      localFallback: true,
+      mode: 'preview',
+      prefix,
+      templateId: template.id,
+      message: 'AxonClawX multi-agent service is unavailable; previewed local fallback only.',
+    };
+  }
+
+  const errors: string[] = [];
+  let deployedCount = 0;
+
+  for (const item of prepared) {
+    try {
+      let wroteAny = false;
+      for (const fileName of ['SOUL.md', 'HEARTBEAT.md', 'USER.md'] as const) {
+        const block = fileName === 'SOUL.md'
+          ? item.blocks.soul
+          : fileName === 'HEARTBEAT.md'
+            ? item.blocks.heartbeat
+            : item.blocks.user;
+        const readResult = await callGatewayRpcWithRetry('agents.files.get', {
+          agentId: item.runtimeAgentId,
+          name: fileName,
+        }, 8000);
+
+        const currentContent = String(
+          readResult.ok && readResult.result && typeof readResult.result === 'object'
+            ? ((readResult.result as { file?: { content?: string } }).file?.content ?? '')
+            : '',
+        );
+
+        if (skipExisting && currentContent.includes(item.blocks.blockStart)) {
+          continue;
+        }
+
+        const nextContent = currentContent.trimEnd() + block;
+        const writeResult = await callGatewayRpcWithRetry('agents.files.set', {
+          agentId: item.runtimeAgentId,
+          name: fileName,
+          content: nextContent,
+        }, 8000);
+
+        if (!writeResult.ok) {
+          throw new Error(writeResult.error || `Failed to write ${fileName}`);
+        }
+        wroteAny = true;
+      }
+      if (wroteAny) {
+        deployedCount += 1;
+      }
+    } catch (err) {
+      errors.push(`${item.member.id}(${item.runtimeAgentId || 'unknown'}): ${String(err)}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    deployedCount,
+    errors,
+    localFallback: true,
+    mode: 'deploy',
+    prefix,
+    templateId: template.id,
+    message: errors.length === 0 ? 'Applied local multi-agent deployment.' : 'Applied local multi-agent deployment with partial failures.',
+  };
 }
 
 ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) => {
   try {
-    // 特殊处理：AxonClaw 的 gateway-info API
+    const rawPath = String(path || '');
+    const queryIndex = rawPath.indexOf('?');
+    const requestPath = queryIndex >= 0 ? rawPath.slice(0, queryIndex) : rawPath;
+    const requestQuery = new URLSearchParams(queryIndex >= 0 ? rawPath.slice(queryIndex + 1) : '');
+
+    // 特殊处理：AxonClawX 的 gateway-info API
     if (path === '/api/app/gateway-info') {
       const cfg = getGatewayConnectionSettings();
-      const port = cfg.port;
-      const wsUrl = `${cfg.protocol}://${cfg.host}:${port}/ws`;
+      let protocol: 'ws' | 'wss' = cfg.protocol;
+      let host = cfg.host;
+      let port = cfg.port;
+
+      if (cfg.mode === 'local') {
+        protocol = 'ws';
+        host = '127.0.0.1';
+        const localProbe = await resolveGatewayPort();
+        if (localProbe.success && localProbe.port) {
+          port = localProbe.port;
+          setResolvedGatewayPort(localProbe.port);
+          persistGatewayConnectionToConfig({
+            mode: 'local',
+            protocol: 'ws',
+            host: '127.0.0.1',
+            port: localProbe.port,
+          });
+        } else {
+          port = getResolvedGatewayPort();
+        }
+      }
+
+      const wsUrl = `${protocol}://${host}:${port}/ws`;
       return {
         ok: true,
         data: {
           status: 200,
           ok: true,
-          json: { wsUrl, token: cfg.token, port, mode: cfg.mode, host: cfg.host },
+          json: { wsUrl, token: cfg.token, port, mode: cfg.mode, host },
         },
         success: true,
         status: 200,
-        json: { wsUrl, token: cfg.token, port, mode: cfg.mode, host: cfg.host },
+        json: { wsUrl, token: cfg.token, port, mode: cfg.mode, host },
       };
     }
 
@@ -1620,6 +5486,1054 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         status: 200,
         json: { success: true },
       };
+    }
+
+    if (path === '/api/app/openclaw-doctor' && method === 'POST') {
+      let payload: { mode?: OpenClawDoctorMode } = {};
+      try {
+        payload = body
+          ? (typeof body === 'string'
+            ? (JSON.parse(body) as { mode?: OpenClawDoctorMode })
+            : (body as { mode?: OpenClawDoctorMode }))
+          : {};
+      } catch {
+        payload = {};
+      }
+      const mode: OpenClawDoctorMode = payload.mode === 'fix' ? 'fix' : 'diagnose';
+      const result = await runOpenClawDoctor(mode);
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: result },
+        success: true,
+        status: 200,
+        json: result,
+      };
+    }
+
+    if (path === '/api/app/self-test' && (method === 'POST' || method === 'GET')) {
+      let payload: { autoStartGateway?: boolean } = {};
+      if (method === 'POST') {
+        try {
+          payload = body
+            ? (typeof body === 'string'
+              ? (JSON.parse(body) as { autoStartGateway?: boolean })
+              : (body as { autoStartGateway?: boolean }))
+            : {};
+        } catch {
+          payload = {};
+        }
+      }
+      const report = await runGatewaySkillsSelfTest({
+        autoStartGateway: payload.autoStartGateway,
+      });
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: report },
+        success: true,
+        status: 200,
+        json: report,
+      };
+    }
+
+    if (path === '/api/app/codex/open-login' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? (JSON.parse(body) as { forceReauth?: boolean; url?: string; title?: string })
+            : (body as { forceReauth?: boolean; url?: string; title?: string }))
+          : {};
+        const maybeUrl = typeof payload?.url === 'string' ? payload.url : '';
+        let mode: 'external' | 'embedded' = 'embedded';
+        if (/auth\.openai\.com\/oauth\/authorize/i.test(maybeUrl)) {
+          mode = await openOpenAiAuthorizationUrl(maybeUrl, Boolean(payload?.forceReauth));
+        } else {
+          await openCodexAuthWindow({
+            forceReauth: Boolean(payload?.forceReauth),
+            url: maybeUrl || undefined,
+            title: typeof payload?.title === 'string' ? payload.title : undefined,
+          });
+        }
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, mode } },
+          success: true,
+          status: 200,
+          json: { success: true, mode },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/app/codex/session-token' && method === 'GET') {
+      try {
+        const oauthState = readOpenAiCodexOAuthProfileState();
+        if (oauthState.success) {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                accessToken: oauthState.accessToken,
+                sessionPayload: null,
+                status: oauthState.status,
+                loginInfo: oauthState.loginInfo,
+                error: undefined,
+                source: 'auth-profiles',
+              },
+            },
+            success: true,
+            status: 200,
+            json: {
+              success: true,
+              accessToken: oauthState.accessToken,
+              sessionPayload: null,
+              status: oauthState.status,
+              loginInfo: oauthState.loginInfo,
+              error: undefined,
+              source: 'auth-profiles',
+            },
+          };
+        }
+
+        const tokenState = await readCodexSessionToken();
+        let source = 'electron-session';
+
+        // Auto-persist session-derived token into auth-profiles so auth survives
+        // across subsequent sends (avoid "first message works, second fails").
+        if (
+          !oauthState.success
+          && tokenState.success
+          && String(tokenState.accessToken || '').trim()
+        ) {
+          try {
+            const accessToken = String(tokenState.accessToken || '').trim();
+            const accountId = extractOpenAiCodexAccountIdFromToken(accessToken) || undefined;
+            const emailFromLoginInfo = String(tokenState.loginInfo?.email || '').trim();
+            const email = emailFromLoginInfo || extractOpenAiCodexEmailFromToken(accessToken) || undefined;
+            ensureOpenAiCodexOAuthProfile({
+              accessToken,
+              expiresInSec: 3600,
+              email,
+              accountId,
+            });
+            ensureOpenAiCodexProviderConfig({ makeDefault: true });
+            const persistedState = readOpenAiCodexOAuthProfileState();
+            if (persistedState.success) {
+              return {
+                ok: true,
+                data: {
+                  status: 200,
+                  ok: true,
+                  json: {
+                    success: true,
+                    accessToken: persistedState.accessToken,
+                    sessionPayload: null,
+                    status: persistedState.status,
+                    loginInfo: persistedState.loginInfo,
+                    error: undefined,
+                    source: 'auth-profiles(auto-persisted)',
+                  },
+                },
+                success: true,
+                status: 200,
+                json: {
+                  success: true,
+                  accessToken: persistedState.accessToken,
+                  sessionPayload: null,
+                  status: persistedState.status,
+                  loginInfo: persistedState.loginInfo,
+                  error: undefined,
+                  source: 'auth-profiles(auto-persisted)',
+                },
+              };
+            }
+            source = 'electron-session(auto-persist-failed)';
+          } catch (persistErr) {
+            console.warn('[OAuth] auto-persist from session token failed:', persistErr);
+            source = 'electron-session(auto-persist-error)';
+          }
+        }
+
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              success: tokenState.success,
+              accessToken: tokenState.accessToken,
+              sessionPayload: tokenState.sessionPayload,
+              status: tokenState.status,
+              loginInfo: tokenState.loginInfo,
+              error: tokenState.error || oauthState.error,
+              source,
+            },
+          },
+          success: true,
+          status: 200,
+          json: {
+            success: tokenState.success,
+            accessToken: tokenState.accessToken,
+            sessionPayload: tokenState.sessionPayload,
+            status: tokenState.status,
+            loginInfo: tokenState.loginInfo,
+            error: tokenState.error || oauthState.error,
+            source,
+          },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/app/codex/logout' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? (JSON.parse(body) as { clearProviderAuth?: boolean })
+            : (body as { clearProviderAuth?: boolean }))
+          : {};
+        const result = await logoutCodexAuth({ clearProviderAuth: payload?.clearProviderAuth !== false });
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, ...result } },
+          success: true,
+          status: 200,
+          json: { success: true, ...result },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/app/codex/auth-debug' && method === 'GET') {
+      try {
+        const state = await getCodexAuthDebugState();
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, ...state } },
+          success: true,
+          status: 200,
+          json: { success: true, ...state },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/app/openai/repair-auth' && (method === 'POST' || method === 'GET')) {
+      try {
+        const sanitized = sanitizeInvalidOpenAiCredentialArtifacts();
+        const synced = syncMainAgentAuthProfilesFromConfig();
+        const status = getOpenAiCredentialStatus();
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              success: true,
+              ...status,
+              sanitized,
+              synced,
+            },
+          },
+          success: true,
+          status: 200,
+          json: {
+            success: true,
+            ...status,
+            sanitized,
+            synced,
+          },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    // OAuth fallback in desktop mode:
+    // some local Gateway builds don't expose /api/providers/oauth/* routes.
+    if (path === '/api/providers/oauth/start' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? JSON.parse(body)
+            : (body as { provider?: string; accountId?: string; label?: string; forceReauth?: boolean }))
+          : {};
+        const provider = String(payload?.provider || '').trim();
+        const accountId = String(payload?.accountId || provider || '').trim() || provider;
+        const label = String(payload?.label || provider || '').trim() || provider;
+        const forceReauth = Boolean((payload as { forceReauth?: boolean })?.forceReauth);
+        if (!provider) {
+          return {
+            ok: false,
+            data: { status: 400, ok: false, json: { success: false, error: 'Missing provider' } },
+            success: false,
+            status: 400,
+            json: { success: false, error: 'Missing provider' },
+          };
+        }
+        if (provider !== 'openai') {
+          return {
+            ok: false,
+            data: { status: 501, ok: false, json: { success: false, error: `OAuth fallback not supported for provider: ${provider}` } },
+            success: false,
+            status: 501,
+            json: { success: false, error: `OAuth fallback not supported for provider: ${provider}` },
+          };
+        }
+        const oauthState = randomBytes(16).toString('hex');
+        const pkce = buildOpenAiCodexPkce();
+        const authorizationUrl = buildOpenAiCodexAuthorizeUrl({
+          state: oauthState,
+          challenge: pkce.challenge,
+          originator: 'pi',
+        });
+        pendingProviderOAuth = {
+          provider,
+          accountId,
+          label,
+          mode: 'openai-codex-oauth',
+          oauthState,
+          pkceVerifier: pkce.verifier,
+          authorizationUrl,
+        };
+        stopPendingProviderOAuthWatcher();
+        startPendingProviderOAuthCallbackServer();
+        const launchMode = await openOpenAiAuthorizationUrl(authorizationUrl, forceReauth);
+        const manualPayload = {
+          mode: 'manual',
+          authorizationUrl,
+          message: launchMode === 'external'
+            ? '已在系统浏览器打开 OpenAI 登录。登录完成后会自动回传，也可手动粘贴 code。'
+            : '已打开 OpenAI 登录窗口。登录完成后会自动回传，也可手动粘贴 code。',
+        };
+        safeSendToRenderer('oauth:code', manualPayload);
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, ...manualPayload } },
+          success: true,
+          status: 200,
+          json: { success: true, ...manualPayload },
+        };
+      } catch (err) {
+        const msg = String(err);
+        pendingProviderOAuth = null;
+        stopPendingProviderOAuthWatcher();
+        stopPendingProviderOAuthCallbackServer();
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: msg } },
+          success: false,
+          status: 500,
+          json: { success: false, error: msg },
+        };
+      }
+    }
+
+    if (path === '/api/providers/oauth/submit' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? (JSON.parse(body) as { code?: string })
+            : (body as { code?: string }))
+          : {};
+        const code = String(payload?.code || '').trim();
+        if (!code) {
+          return {
+            ok: false,
+            data: { status: 400, ok: false, json: { success: false, error: 'Missing OAuth code' } },
+            success: false,
+            status: 400,
+            json: { success: false, error: 'Missing OAuth code' },
+          };
+        }
+        const successPayload = await finalizePendingOpenAiOAuthByCode(code, 'manual');
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, ...successPayload } },
+          success: true,
+          status: 200,
+          json: { success: true, ...successPayload },
+        };
+      } catch (err) {
+        const msg = String(err);
+        safeSendToRenderer('oauth:error', { message: msg });
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: msg } },
+          success: false,
+          status: 500,
+          json: { success: false, error: msg },
+        };
+      }
+    }
+
+    if (path === '/api/providers/oauth/cancel' && method === 'POST') {
+      pendingProviderOAuth = null;
+      stopPendingProviderOAuthWatcher();
+      stopPendingProviderOAuthCallbackServer();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: { success: true } },
+        success: true,
+        status: 200,
+        json: { success: true },
+      };
+    }
+
+    // Provider registry local fallback:
+    // Keep auth/config page available even when gateway provider endpoints are missing.
+    if (requestPath === '/api/provider-vendors' && method === 'GET') {
+      const snapshot = readLocalProviderSnapshot();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: snapshot.vendors },
+        success: true,
+        status: 200,
+        json: snapshot.vendors,
+      };
+    }
+
+    if (requestPath === '/api/provider-accounts' && method === 'GET') {
+      const snapshot = readLocalProviderSnapshot();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: snapshot.accounts },
+        success: true,
+        status: 200,
+        json: snapshot.accounts,
+      };
+    }
+
+    if (requestPath === '/api/providers' && method === 'GET') {
+      const snapshot = readLocalProviderSnapshot();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: snapshot.statuses },
+        success: true,
+        status: 200,
+        json: snapshot.statuses,
+      };
+    }
+
+    if (requestPath === '/api/providers' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? JSON.parse(body)
+            : (body as {
+              config?: Record<string, unknown>;
+              apiKey?: string;
+            }))
+          : {};
+        const configPayload = ensureRecord(payload.config);
+        const providerId = String(configPayload.id || configPayload.type || '').trim();
+        const vendorId = normalizeProviderAlias(String(configPayload.type || providerId).trim());
+        if (!providerId || !vendorId) {
+          return {
+            ok: false,
+            data: { status: 400, ok: false, json: { success: false, error: 'Invalid provider payload' } },
+            success: false,
+            status: 400,
+            json: { success: false, error: 'Invalid provider payload' },
+          };
+        }
+        const cfg = readOpenclawConfig();
+        const models = ensureRecord(cfg.models);
+        const providers = ensureRecord(models.providers);
+        const existing = ensureRecord(providers[providerId]);
+        const nowIso = new Date().toISOString();
+        const nextProvider: Record<string, unknown> = {
+          ...existing,
+          accountId: String(existing.accountId || providerId),
+          vendorId,
+          label: String(configPayload.name || existing.label || getProviderVendorInfo(vendorId).name || vendorId),
+          authMode: String(existing.authMode || inferLocalProviderAuthMode(vendorId, existing)),
+          baseUrl: configPayload.baseUrl ?? existing.baseUrl,
+          apiProtocol: configPayload.apiProtocol ?? existing.apiProtocol ?? existing.api,
+          api: configPayload.apiProtocol ?? existing.api ?? existing.apiProtocol,
+          model: configPayload.model ?? existing.model,
+          fallbackModels: configPayload.fallbackModels ?? existing.fallbackModels,
+          fallbackProviderIds: configPayload.fallbackProviderIds ?? existing.fallbackProviderIds,
+          enabled: configPayload.enabled ?? existing.enabled ?? true,
+          createdAt: existing.createdAt || configPayload.createdAt || nowIso,
+          updatedAt: nowIso,
+        };
+        const apiKey = String(payload.apiKey || '').trim();
+        if (apiKey) {
+          if (!isAcceptedProviderApiKey(vendorId, apiKey)) {
+            return {
+              ok: false,
+              data: { status: 422, ok: false, json: { success: false, error: providerApiKeyValidationMessage(vendorId) } },
+              success: false,
+              status: 422,
+              json: { success: false, error: providerApiKeyValidationMessage(vendorId) },
+            };
+          }
+          nextProvider.apiKey = apiKey;
+          ensureMainAgentAuthProfile(vendorId, apiKey, 'provider-create');
+        }
+        providers[providerId] = nextProvider;
+        models.providers = providers;
+        cfg.models = models;
+        cfg.meta = {
+          ...ensureRecord(cfg.meta),
+          lastTouchedAt: nowIso,
+        };
+        writeOpenclawConfig(cfg);
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true } },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (requestPath === '/api/provider-accounts/default' && method === 'GET') {
+      const defaultAccountId = readDefaultProviderAccountId();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: { accountId: defaultAccountId } },
+        success: true,
+        status: 200,
+        json: { accountId: defaultAccountId },
+      };
+    }
+
+    if (requestPath === '/api/provider-accounts/default' && method === 'PUT') {
+      try {
+        const payload = body
+          ? (typeof body === 'string' ? JSON.parse(body) : (body as { accountId?: string | null }))
+          : {};
+        const accountId = payload?.accountId ? String(payload.accountId).trim() : '';
+        writeDefaultProviderAccountId(accountId || null);
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, accountId: accountId || null } },
+          success: true,
+          status: 200,
+          json: { success: true, accountId: accountId || null },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 400, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 400,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (requestPath === '/api/providers/default' && method === 'PUT') {
+      try {
+        const payload = body
+          ? (typeof body === 'string' ? JSON.parse(body) : (body as { providerId?: string | null; accountId?: string | null }))
+          : {};
+        const candidate = String(payload?.accountId || payload?.providerId || '').trim();
+        if (!candidate) {
+          return {
+            ok: false,
+            data: { status: 400, ok: false, json: { success: false, error: 'providerId/accountId required' } },
+            success: false,
+            status: 400,
+            json: { success: false, error: 'providerId/accountId required' },
+          };
+        }
+        writeDefaultProviderAccountId(candidate);
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, accountId: candidate } },
+          success: true,
+          status: 200,
+          json: { success: true, accountId: candidate },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 400, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 400,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    if (requestPath === '/api/providers/validate' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string' ? JSON.parse(body) : (body as { providerId?: string; apiKey?: string }))
+          : {};
+        const providerId = normalizeProviderAlias(String(payload?.providerId || '').trim());
+        const key = String(payload?.apiKey || '').trim();
+        const isLocal = providerId === 'ollama' || providerId === 'claude-code';
+        const valid = isLocal || key.length > 0;
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: valid ? { valid: true } : { valid: false, error: 'API key is required' },
+          },
+          success: true,
+          status: 200,
+          json: valid ? { valid: true } : { valid: false, error: 'API key is required' },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 400, ok: false, json: { valid: false, error: String(err) } },
+          success: false,
+          status: 400,
+          json: { valid: false, error: String(err) },
+        };
+      }
+    }
+
+    if (requestPath === '/api/provider-accounts' && method === 'POST') {
+      try {
+        const payload = body
+          ? (typeof body === 'string'
+            ? JSON.parse(body)
+            : (body as {
+              account?: Record<string, unknown>;
+              apiKey?: string;
+            }))
+          : {};
+        const account = ensureRecord(payload.account);
+        const vendorId = normalizeProviderAlias(String(account.vendorId || '').trim());
+        const accountId = String(account.id || '').trim() || vendorId;
+        if (!vendorId || !accountId) {
+          return {
+            ok: false,
+            data: { status: 400, ok: false, json: { success: false, error: 'Invalid provider account payload' } },
+            success: false,
+            status: 400,
+            json: { success: false, error: 'Invalid provider account payload' },
+          };
+        }
+        const cfg = readOpenclawConfig();
+        const models = ensureRecord(cfg.models);
+        const providers = ensureRecord(models.providers);
+        const providerKey = accountId;
+        const vendorInfo = getProviderVendorInfo(vendorId);
+        const existing = ensureRecord(providers[providerKey]);
+        const nowIso = new Date().toISOString();
+        const nextProvider: Record<string, unknown> = {
+          ...existing,
+          accountId,
+          vendorId,
+          label: String(account.label || existing.label || vendorInfo.name || vendorId),
+          authMode: String(account.authMode || existing.authMode || inferLocalProviderAuthMode(vendorId, existing)),
+          baseUrl: account.baseUrl ?? existing.baseUrl,
+          apiProtocol: account.apiProtocol ?? existing.apiProtocol ?? existing.api,
+          model: account.model ?? existing.model,
+          enabled: account.enabled ?? existing.enabled ?? true,
+          createdAt: existing.createdAt || account.createdAt || nowIso,
+          updatedAt: nowIso,
+        };
+        const fallbackModels = Array.isArray(account.fallbackModels)
+          ? (account.fallbackModels as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+          : [];
+        if (fallbackModels.length) nextProvider.fallbackModels = fallbackModels;
+        const fallbackAccountIds = Array.isArray(account.fallbackAccountIds)
+          ? (account.fallbackAccountIds as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+          : [];
+        if (fallbackAccountIds.length) nextProvider.fallbackAccountIds = fallbackAccountIds;
+        const modelsList = asFlexibleModelArray(account.models).length
+          ? asFlexibleModelArray(account.models)
+          : asFlexibleModelArray(existing.models);
+        if (modelsList.length > 0) nextProvider.models = modelsList;
+        const apiKey = String(payload.apiKey || '').trim();
+        if (apiKey) {
+          if (!isAcceptedProviderApiKey(vendorId, apiKey)) {
+            return {
+              ok: false,
+              data: { status: 422, ok: false, json: { success: false, error: providerApiKeyValidationMessage(vendorId) } },
+              success: false,
+              status: 422,
+              json: { success: false, error: providerApiKeyValidationMessage(vendorId) },
+            };
+          }
+          nextProvider.apiKey = apiKey;
+          ensureMainAgentAuthProfile(vendorId, apiKey, 'provider-account-upsert');
+        }
+        providers[providerKey] = nextProvider;
+        models.providers = providers;
+        cfg.models = models;
+        cfg.meta = {
+          ...ensureRecord(cfg.meta),
+          lastTouchedAt: nowIso,
+        };
+        writeOpenclawConfig(cfg);
+
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true } },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+          success: false,
+          status: 500,
+          json: { success: false, error: String(err) },
+        };
+      }
+    }
+
+    const providerAccountMatch = requestPath.match(/^\/api\/provider-accounts\/([^/]+)$/);
+    if (providerAccountMatch) {
+      const accountId = decodeURIComponent(providerAccountMatch[1] || '').trim();
+      if (!accountId) {
+        return {
+          ok: false,
+          data: { status: 400, ok: false, json: { success: false, error: 'accountId required' } },
+          success: false,
+          status: 400,
+          json: { success: false, error: 'accountId required' },
+        };
+      }
+
+      if (method === 'PUT') {
+        try {
+          const payload = body
+            ? (typeof body === 'string'
+              ? JSON.parse(body)
+              : (body as { updates?: Record<string, unknown>; apiKey?: string }))
+            : {};
+          const updates = ensureRecord(payload.updates);
+          const cfg = readOpenclawConfig();
+          const models = ensureRecord(cfg.models);
+          const providers = ensureRecord(models.providers);
+          const providerKey = findProviderConfigKeyByAccountId(providers, accountId) || accountId;
+          const existing = ensureRecord(providers[providerKey]);
+          const nowIso = new Date().toISOString();
+          const nextProvider: Record<string, unknown> = {
+            ...existing,
+            accountId: String(existing.accountId || accountId),
+            vendorId: String(updates.vendorId || existing.vendorId || providerKey),
+            label: updates.label ?? existing.label,
+            authMode: updates.authMode ?? existing.authMode,
+            baseUrl: updates.baseUrl ?? existing.baseUrl,
+            apiProtocol: updates.apiProtocol ?? existing.apiProtocol ?? existing.api,
+            model: updates.model ?? existing.model,
+            enabled: updates.enabled ?? existing.enabled ?? true,
+            createdAt: existing.createdAt || nowIso,
+            updatedAt: nowIso,
+          };
+          const apiKey = String(payload.apiKey || '').trim();
+          if (apiKey) {
+            const nextVendorId = String(nextProvider.vendorId || providerKey);
+            if (!isAcceptedProviderApiKey(nextVendorId, apiKey)) {
+              return {
+                ok: false,
+                data: { status: 422, ok: false, json: { success: false, error: providerApiKeyValidationMessage(nextVendorId) } },
+                success: false,
+                status: 422,
+                json: { success: false, error: providerApiKeyValidationMessage(nextVendorId) },
+              };
+            }
+            nextProvider.apiKey = apiKey;
+            ensureMainAgentAuthProfile(nextVendorId, apiKey, 'provider-account-update');
+          }
+          providers[providerKey] = nextProvider;
+          models.providers = providers;
+          cfg.models = models;
+          cfg.meta = {
+            ...ensureRecord(cfg.meta),
+            lastTouchedAt: nowIso,
+          };
+          writeOpenclawConfig(cfg);
+          return {
+            ok: true,
+            data: { status: 200, ok: true, json: { success: true } },
+            success: true,
+            status: 200,
+            json: { success: true },
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+            success: false,
+            status: 500,
+            json: { success: false, error: String(err) },
+          };
+        }
+      }
+
+      if (method === 'DELETE') {
+        try {
+          const cfg = readOpenclawConfig();
+          const models = ensureRecord(cfg.models);
+          const providers = ensureRecord(models.providers);
+          const providerKey = findProviderConfigKeyByAccountId(providers, accountId);
+          if (providerKey) {
+            const removed = ensureRecord(providers[providerKey]);
+            const removedVendorId = String(removed.vendorId || providerKey);
+            delete providers[providerKey];
+            models.providers = providers;
+            cfg.models = models;
+            cfg.meta = {
+              ...ensureRecord(cfg.meta),
+              lastTouchedAt: new Date().toISOString(),
+            };
+            writeOpenclawConfig(cfg);
+            clearMainAgentAuthProfilesByProvider(removedVendorId);
+            if (readDefaultProviderAccountId() === accountId) {
+              writeDefaultProviderAccountId(null);
+            }
+          }
+          return {
+            ok: true,
+            data: { status: 200, ok: true, json: { success: true } },
+            success: true,
+            status: 200,
+            json: { success: true },
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+            success: false,
+            status: 500,
+            json: { success: false, error: String(err) },
+          };
+        }
+      }
+    }
+
+    const providerApiKeyMatch = requestPath.match(/^\/api\/providers\/([^/]+)\/api-key$/);
+    if (providerApiKeyMatch && method === 'GET') {
+      const accountOrProviderId = decodeURIComponent(providerApiKeyMatch[1] || '').trim();
+      const cfg = readOpenclawConfig();
+      const models = ensureRecord(cfg.models);
+      const providers = ensureRecord(models.providers);
+      const providerKey = findProviderConfigKeyByAccountId(providers, accountOrProviderId)
+        || accountOrProviderId;
+      const provider = ensureRecord(providers[providerKey]);
+      const apiKey = String(provider.apiKey || '').trim();
+      return {
+        ok: true,
+        data: { status: 200, ok: true, json: { apiKey: apiKey || null } },
+        success: true,
+        status: 200,
+        json: { apiKey: apiKey || null },
+      };
+    }
+
+    const providerMatch = requestPath.match(/^\/api\/providers\/([^/]+)$/);
+    if (providerMatch) {
+      const accountOrProviderId = decodeURIComponent(providerMatch[1] || '').trim();
+      if (!accountOrProviderId) {
+        return {
+          ok: false,
+          data: { status: 400, ok: false, json: { success: false, error: 'provider id required' } },
+          success: false,
+          status: 400,
+          json: { success: false, error: 'provider id required' },
+        };
+      }
+
+      if (method === 'GET') {
+        const snapshot = readLocalProviderSnapshot();
+        const account = snapshot.accounts.find((item) =>
+          item.id === accountOrProviderId || normalizeProviderAlias(item.vendorId) === normalizeProviderAlias(accountOrProviderId));
+        const status = snapshot.statuses.find((item) => item.id === account?.id || item.id === accountOrProviderId);
+        if (!account && !status) {
+          return {
+            ok: true,
+            data: { status: 200, ok: true, json: null },
+            success: true,
+            status: 200,
+            json: null,
+          };
+        }
+        const payload = {
+          id: account?.id || status?.id || accountOrProviderId,
+          name: account?.label || status?.name || accountOrProviderId,
+          type: account?.vendorId || status?.type || accountOrProviderId,
+          baseUrl: account?.baseUrl || status?.baseUrl,
+          apiProtocol: account?.apiProtocol || status?.apiProtocol,
+          model: account?.model || status?.model,
+          fallbackModels: account?.fallbackModels || status?.fallbackModels,
+          fallbackProviderIds: status?.fallbackProviderIds,
+          enabled: account?.enabled ?? status?.enabled ?? true,
+          createdAt: account?.createdAt || status?.createdAt || new Date().toISOString(),
+          updatedAt: account?.updatedAt || status?.updatedAt || new Date().toISOString(),
+          hasKey: status?.hasKey ?? false,
+          keyMasked: status?.keyMasked ?? null,
+        };
+        return {
+          ok: true,
+          data: { status: 200, ok: true, json: payload },
+          success: true,
+          status: 200,
+          json: payload,
+        };
+      }
+
+      if (method === 'PUT') {
+        try {
+          const payload = body
+            ? (typeof body === 'string'
+              ? JSON.parse(body)
+              : (body as { updates?: Record<string, unknown>; apiKey?: string }))
+            : {};
+          const updates = ensureRecord(payload.updates);
+          const cfg = readOpenclawConfig();
+          const models = ensureRecord(cfg.models);
+          const providers = ensureRecord(models.providers);
+          const providerKey = findProviderConfigKeyByAccountId(providers, accountOrProviderId)
+            || accountOrProviderId;
+          const existing = ensureRecord(providers[providerKey]);
+          const nowIso = new Date().toISOString();
+          const nextProvider: Record<string, unknown> = {
+            ...existing,
+            accountId: String(existing.accountId || providerKey),
+            vendorId: String(updates.type || updates.vendorId || existing.vendorId || providerKey),
+            label: updates.name ?? updates.label ?? existing.label,
+            authMode: updates.authMode ?? existing.authMode,
+            baseUrl: updates.baseUrl ?? existing.baseUrl,
+            apiProtocol: updates.apiProtocol ?? existing.apiProtocol ?? existing.api,
+            api: updates.apiProtocol ?? existing.api ?? existing.apiProtocol,
+            model: updates.model ?? existing.model,
+            fallbackModels: updates.fallbackModels ?? existing.fallbackModels,
+            fallbackProviderIds: updates.fallbackProviderIds ?? existing.fallbackProviderIds,
+            enabled: updates.enabled ?? existing.enabled ?? true,
+            createdAt: existing.createdAt || nowIso,
+            updatedAt: nowIso,
+          };
+          const apiKey = String(payload.apiKey || '').trim();
+          if (apiKey) {
+            const nextVendorId = String(nextProvider.vendorId || providerKey);
+            if (!isAcceptedProviderApiKey(nextVendorId, apiKey)) {
+              return {
+                ok: false,
+                data: { status: 422, ok: false, json: { success: false, error: providerApiKeyValidationMessage(nextVendorId) } },
+                success: false,
+                status: 422,
+                json: { success: false, error: providerApiKeyValidationMessage(nextVendorId) },
+              };
+            }
+            nextProvider.apiKey = apiKey;
+            ensureMainAgentAuthProfile(nextVendorId, apiKey, 'provider-update');
+          }
+          providers[providerKey] = nextProvider;
+          models.providers = providers;
+          cfg.models = models;
+          cfg.meta = {
+            ...ensureRecord(cfg.meta),
+            lastTouchedAt: nowIso,
+          };
+          writeOpenclawConfig(cfg);
+          return {
+            ok: true,
+            data: { status: 200, ok: true, json: { success: true } },
+            success: true,
+            status: 200,
+            json: { success: true },
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+            success: false,
+            status: 500,
+            json: { success: false, error: String(err) },
+          };
+        }
+      }
+
+      if (method === 'DELETE') {
+        try {
+          const apiKeyOnly = requestQuery.get('apiKeyOnly') === '1';
+          const cfg = readOpenclawConfig();
+          const models = ensureRecord(cfg.models);
+          const providers = ensureRecord(models.providers);
+          const providerKey = findProviderConfigKeyByAccountId(providers, accountOrProviderId)
+            || accountOrProviderId;
+          const existing = ensureRecord(providers[providerKey]);
+          if (apiKeyOnly) {
+            if ('apiKey' in existing) delete existing.apiKey;
+            providers[providerKey] = existing;
+            clearMainAgentAuthProfilesByProvider(String(existing.vendorId || providerKey));
+          } else if (providerKey in providers) {
+            delete providers[providerKey];
+          }
+          models.providers = providers;
+          cfg.models = models;
+          cfg.meta = {
+            ...ensureRecord(cfg.meta),
+            lastTouchedAt: new Date().toISOString(),
+          };
+          writeOpenclawConfig(cfg);
+          return {
+            ok: true,
+            data: { status: 200, ok: true, json: { success: true } },
+            success: true,
+            status: 200,
+            json: { success: true },
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            data: { status: 500, ok: false, json: { success: false, error: String(err) } },
+            success: false,
+            status: 500,
+            json: { success: false, error: String(err) },
+          };
+        }
+      }
     }
 
     // Codex 无感接入：检测本机 codex CLI 与一键写入 OpenClaw 配置
@@ -1678,6 +6592,52 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
+    // Claude Code CLI 检测
+    if (path === '/api/app/claude-code/status' && method === 'GET') {
+      try {
+        const claudeCode = await detectClaudeCodeCli();
+        const cfg = readOpenclawConfig();
+        const models = ensureRecord(cfg.models);
+        const providers = ensureRecord(models.providers);
+        const ccProvider = ensureRecord(providers['claude-code']);
+        const providerModels = asModelArray(ccProvider.models).map((m: { id: string }) => m.id);
+
+        return {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              installed: claudeCode.installed,
+              path: claudeCode.path,
+              version: claudeCode.version,
+              configured: providerModels.length > 0,
+              providerId: 'claude-code',
+              providerModels,
+            },
+          },
+          success: true,
+          status: 200,
+          json: {
+            installed: claudeCode.installed,
+            path: claudeCode.path,
+            version: claudeCode.version,
+            configured: providerModels.length > 0,
+            providerId: 'claude-code',
+            providerModels,
+          },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, ok: false, json: { error: String(err) } },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
     if (path === '/api/app/codex/quick-connect' && method === 'POST') {
       try {
         const payload = body
@@ -1693,7 +6653,27 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           }))
           : {};
 
-        const result = applyCodexQuickConnect(payload);
+        const result = applyCodexQuickConnect({
+          providerId: payload.providerId,
+          providerBaseUrl: payload.providerBaseUrl,
+          providerApi: payload.providerApi,
+          apiKey: payload.apiKey,
+          accessToken: payload.accessToken,
+          sessionPayload: payload.sessionPayload,
+          preferredModel: payload.preferredModel,
+          fallbackModel: payload.fallbackModel,
+        });
+        const normalizedProvider = normalizeProviderAlias(String(payload.providerId || 'openai'));
+        if (!result.credentialAccepted && (normalizedProvider === 'openai' || normalizedProvider === 'openai-codex')) {
+          const message = providerApiKeyValidationMessage(normalizedProvider);
+          return {
+            ok: false,
+            data: { status: 422, ok: false, json: { success: false, error: message, ...result } },
+            success: false,
+            status: 422,
+            json: { success: false, error: message, ...result },
+          };
+        }
         const codex = await detectCodexCli();
 
         return {
@@ -1730,17 +6710,48 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
+    // 特殊处理：/api/gateway/control-ui 控制网页连接参数
+    if (path === '/api/gateway/control-ui' && method === 'GET') {
+      const info = getGatewayControlUiInfo();
+      return {
+        ok: true,
+        data: { status: 200, json: info, ok: true },
+        success: true,
+        status: 200,
+        json: info,
+      };
+    }
+
     // 特殊处理：/api/gateway/start 启动网关子进程（hostApiFetch 调用，非 Gateway 自身 API）
     if (path === '/api/gateway/start' && method === 'POST') {
       try {
-        await startGateway();
-        const status = getGatewayStatus();
+        const status = await startGatewayWithSelfHeal();
         return {
           ok: true,
-          data: { status: 200, json: { success: true }, ok: true },
+          data: {
+            status: 200,
+            json: {
+              success: !!status.startSuccess,
+              status,
+              error: status.error,
+              diagnostics: status.diagnostics ?? [],
+              logTail: status.logTail ?? [],
+              selfHealTried: !!status.selfHealTried,
+              selfHealSucceeded: !!status.selfHealSucceeded,
+            },
+            ok: true,
+          },
           success: true,
           status: 200,
-          json: { success: true },
+          json: {
+            success: !!status.startSuccess,
+            status,
+            error: status.error,
+            diagnostics: status.diagnostics ?? [],
+            logTail: status.logTail ?? [],
+            selfHealTried: !!status.selfHealTried,
+            selfHealSucceeded: !!status.selfHealSucceeded,
+          },
         };
       } catch (err) {
         const msg = String(err);
@@ -2119,12 +7130,38 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       try {
         const config = readOpenclawConfig();
         const ui = getUiSettingsFromConfig(config);
+        const setupComplete = getSetupCompleteFromConfig(config);
         return {
           ok: true,
-          data: { status: 200, json: ui, ok: true },
+          data: { status: 200, json: { ...ui, setupComplete }, ok: true },
           success: true,
           status: 200,
-          json: ui,
+          json: { ...ui, setupComplete },
+        };
+      } catch (err) {
+        const msg = String(err);
+        return {
+          ok: false,
+          error: msg,
+          data: { status: 500, json: { error: msg }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: msg },
+        };
+      }
+    }
+
+    if ((path === '/api/settings/setupComplete' || path === '/api/settings/setup-complete') && method === 'PUT' && body) {
+      try {
+        const payload = typeof body === 'string' ? JSON.parse(body) : (body as { value?: boolean });
+        const setupComplete = Boolean(payload?.value);
+        persistSetupCompleteToConfig(setupComplete);
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true, value: setupComplete }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true, value: setupComplete },
         };
       } catch (err) {
         const msg = String(err);
@@ -2200,7 +7237,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/settings/storage 存储与日志路径（ClawDeckX 系统设置）
+    // 特殊处理：/api/settings/storage 存储与日志路径（AxonClawX 系统设置）
     if (path === '/api/settings/storage' && method === 'GET') {
       const dataDir = nodePath.join(os.homedir(), '.openclaw');
       const logDir = process.platform === 'win32' ? nodePath.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw';
@@ -2215,7 +7252,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       };
     }
 
-    // 特殊处理：/api/settings/bind-address 绑定地址（ClawDeckX 访问安全）
+    // 特殊处理：/api/settings/bind-address 绑定地址（AxonClawX 访问安全）
     if (path === '/api/settings/bind-address' && method === 'GET') {
       try {
         let config: Record<string, unknown> = {};
@@ -2276,9 +7313,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           gw.customBindHost = customHost || '0.0.0.0';
         }
         config.gateway = { ...gw };
-        const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(OPENCLAW_CFG_PATH, JSON.stringify(config, null, 2), 'utf8');
+        writeOpenclawConfig(config);
         return {
           ok: true,
           data: { status: 200, json: { success: true }, ok: true },
@@ -2300,7 +7335,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/settings/password 修改密码（ClawDeckX 风格，AxonClaw 桌面端为 stub）
+    // 特殊处理：/api/settings/password 修改密码（AxonClawX 风格，AxonClawX 桌面端为 stub）
     if (path === '/api/settings/password' && method === 'POST' && body) {
       try {
         const payload = typeof body === 'string' ? JSON.parse(body) : (body as { current?: string; new?: string; confirm?: string });
@@ -2326,7 +7361,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
             json: { error: errMsg2 },
           };
         }
-        const errMsg3 = 'AxonClaw 为桌面客户端，修改 ClawDeckX Web 控制台账户密码请前往对应 Web 界面';
+        const errMsg3 = 'AxonClawX 为桌面客户端，修改 AxonClawX Web 控制台账户密码请前往对应 Web 界面';
         return {
           ok: false,
           error: errMsg3,
@@ -2349,10 +7384,12 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
 
     // 特殊处理：/api/logs Gateway 日志（OpenClaw 默认 /tmp/openclaw/openclaw-YYYY-MM-DD.log）
     if (path.startsWith('/api/logs')) {
-      const tailMatch = path.match(/tailLines=(\d+)/);
-      const tailLines = tailMatch ? parseInt(tailMatch[1], 10) : 200;
-      const limitMatch = path.match(/limit=(\d+)/);
-      const abnormalLimit = limitMatch ? parseInt(limitMatch[1], 10) : 10;
+      const url = new URL(path, 'http://localhost');
+      const pathname = url.pathname;
+      const tailLines = Math.max(50, Math.min(2000, parseInt(url.searchParams.get('tailLines') || '200', 10) || 200));
+      const abnormalLimit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
+      const days = Math.max(0, Math.min(30, parseInt(url.searchParams.get('days') || '0', 10) || 0));
+      const offsetDays = Math.max(0, Math.min(365, parseInt(url.searchParams.get('offsetDays') || '0', 10) || 0));
       try {
         const res = await fetch(`${getGatewayApiBase()}${path}`);
         if (res.ok) {
@@ -2365,11 +7402,11 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       const gatewayLogDir = process.platform === 'win32' ? nodePath.join(os.tmpdir(), 'openclaw') : '/tmp/openclaw';
       const openclawLogDir = nodePath.join(os.homedir(), '.openclaw', 'logs');
       const dirToUse = fs.existsSync(gatewayLogDir) ? gatewayLogDir : (fs.existsSync(openclawLogDir) ? openclawLogDir : gatewayLogDir);
-      if (path === '/api/logs/dir' || path.startsWith('/api/logs/dir')) {
+      if (pathname === '/api/logs/dir' || pathname.startsWith('/api/logs/dir')) {
         return { ok: true, data: { status: 200, json: { dir: dirToUse }, ok: true }, success: true, status: 200, json: { dir: dirToUse } };
       }
-      // /api/logs/abnormal：从日志解析异常事件（ClawDeckX 风格：ERROR/WARN/exception/failed）
-      if (path.startsWith('/api/logs/abnormal')) {
+      // /api/logs/abnormal：从日志解析异常事件（AxonClawX 风格：ERROR/WARN/exception/failed）
+      if (pathname.startsWith('/api/logs/abnormal')) {
         const readAbnormalFromDir = (dir: string): Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> => {
           if (!fs.existsSync(dir)) return [];
           const results: Array<{ id: string; level: 'critical' | 'warning' | 'info'; title: string; message: string }> = [];
@@ -2404,12 +7441,15 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const abnormal = fromGateway.length ? fromGateway : readAbnormalFromDir(openclawLogDir);
         return { ok: true, data: { status: 200, json: { events: abnormal }, ok: true }, success: true, status: 200, json: { events: abnormal } };
       }
-      const readFromDir = (dir: string) => {
-        if (!fs.existsSync(dir)) return null;
-        const files = fs.readdirSync(dir)
+      const listLogFiles = (dir: string): string[] => {
+        if (!fs.existsSync(dir)) return [];
+        return fs.readdirSync(dir)
           .filter((f) => f.endsWith('.log') || f.match(/^openclaw-\d{4}-\d{2}-\d{2}\.log$/))
           .sort()
           .reverse();
+      };
+      const readFromDir = (dir: string) => {
+        const files = listLogFiles(dir);
         if (files.length === 0) return null;
         return files.slice(0, 5).map((f) => {
           try {
@@ -2422,11 +7462,74 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           }
         }).join('\n\n---\n\n');
       };
+      const readByDayWindow = (dir: string) => {
+        const files = listLogFiles(dir);
+        if (!files || files.length === 0) return null;
+        const dated = files
+          .map((f) => {
+            const m = f.match(/^openclaw-(\d{4}-\d{2}-\d{2})\.log$/);
+            return m ? { file: f, day: m[1] } : null;
+          })
+          .filter((x): x is { file: string; day: string } => !!x);
+        if (dated.length === 0) return null;
+        const picked = dated.slice(offsetDays, offsetDays + days);
+        if (picked.length === 0) return { content: '', files: [], hasMore: false, nextOffsetDays: null };
+        const chunks = picked.map(({ file }) => {
+          try {
+            const full = nodePath.join(dir, file);
+            const buf = fs.readFileSync(full, 'utf8');
+            const lines = buf.split(/\r?\n/);
+            return `[${file}]\n${lines.slice(-tailLines).join('\n')}`;
+          } catch {
+            return `[${file}] (读取失败)`;
+          }
+        });
+        return {
+          content: chunks.join('\n\n---\n\n'),
+          files: picked.map((p) => p.file),
+          hasMore: dated.length > offsetDays + days,
+          nextOffsetDays: dated.length > offsetDays + days ? offsetDays + days : null,
+        };
+      };
+
+      if (days > 0) {
+        const fromGateway = readByDayWindow(gatewayLogDir);
+        const fromOpenclaw = readByDayWindow(openclawLogDir);
+        const chosen = fromGateway && fromGateway.content.trim().length > 0 ? fromGateway : fromOpenclaw;
+        if (chosen) {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              json: {
+                content: chosen.content,
+                files: chosen.files,
+                days,
+                offsetDays,
+                hasMore: chosen.hasMore,
+                nextOffsetDays: chosen.nextOffsetDays,
+              },
+              ok: true,
+            },
+            success: true,
+            status: 200,
+            json: {
+              content: chosen.content,
+              files: chosen.files,
+              days,
+              offsetDays,
+              hasMore: chosen.hasMore,
+              nextOffsetDays: chosen.nextOffsetDays,
+            },
+          };
+        }
+      }
+
       const content = readFromDir(gatewayLogDir) ?? readFromDir(openclawLogDir) ?? '(Gateway 日志目录不存在: /tmp/openclaw 或 ~/.openclaw/logs)';
-      return { ok: true, data: { status: 200, json: { content }, ok: true }, success: true, status: 200, json: { content } };
+      return { ok: true, data: { status: 200, json: { content, hasMore: false }, ok: true }, success: true, status: 200, json: { content, hasMore: false } };
     }
 
-    // 活动监控：/api/sessions/usage - 聚合会话用量（ClawDeckX 风格）
+    // 活动监控：/api/sessions/usage - 聚合会话用量（AxonClawX 风格）
     if ((path === '/api/sessions/usage' || path.startsWith('/api/sessions/usage?')) && method === 'GET') {
       try {
         const url = new URL(path, 'http://localhost');
@@ -2530,7 +7633,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/usage-cost 使用成本（ClawDeckX gwApi.usageCost，透传 Gateway usage.cost RPC）
+    // 特殊处理：/api/usage-cost 使用成本（AxonClawX gwApi.usageCost，透传 Gateway usage.cost RPC）
     if (path.startsWith('/api/usage-cost')) {
       try {
         const url = new URL(path, 'http://localhost');
@@ -2620,7 +7723,145 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/alerts 告警列表（ClawDeckX alertApi.list，从 SQLite 读取 + 日志异常补充）
+    // 任务记录：SQLite 持久化（用于任务中心展示历史 + 删除）
+    if (path === '/api/task-runs' && method === 'GET') {
+      try {
+        ensureDatabaseReady();
+        const url = new URL(path, 'http://localhost');
+        const limit = parseInt(url.searchParams.get('limit') || '200', 10) || 200;
+        const list = listTaskRuns(limit);
+        return {
+          ok: true,
+          data: { status: 200, json: { runs: list }, ok: true },
+          success: true,
+          status: 200,
+          json: { runs: list },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/task-runs/upsert' && method === 'POST' && body) {
+      try {
+        ensureDatabaseReady();
+        const payload = typeof body === 'string' ? JSON.parse(body) : body;
+        const record = payload as {
+          localId: string;
+          source: 'multi-agent' | 'chat' | 'external';
+          sessionKey: string;
+          runId?: string | null;
+          task?: string;
+          status: 'pending' | 'running' | 'completed' | 'failed';
+          createdAt: number;
+          updatedAt: number;
+          events: unknown[];
+          lastSignature?: string;
+          agentId?: string;
+          result?: string;
+        };
+        if (!record?.localId || !record?.status) {
+          return {
+            ok: false,
+            data: { status: 400, json: { error: 'Invalid task run payload' }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: 'Invalid task run payload' },
+          };
+        }
+        upsertTaskRun({
+          localId: String(record.localId),
+          source: (record.source || 'external') as 'multi-agent' | 'chat' | 'external',
+          sessionKey: String(record.sessionKey || ''),
+          runId: record.runId != null && String(record.runId).trim() ? String(record.runId) : null,
+          task: String(record.task || ''),
+          status: record.status,
+          createdAt: Number(record.createdAt || Date.now()),
+          updatedAt: Number(record.updatedAt || Date.now()),
+          events: Array.isArray(record.events) ? record.events : [],
+          lastSignature: typeof record.lastSignature === 'string' ? record.lastSignature : undefined,
+          agentId: typeof record.agentId === 'string' ? record.agentId : undefined,
+          result: typeof record.result === 'string' ? record.result : undefined,
+        });
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    if (path.startsWith('/api/task-runs/') && method === 'DELETE') {
+      try {
+        ensureDatabaseReady();
+        const localId = decodeURIComponent(path.slice('/api/task-runs/'.length));
+        if (!localId) {
+          return {
+            ok: false,
+            data: { status: 400, json: { error: 'Invalid localId' }, ok: false },
+            success: false,
+            status: 400,
+            json: { error: 'Invalid localId' },
+          };
+        }
+        deleteTaskRun(localId);
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    if (path === '/api/task-runs/clear-finished' && method === 'POST') {
+      try {
+        ensureDatabaseReady();
+        const deleted = deleteFinishedTaskRuns();
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true, deleted }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true, deleted },
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          data: { status: 500, json: { error: String(err) }, ok: false },
+          success: false,
+          status: 500,
+          json: { error: String(err) },
+        };
+      }
+    }
+
+    // 特殊处理：/api/alerts 告警列表（AxonClawX alertApi.list，从 SQLite 读取 + 日志异常补充）
     if (path === '/api/alerts' || path.startsWith('/api/alerts?')) {
       try {
         const url = new URL(path, 'http://localhost');
@@ -2709,7 +7950,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/doctor 健康中心（ClawDeckX 风格：summary + run + fix）
+    // 特殊处理：/api/doctor 健康中心（AxonClawX 风格：summary + run + fix）
     if (path === '/api/doctor/summary' || path.startsWith('/api/doctor/summary')) {
       try {
         const gwRunning = isGatewayRunning();
@@ -2972,7 +8213,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 特殊处理：/api/host-info 主机信息（ClawDeckX 风格完整检测）
+    // 特殊处理：/api/host-info 主机信息（AxonClawX 风格完整检测）
     if (path === '/api/host-info') {
       try {
         const totalMem = os.totalmem();
@@ -3076,7 +8317,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           await tryCheckDiskSpace();
         }
 
-        // 进程内存（ClawDeckX 风格：堆/系统分配/栈/GC）
+        // 进程内存（AxonClawX 风格：堆/系统分配/栈/GC）
         const mem = process.memoryUsage();
         const other = Math.max(0, mem.rss - mem.heapUsed - (mem.external || 0));
         const processMemory = {
@@ -3248,11 +8489,50 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
     }
     if (path === '/api/skills/load-from-dir' && method === 'POST' && body) {
       try {
-        const { dirPath } = JSON.parse(body) as { dirPath?: string };
+        const { dirPath, addToExtraDirs } = JSON.parse(body) as { dirPath?: string; addToExtraDirs?: boolean };
         if (!dirPath || typeof dirPath !== 'string') return { ok: false, data: { status: 400, json: { success: false, error: 'dirPath required' }, ok: false }, success: false, status: 400, json: { success: false, error: 'dirPath required' } };
-        const resolved = dirPath.startsWith('~') ? nodePath.join(os.homedir(), dirPath.slice(1)) : dirPath;
+        const expanded = dirPath.startsWith('~') ? nodePath.join(os.homedir(), dirPath.slice(1)) : dirPath;
+        const resolved = nodePath.resolve(expanded);
         const skills = scanSkillsFromDir(resolved);
-        return { ok: true, data: { status: 200, json: { success: true, skills }, ok: true }, success: true, status: 200, json: { success: true, skills } };
+        const shouldAddToExtraDirs = addToExtraDirs !== false;
+
+        let addedToExtraDirs = false;
+        if (shouldAddToExtraDirs) {
+          const cfg = readOpenclawConfig();
+          const skillsNode = ensureRecord(cfg.skills);
+          const loadNode = ensureRecord(skillsNode.load);
+          const currentExtraDirs = Array.isArray(loadNode.extraDirs)
+            ? loadNode.extraDirs.filter((it): it is string => typeof it === 'string' && it.trim().length > 0)
+            : [];
+
+          const normalizeForCompare = (p: string): string => {
+            const rp = p.startsWith('~') ? nodePath.join(os.homedir(), p.slice(1)) : p;
+            const abs = nodePath.resolve(rp);
+            try {
+              return fs.realpathSync(abs);
+            } catch {
+              return abs;
+            }
+          };
+
+          const resolvedKey = normalizeForCompare(resolved);
+          const existingSet = new Set(currentExtraDirs.map((p) => normalizeForCompare(p)));
+          if (!existingSet.has(resolvedKey)) {
+            loadNode.extraDirs = [...currentExtraDirs, resolved];
+            skillsNode.load = loadNode;
+            cfg.skills = skillsNode;
+            writeOpenclawConfig(cfg);
+            addedToExtraDirs = true;
+          }
+        }
+
+        return {
+          ok: true,
+          data: { status: 200, json: { success: true, skills, addedToExtraDirs }, ok: true },
+          success: true,
+          status: 200,
+          json: { success: true, skills, addedToExtraDirs },
+        };
       } catch (err) {
         console.error('[HostAPI] skills load-from-dir error:', err);
         return { ok: false, data: { status: 500, json: { success: false, error: String(err) }, ok: false }, success: false, status: 500, json: { success: false, error: String(err) } };
@@ -3287,7 +8567,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       return { ok: true, data: { status: 200, json: { path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { path: OPENCLAW_CONFIG_PATH } };
     }
 
-    // ── ClawDeckX 配置中心 API (/api/v1/*) 与 ClawDeckX 界面一致 ──
+    // ── AxonClawX 配置中心 API (/api/v1/*) 与 AxonClawX 界面一致 ──
     if (path === '/api/v1/config' && method === 'GET') {
       try {
         let data: { config?: Record<string, unknown>; path?: string; parsed?: boolean; hash?: string } = {};
@@ -3368,7 +8648,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           channels: {},
           models: {},
         };
-        fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf8');
+        writeOpenclawConfig(defaultConfig);
         return { ok: true, data: { status: 200, json: { success: true, message: 'Default config generated', path: OPENCLAW_CONFIG_PATH }, ok: true }, success: true, status: 200, json: { success: true, message: 'Default config generated', path: OPENCLAW_CONFIG_PATH } };
       } catch (err) {
         console.error('[HostAPI] /api/v1/config/generate-default error:', err);
@@ -3436,7 +8716,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const params = typeof body === 'string' ? JSON.parse(body) : (body as { method?: string; params?: Record<string, unknown> });
         const rpcMethod = params?.method ?? '';
         const rpcParams = params?.params ?? {};
-        const r = await callGatewayRpc(rpcMethod, rpcParams);
+        const r = await callGatewayRpcWithRetry(rpcMethod, rpcParams);
         if (!r.ok) {
           // Gateway RPC 失败，返回错误让前端能检测到
           return {
@@ -3468,10 +8748,10 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 代理管理：/api/agents - 与 ClawDeckX 一致，使用 agents.list RPC
-    // 1. 优先 agents.list（ClawDeckX 同款）
+    // 代理管理：/api/agents - 与 AxonClawX 一致，使用 agents.list RPC
+    // 1. 优先 agents.list（AxonClawX 同款）
     // 2. 失败时尝试 config.get 构建
-    // 3. 再失败时尝试 ClawDeckX HTTP (18080)
+    // 3. 再失败时尝试 AxonClawX HTTP (18080)
     if (path === '/api/agents' && method === 'GET') {
       try {
         const buildSnapshot = (
@@ -3515,7 +8795,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
           return { agents, defaultAgentId: defaultId, configuredChannelTypes, channelOwners };
         };
 
-        // 1) 优先 agents.list（ClawDeckX 同款）
+        // 1) 优先 agents.list（AxonClawX 同款）
         const agentsListRes = await callGatewayRpcWithRetry('agents.list', {});
         if (agentsListRes.ok && agentsListRes.result != null) {
           const raw = agentsListRes.result as unknown;
@@ -3555,7 +8835,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         const json = buildSnapshot(list, String(defaultId), bindings, configTyped?.channels ?? {}, modelStr, configTyped?.agents?.defaults?.workspace ?? '—');
         return { ok: true, data: { status: 200, json, ok: true }, success: true, status: 200, json };
       } catch (err) {
-        const fallback = await fetchAgentsFromClawDeckX();
+        const fallback = await fetchAgentsFromAxonClawX();
         if (fallback) {
           return { ok: true, data: { status: 200, json: fallback, ok: true }, success: true, status: 200, json: fallback };
         }
@@ -3674,8 +8954,48 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
       if (method === 'PUT' && body) {
         try {
-          const payload = typeof body === 'string' ? JSON.parse(body) : (body as { name?: string });
-          await callGatewayRpc('agents.update', { agentId, name: payload?.name });
+          const payload = typeof body === 'string' ? JSON.parse(body) : (body as Record<string, unknown>);
+          const updatePayload: Record<string, unknown> = { agentId };
+          for (const key of ['name', 'workspace', 'model', 'avatar', 'emoji', 'description', 'role', 'prompt', 'systemPrompt', 'instructions', 'tags', 'tools'] as const) {
+            if (payload[key] !== undefined) {
+              updatePayload[key] = payload[key];
+            }
+          }
+          const defaultFlag =
+            typeof payload.default === 'boolean'
+              ? payload.default
+              : typeof payload.isDefault === 'boolean'
+                ? payload.isDefault
+                : typeof payload.makeDefault === 'boolean'
+                  ? payload.makeDefault
+                  : undefined;
+          if (defaultFlag !== undefined) {
+            updatePayload.default = defaultFlag;
+          }
+          if (payload.defaultAgentId !== undefined) {
+            updatePayload.defaultAgentId = payload.defaultAgentId;
+          }
+
+          const safeUpdatePayload: Record<string, unknown> = { agentId };
+          for (const key of ['name', 'workspace', 'model', 'avatar'] as const) {
+            if (payload[key] !== undefined) {
+              safeUpdatePayload[key] = payload[key];
+            }
+          }
+          if (defaultFlag !== undefined) {
+            safeUpdatePayload.default = defaultFlag;
+          }
+          if (payload.defaultAgentId !== undefined) {
+            safeUpdatePayload.defaultAgentId = payload.defaultAgentId;
+          }
+
+          let updateResult = await callGatewayRpc('agents.update', updatePayload);
+          if (!updateResult.ok) {
+            updateResult = await callGatewayRpc('agents.update', safeUpdatePayload);
+          }
+          if (!updateResult.ok) {
+            throw new Error(updateResult.error || 'agents.update failed');
+          }
           const config = (await callGatewayRpc('config.get', {})) as unknown as Record<string, unknown>;
           const list = ((config?.agents as { list?: Array<Record<string, unknown>> })?.list ?? []) as Array<{ id: string; name?: string; default?: boolean; workspace?: string; agentDir?: string }>;
           const bList = (config?.bindings ?? []) as Array<{ agentId?: string; match?: { channel?: string } }>;
@@ -3928,7 +9248,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 调度器概览（ClawDeckX 定时调度页顶部卡）
+    // 调度器概览（AxonClawX 定时调度页顶部卡）
     if (path === '/api/scheduler/summary' && method === 'GET') {
       try {
         let jobList: Array<{ enabled?: boolean; nextRun?: string; lastRun?: string }> = [];
@@ -4000,7 +9320,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // 调度任务（ClawDeckX 风格）：透传 Gateway cron RPC
+    // 调度任务（AxonClawX 风格）：透传 Gateway cron RPC
     if (path === '/api/cron/jobs' && method === 'GET') {
       try {
         const r = await callGatewayRpc('cron.list', {}, 10000);
@@ -4360,60 +9680,131 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       }
     }
 
-    // ClawDeckX（18080）多代理 API — OpenClaw Gateway 无此路由，需转发到 ClawDeckX HTTP
+    // AxonClawX（18080）多代理 API — OpenClaw Gateway 无此路由，需转发到 AxonClawX HTTP
     if (path.startsWith('/api/v1/multi-agent')) {
-      const bases = [`http://127.0.0.1:${CLAWDECKX_HTTP_PORT}`];
-      let lastErr: string | null = null;
-      for (const base of bases) {
-        try {
-          const response = await fetch(`${base}${path}`, {
-            method: method || 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(headers && typeof headers === 'object' ? headers : {}),
-            },
-            body: body || undefined,
-            signal: AbortSignal.timeout(120_000),
-          });
-          let json: unknown = undefined;
-          let text: string | undefined = undefined;
-          const contentType = response.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            try {
-              json = await response.json();
-            } catch {
-              text = await response.text();
-            }
-          } else {
+      const remoteBase = `http://127.0.0.1:${AXONCLAWX_HTTP_PORT}`;
+      let remoteResult: {
+        status: number;
+        ok: boolean;
+        json: unknown;
+        text?: string;
+      } | null = null;
+      let remoteErr: string | null = null;
+
+      try {
+        const response = await fetch(`${remoteBase}${path}`, {
+          method: method || 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(headers && typeof headers === 'object' ? headers : {}),
+          },
+          body: body || undefined,
+          signal: AbortSignal.timeout(120_000),
+        });
+        let json: unknown = undefined;
+        let text: string | undefined = undefined;
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          try {
+            json = await response.json();
+          } catch {
             text = await response.text();
           }
+        } else {
+          text = await response.text();
+        }
+        remoteResult = {
+          status: response.status,
+          ok: response.ok,
+          json,
+          text,
+        };
+      } catch (e) {
+        remoteErr = e instanceof Error ? e.message : String(e);
+      }
+
+      const supportedFallbackPaths = ['/api/v1/multi-agent/deploy', '/api/v1/multi-agent/preview', '/api/v1/multi-agent/status', '/api/v1/multi-agent/delete'];
+      const shouldFallbackLocally =
+        remoteResult == null ||
+        (!remoteResult.ok && supportedFallbackPaths.includes(path));
+
+      if (!shouldFallbackLocally && remoteResult) {
+        return {
+          ok: true,
+          data: {
+            status: remoteResult.status,
+            ok: remoteResult.ok,
+            json: remoteResult.json,
+            text: remoteResult.text,
+          },
+          success: remoteResult.ok,
+          status: remoteResult.status,
+          json: remoteResult.json,
+          text: remoteResult.text,
+        };
+      }
+
+      if (path === '/api/v1/multi-agent/deploy' || path === '/api/v1/multi-agent/preview') {
+        try {
+          const parsedBody =
+            typeof body === 'string' && body
+              ? (JSON.parse(body) as MultiAgentDeployRequest)
+              : (body as MultiAgentDeployRequest | undefined) ?? {};
+          const result = await applyLocalMultiAgentDeployment({
+            ...parsedBody,
+            dryRun: path === '/api/v1/multi-agent/preview' || parsedBody?.dryRun,
+          });
           return {
             ok: true,
             data: {
-              status: response.status,
-              ok: response.ok,
-              json,
-              text,
+              status: result.success ? 200 : 500,
+              ok: result.success,
+              json: result,
+              text: result.message,
             },
-            success: response.ok,
-            status: response.status,
-            json,
-            text,
+            success: result.success,
+            status: result.success ? 200 : 500,
+            json: result,
+            text: result.message,
           };
-        } catch (e) {
-          lastErr = e instanceof Error ? e.message : String(e);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return {
+            ok: false,
+            error: { message: remoteErr || message || 'AxonClawX 多代理 API 不可用（请启动 AxonClawX 或检查 18080 端口）' },
+            success: false,
+          };
         }
       }
+
+      const message = remoteErr || 'AxonClawX 多代理 API 不可用（请启动 AxonClawX 或检查 18080 端口）';
       return {
-        ok: false,
-        error: { message: lastErr || 'ClawDeckX 多代理 API 不可用（请启动 ClawDeckX 或检查 18080 端口）' },
+        ok: true,
+        data: {
+          status: 503,
+          ok: false,
+          json: {
+            success: false,
+            errors: [message],
+            localFallback: false,
+          },
+          text: message,
+        },
         success: false,
+        status: 503,
+        json: {
+          success: false,
+          errors: [message],
+          localFallback: false,
+        },
+        text: message,
       };
     }
 
     const url = `${getGatewayApiBase()}${path}`;
     console.log(`[HostAPI] ${method} ${path}`);
-    
+
+    const gatewayProxyTimeoutMs = 20_000;
     const response = await fetch(url, {
       method: method || 'GET',
       headers: {
@@ -4421,6 +9812,7 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
         ...headers,
       },
       body: body || undefined,
+      signal: AbortSignal.timeout(gatewayProxyTimeoutMs),
     });
 
     let json: unknown = undefined;

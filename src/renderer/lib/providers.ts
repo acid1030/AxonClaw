@@ -18,6 +18,7 @@ export const PROVIDER_TYPES = [
   'minimax-portal-cn',
   'qwen-portal',
   'ollama',
+  'claude-code',
   'custom',
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
@@ -34,6 +35,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'minimax-portal-cn',
   'qwen-portal',
   'ollama',
+  'claude-code',
 ] as const;
 
 export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
@@ -165,6 +167,22 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'ark', name: 'ByteDance Ark', icon: 'A', placeholder: 'your-ark-api-key', model: 'Doubao', requiresApiKey: true, defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'ep-20260228000000-xxxxx', docsUrl: 'https://www.volcengine.com/' },
   { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   {
+    id: 'claude-code',
+    name: 'Claude Code',
+    icon: '🔮',
+    placeholder: 'Not required',
+    model: 'Claude (Local)',
+    requiresApiKey: false,
+    supportsApiKey: true,
+    defaultBaseUrl: 'http://localhost:3210/v1',
+    showBaseUrl: true,
+    showModelId: true,
+    showModelIdInDevModeOnly: false,
+    modelIdPlaceholder: 'claude-sonnet-4-20250514',
+    defaultModelId: 'claude-sonnet-4-20250514',
+    docsUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+  },
+  {
     id: 'custom',
     name: 'Custom',
     icon: '⚙️',
@@ -234,10 +252,15 @@ export function resolveProviderModelForSave(
 }
 
 /** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */
+export const CLAUDE_CODE_PLACEHOLDER_API_KEY = 'claude-code-local';
+
 export function resolveProviderApiKeyForSave(type: ProviderType | string, apiKey: string): string | undefined {
   const trimmed = apiKey.trim();
   if (type === 'ollama') {
     return trimmed || OLLAMA_PLACEHOLDER_API_KEY;
+  }
+  if (type === 'claude-code') {
+    return trimmed || CLAUDE_CODE_PLACEHOLDER_API_KEY;
   }
   return trimmed || undefined;
 }

@@ -1,8 +1,8 @@
-# ClawDeckX vs OpenClaw 对比分析报告
+# AxonClawX vs OpenClaw 对比分析报告
 
 > **分析时间**: 2026-03-12  
 > **分析对象**: 
-> - ClawDeckX (v1.0 Beta)
+> - AxonClawX (v1.0 Beta)
 > - OpenClaw (v2026.2.13)
 > - AxonClaw (新项目规划)
 
@@ -12,7 +12,7 @@
 
 ### 核心发现
 
-| 维度 | ClawDeckX | OpenClaw | AxonClaw (规划) |
+| 维度 | AxonClawX | OpenClaw | AxonClaw (规划) |
 |------|-----------|----------|----------------|
 | **定位** | Web 可视化管理平台 | AI Agent 框架核心引擎 | 全渠道智能运营平台 |
 | **语言** | Go + TypeScript | TypeScript (Node.js) | TypeScript + React |
@@ -21,7 +21,7 @@
 | **目标用户** | 新手用户、企业运维 | 开发者、技术用户 | 中小企业、自媒体 |
 
 **关键结论**:
-1. **ClawDeckX** 是 OpenClaw 的**上层管理工具**，提供可视化界面
+1. **AxonClawX** 是 OpenClaw 的**上层管理工具**，提供可视化界面
 2. **OpenClaw** 是**底层引擎**，提供核心 AI Agent 能力
 3. **AxonClaw** 规划为**独立产品**，整合两者优势，聚焦垂直场景
 
@@ -29,7 +29,7 @@
 
 ## 一、项目定位对比
 
-### 1.1 ClawDeckX - 可视化管理平台
+### 1.1 AxonClawX - 可视化管理平台
 
 **核心价值**:
 - ✅ **降低门槛**: 让 OpenClaw 更易用，尤其是新手用户
@@ -65,7 +65,7 @@
 
 ### 2.1 技术栈
 
-| 层次 | ClawDeckX | OpenClaw | AxonClaw |
+| 层次 | AxonClawX | OpenClaw | AxonClaw |
 |------|-----------|----------|----------|
 | **后端语言** | Go 1.24 | TypeScript (Node.js) | TypeScript (Node.js) |
 | **前端框架** | 原生 TypeScript (123 个文件) | 无 (CLI 工具) | React 19 + Vite |
@@ -76,10 +76,10 @@
 
 ### 2.2 代码结构
 
-#### ClawDeckX (51.86 MB, 49,729 行前端代码)
+#### AxonClawX (51.86 MB, 49,729 行前端代码)
 
 ```
-clawdeckx/
+axonclawx/
 ├── cmd/                    # Go 命令行入口
 ├── internal/               # Go 后端核心逻辑 (37 个目录)
 │   ├── api/               # API 接口层
@@ -112,7 +112,7 @@ openclaw-dev/
 
 ## 三、功能对比
 
-### 3.1 ClawDeckX 核心功能
+### 3.1 AxonClawX 核心功能
 
 **✅ 已实现**:
 - 可视化配置中心 (OpenClaw 配置管理)
@@ -139,7 +139,7 @@ openclaw-dev/
 - CLI 命令行工具
 
 **❌ 缺失**:
-- 可视化界面 (依赖 ClawDeckX)
+- 可视化界面 (依赖 AxonClawX)
 - 多媒体内容工厂
 - 工作流模板中心
 
@@ -157,7 +157,7 @@ openclaw-dev/
 
 ## 四、优劣势分析
 
-### 4.1 ClawDeckX
+### 4.1 AxonClawX
 
 **优势**:
 - ✅ macOS 级视觉体验，用户友好
@@ -193,7 +193,7 @@ openclaw-dev/
 - ✅ 生态整合能力
 
 **威胁**:
-- ❌ ClawDeckX 已有用户基础 (285⭐)
+- ❌ AxonClawX 已有用户基础 (285⭐)
 - ❌ 开发周期长 (12 个月)
 - ❌ 技术复杂度高
 
@@ -213,7 +213,7 @@ OpenClaw 生态产品关系:
               │                         │
               ▼                         ▼
     ┌─────────────────┐       ┌─────────────────┐
-    │   ClawDeckX     │       │    AxonClaw     │
+    │   AxonClawX     │       │    AxonClaw     │
     │ (Web 管理平台)   │       │ (桌面运营平台)   │
     │                 │       │                 │
     │ 优势:           │       │ 优势:           │
@@ -232,7 +232,7 @@ OpenClaw 生态产品关系:
 
 ### 6.1 产品定位
 
-**学习 ClawDeckX**:
+**学习 AxonClawX**:
 - ✅ 清晰的目标用户定位
 - ✅ 优秀的用户体验设计
 - ✅ 降低使用门槛
@@ -274,7 +274,7 @@ OpenClaw 生态产品关系:
 
 ### 7.1 核心发现
 
-1. **ClawDeckX** 是 OpenClaw 的优秀补充，提供可视化界面
+1. **AxonClawX** 是 OpenClaw 的优秀补充，提供可视化界面
 2. **OpenClaw** 是成熟的底层引擎，核心能力强
 3. **AxonClaw** 有机会创造独特价值，聚焦垂直场景
 

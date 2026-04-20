@@ -104,8 +104,8 @@
 
 ## 📚 相关报告
 
-- `CLAWDECKX_VS_OPENCLAW_ANALYSIS.md` - ClawDeckX vs OpenClaw 对比
-- `CLAWDECKX_CODE_ANALYSIS.md` - ClawDeckX 代码深度分析
+- `AXONCLAWX_VS_OPENCLAW_ANALYSIS.md` - AxonClawX vs OpenClaw 对比
+- `AXONCLAWX_CODE_ANALYSIS.md` - AxonClawX 代码深度分析
 - `AXONCLAW_*.md` - AxonClaw 项目文档
 
 ---
