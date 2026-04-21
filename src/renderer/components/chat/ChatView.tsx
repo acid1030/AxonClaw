@@ -8,8 +8,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { motion } from 'framer-motion';
-import { ChevronDown, ChevronsDown, Bot, Wrench, Lightbulb, RefreshCw, File, LightbulbOff, Pencil, History } from 'lucide-react';
+import { ChevronDown, Bot, Wrench, Lightbulb, RefreshCw, File, LightbulbOff, Pencil, History, Trash2 } from 'lucide-react';
 import { MarkdownContent } from './MarkdownContent';
 import { TypewriterMarkdown } from './TypewriterMarkdown';
 import { ChatInput, AttachmentPreview } from '@/pages/Chat/ChatInput';
@@ -49,14 +50,101 @@ const CollapsibleBlock: React.FC<{
   );
 };
 
-function getSessionDisplayName(
-  sessionKey: string,
-  sessions: { key: string; displayName?: string }[],
-  sessionLabels: Record<string, string>
-): string {
-  return sessionLabels[sessionKey]
-    || sessions.find((s) => s.key === sessionKey)?.displayName
-    || sessionKey;
+function getAgentIdFromSessionKey(sessionKey: string): string | null {
+  if (!sessionKey.startsWith('agent:')) return null;
+  const parts = sessionKey.split(':');
+  return parts[1] || null;
+}
+
+function sanitizeSessionLabel(label: string): string {
+  const text = String(label || '').trim();
+  if (!text) return '';
+  const blockedPatterns = [
+    /read heartbeat\.md/i,
+    /heartbeat_ok/i,
+    /sender \(untrusted metadata\)/i,
+    /^```/i,
+  ];
+  if (blockedPatterns.some((pattern) => pattern.test(text))) return '';
+  return text;
+}
+
+function normalizeMetaText(text: string): string {
+  return String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isHiddenHeartbeatText(text: string): boolean {
+  const normalized = normalizeMetaText(text);
+  if (!normalized) return false;
+  const blockedPatterns = [
+    /read heartbeat\.md if it exists/,
+    /heartbeat_ok/,
+    /follow it strictly/,
+    /do not infer or repeat old tasks from prior chats/,
+    /sender \(untrusted metadata\)/,
+    /current time:/,
+    /workspace context/,
+  ];
+  return blockedPatterns.some((pattern) => pattern.test(normalized));
+}
+
+function isHeartbeatFileRef(input?: string): boolean {
+  const value = String(input || '').trim();
+  if (!value) return false;
+  // Match plain "HEARTBEAT.md" or absolute/relative paths ending with it.
+  return /(^|[\\/])heartbeat\.md$/i.test(value) || /^heartbeat\.md$/i.test(value);
+}
+
+function isCompactionText(text: string): boolean {
+  const normalized = normalizeMetaText(text);
+  if (!normalized) return false;
+  const compactKeywords = [
+    'session compacted',
+    'context compacted',
+    'conversation compacted',
+    'context compressed',
+    'conversation compressed',
+    '会话已压缩',
+    '会话压缩',
+    '上下文压缩',
+    '/compact',
+  ];
+  return compactKeywords.some((kw) => normalized.includes(kw));
+}
+
+/** Returns true if a file is an internal OpenClaw system/memory file that should not appear in chat. */
+function isInternalSystemFile(fileName: string): boolean {
+  const name = (fileName || '').trim().toLowerCase().replace(/\\/g, '/');
+  const baseName = name.split('/').pop() || name;
+  const internalFiles = [
+    'memory.md',
+    'last_sync_sessions.txt',
+    'heartbeat.md',
+  ];
+  return internalFiles.includes(baseName);
+}
+
+/** Returns true if a message is an internal memory-sync / no-reply background task message. */
+function isInternalSyncMessage(text: string, files: AttachedFileMeta[]): boolean {
+  const normalized = normalizeMetaText(text);
+  // "NO_REPLY" is the token used by OpenClaw cron/background tasks
+  if (normalized === 'no_reply' || normalized === 'no reply') return true;
+  // If all attached files are internal system files and text is empty / NO_REPLY, hide
+  if (files.length > 0 && files.every((f) => isInternalSystemFile(f.fileName))) {
+    if (!normalized || normalized === 'no_reply') return true;
+  }
+  return false;
+}
+
+/** Returns true if a message is a Gateway model-directive notification (e.g. "Model reset to default (...)"). */
+function isModelDirectiveMessage(text: string): boolean {
+  const normalized = normalizeMetaText(text);
+  if (!normalized) return false;
+  return (
+    /^model reset to default\b/.test(normalized) ||
+    /^\(previous selection reset to default\)/.test(normalized) ||
+    /^model set to \S/.test(normalized)
+  );
 }
 
 function imageSrc(img: { url?: string; data?: string; mimeType: string }): string | null {
@@ -93,6 +181,7 @@ export const ChatView: React.FC = () => {
     sessions,
     currentSessionKey,
     sessionLabels,
+    sessionLastActivity,
     streamingText,
     streamingMessage,
     error,
@@ -100,14 +189,16 @@ export const ChatView: React.FC = () => {
     switchSession,
     newSession,
     refresh,
-    loadHistory,
     loadHistoryWithOptions,
     loading,
     showThinking,
     toggleThinking,
     setSessionLabel,
     loadSessions,
+    deleteSession,
   } = useChatStore();
+  const agents = useAgentsStore((s) => s.agents);
+  const resolveAgentLabel = useAgentsStore((s) => s.resolveLabel);
   const activeSessionModel = sessions.find((s) => s.key === currentSessionKey)?.model || '';
 
   // 持久化会话别名：刷新/重启后仍保留
@@ -291,8 +382,58 @@ export const ChatView: React.FC = () => {
     })();
   }, [activeSessionModel, currentSessionKey, loadSessions]);
 
+  const agentLabelById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const agent of agents) {
+      map[agent.id] = resolveAgentLabel(agent);
+    }
+    return map;
+  }, [agents, resolveAgentLabel]);
+
+  const getSessionDisplayName = useCallback((sessionKey: string): string => {
+    const session = sessions.find((s) => s.key === sessionKey);
+    const alias = sanitizeSessionLabel(sessionLabels[sessionKey] || '');
+    if (alias) return alias;
+
+    const agentId = getAgentIdFromSessionKey(sessionKey);
+    const isMainSession = sessionKey.endsWith(':main');
+    if (agentId && isMainSession) {
+      const agentName = sanitizeSessionLabel(agentLabelById[agentId] || '');
+      if (agentName) return agentName;
+    }
+
+    const displayName = sanitizeSessionLabel(String(session?.displayName || ''));
+    if (displayName) return displayName;
+    const label = sanitizeSessionLabel(String(session?.label || ''));
+    if (label) return label;
+
+    return sessionKey;
+  }, [agentLabelById, sessionLabels, sessions]);
+
+  const visibleSessions = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+    return [...sessions]
+      .filter((session) => {
+        if (session.key === currentSessionKey) return true;
+        const activity = sessionLastActivity[session.key] ?? session.updatedAt ?? 0;
+        const hasReadableTitle = !!sanitizeSessionLabel(
+          sessionLabels[session.key] || session.displayName || session.label || '',
+        );
+        if (activity <= 0 && !hasReadableTitle) {
+          return false;
+        }
+        return activity >= cutoff;
+      })
+      .sort((a, b) => {
+        const at = sessionLastActivity[a.key] ?? a.updatedAt ?? 0;
+        const bt = sessionLastActivity[b.key] ?? b.updatedAt ?? 0;
+        return bt - at;
+      });
+  }, [sessions, currentSessionKey, sessionLastActivity]);
+
   const openAliasEdit = (sessionKey: string) => {
-    const current = sessionLabels[sessionKey] || sessions.find((s) => s.key === sessionKey)?.displayName || sessionKey;
+    const current = getSessionDisplayName(sessionKey);
     setAliasEditSessionKey(sessionKey);
     setAliasEditValue(typeof current === 'string' ? current : sessionKey);
     setAliasEditOpen(true);
@@ -315,9 +456,6 @@ export const ChatView: React.FC = () => {
   const chatAreaRef = useRef<HTMLDivElement>(null);
   const loadHistoryRef = useRef<HTMLDivElement>(null);
   const aliasInputRef = useRef<HTMLInputElement>(null);
-  const [showBackToBottom, setShowBackToBottom] = useState(false);
-  const [showNewMessageHint, setShowNewMessageHint] = useState(false);
-  const prevMessageCountRef = useRef(0);
   const shouldAutoFollowRef = useRef(true);
   const isConnected = gatewayStatus.state === 'running';
 
@@ -328,6 +466,7 @@ export const ChatView: React.FC = () => {
   const prevStreamingLenRef = useRef({ thinking: 0, text: 0 });
   const [useTypewriterForThinking, setUseTypewriterForThinking] = useState(false);
   const [useTypewriterForText, setUseTypewriterForText] = useState(false);
+  const didAutoRefreshOnConnectRef = useRef(false);
 
   // 安全防护：阻止粘贴剪贴板图片/文件时导致 Electron 页面跳转空白
   // ChatInput 的 document capture handler 在 clipboardData 为 null 时会 early return，
@@ -357,9 +496,13 @@ export const ChatView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isConnected) {
-      refresh();
+    if (!isConnected) {
+      didAutoRefreshOnConnectRef.current = false;
+      return;
     }
+    if (didAutoRefreshOnConnectRef.current) return;
+    didAutoRefreshOnConnectRef.current = true;
+    void refresh();
   }, [isConnected, refresh]);
 
   useEffect(() => {
@@ -373,8 +516,6 @@ export const ChatView: React.FC = () => {
     if (el) {
       shouldAutoFollowRef.current = true;
       el.scrollTop = el.scrollHeight;
-      setShowBackToBottom(false);
-      setShowNewMessageHint(false);
     }
   }, []);
 
@@ -391,29 +532,12 @@ export const ChatView: React.FC = () => {
     const threshold = 48;
     const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     shouldAutoFollowRef.current = nearBottom;
-    setShowBackToBottom(!nearBottom);
-    if (nearBottom) setShowNewMessageHint(false);
   }, []);
 
   useEffect(() => {
     const t = setTimeout(handleChatAreaScroll, 100);
     return () => clearTimeout(t);
   }, [messages, streamingText, streamingMessage, handleChatAreaScroll]);
-
-  useEffect(() => {
-    const prev = prevMessageCountRef.current;
-    const curr = messages.length;
-    if (curr > prev) {
-      const el = chatAreaRef.current;
-      if (el) {
-        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-        if (distanceFromBottom > 80) {
-          setShowNewMessageHint(true);
-        }
-      }
-    }
-    prevMessageCountRef.current = curr;
-  }, [messages.length]);
 
   useEffect(() => {
     if (!loadHistoryOpen) return;
@@ -459,6 +583,7 @@ export const ChatView: React.FC = () => {
   );
 
   const streamingDisplayText = isStreamingMsgAlreadyInHistory ? '' : rawStreamingText;
+  const hiddenHeartbeatStreaming = isHiddenHeartbeatText(streamingDisplayText || '');
 
   const streamingThinking = isStreamingMsgAlreadyInHistory
     ? null
@@ -467,18 +592,7 @@ export const ChatView: React.FC = () => {
       : null;
 
   // 仅当 sending 且流式内容尚未写入 messages 时显示流式块；会话消息一律从 messages 渲染，用 MarkdownContent
-  const isFromModelStream = sending && !isStreamingMsgAlreadyInHistory && (!!streamingDisplayText || !!streamingThinking);
-
-  // 流式输出期间仅在用户位于底部附近时自动跟随，不强制拖拽滚动
-  useEffect(() => {
-    if (!sending) return;
-    const timer = setInterval(() => {
-      if (suppressAutoScrollRef.current) return;
-      if (!shouldAutoFollowRef.current) return;
-      scrollToBottom();
-    }, 150);
-    return () => clearInterval(timer);
-  }, [sending, scrollToBottom]);
+  const isFromModelStream = sending && !isStreamingMsgAlreadyInHistory && !hiddenHeartbeatStreaming && (!!streamingDisplayText || !!streamingThinking);
 
   // 当 thinking 文本增长（新 token 到达），重置完成标记
   useEffect(() => {
@@ -613,9 +727,9 @@ export const ChatView: React.FC = () => {
           <div className="relative">
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="btn-outline flex items-center gap-2 min-w-[200px] justify-between"
+              className="btn-outline flex items-center gap-2 min-w-[280px] justify-between"
             >
-              <span>{getSessionDisplayName(currentSessionKey, sessions, sessionLabels) || t('chatView.selectChat')}</span>
+              <span>{getSessionDisplayName(currentSessionKey) || t('chatView.selectChat')}</span>
               <ChevronDown className="w-4 h-4" />
             </button>
             {dropdownOpen && (
@@ -624,27 +738,43 @@ export const ChatView: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50"
               >
-                {sessions.map((s) => (
+                {visibleSessions.map((s) => (
                   <div
                     key={s.key}
                     onClick={() => {
                       switchSession(s.key);
                       setDropdownOpen(false);
-                      loadHistory();
                     }}
                     className={`px-4 py-3 cursor-pointer text-sm border-b border-[#334155] last:border-0 flex items-center justify-between group ${
                       s.key === currentSessionKey ? 'bg-[#6366f1]/10 text-[#6366f1]' : 'text-[#e2e8f0] hover:bg-[#334155]'
                     }`}
                   >
-                    <span>💬 {getSessionDisplayName(s.key, sessions, sessionLabels)}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => handleEditSessionLabel(e, s.key)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#334155] transition-opacity"
-                      title={t('chatView.setAlias')}
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" />
-                    </button>
+                    <span>💬 {getSessionDisplayName(s.key)}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => handleEditSessionLabel(e, s.key)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#334155] transition-opacity"
+                        title={t('chatView.setAlias')}
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(t('chatView.confirmDelete', { defaultValue: '确认删除该会话？' }))) return;
+                          void deleteSession(s.key);
+                          if (s.key === currentSessionKey) {
+                            setDropdownOpen(false);
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#334155] transition-opacity"
+                        title={t('chatView.deleteSession', { defaultValue: '删除会话' })}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 <div
@@ -652,7 +782,7 @@ export const ChatView: React.FC = () => {
                     newSession();
                     setDropdownOpen(false);
                     void runWithSessionLoading(async () => {
-                      await loadHistory();
+                      await loadSessions();
                     }, { scanFromTop: true });
                   }}
                   className="px-4 py-3 cursor-pointer text-sm text-[#6366f1] hover:bg-[#334155]"
@@ -833,11 +963,19 @@ export const ChatView: React.FC = () => {
               const thinking = extractThinking(msg);
               const toolUse = extractToolUse(msg.content);
               const ts = fmtTime(msg.timestamp);
+              const hiddenHeartbeatMessage = isHiddenHeartbeatText(rawContent || '');
+              const compactEventMessage = isCompactionText(rawContent || '');
+              const heartbeatOnlyText = isHeartbeatFileRef(rawContent || '');
+
+              if (hiddenHeartbeatMessage) {
+                return null;
+              }
 
               const textPaths = extractFilePathsFromText(rawContent || '');
               const existingPaths = new Set(attachedFiles.map((f) => f.filePath).filter(Boolean) as string[]);
               const inferredFiles: AttachedFileMeta[] = textPaths
                 .filter((p) => !existingPaths.has(p))
+                .filter((p) => !isHeartbeatFileRef(p))
                 .map((p) => ({
                   fileName: p.split(/[\\/]/).pop() || 'file',
                   mimeType: 'application/octet-stream',
@@ -845,10 +983,42 @@ export const ChatView: React.FC = () => {
                   preview: null,
                   filePath: p,
                 }));
-              const allFiles = [...attachedFiles, ...inferredFiles];
+              const filteredAttachedFiles = attachedFiles.filter(
+                (file) => !isHeartbeatFileRef(file.filePath || file.fileName)
+                       && !isInternalSystemFile(file.fileName),
+              );
+              const allFiles = [...filteredAttachedFiles, ...inferredFiles];
               const content = allFiles.length > 0 ? stripFilePathsFromText(rawContent || '') : rawContent;
 
+              // Hide heartbeat-file-only artifacts in chat (path cards or plain filename).
+              if (heartbeatOnlyText && allFiles.length === 0) {
+                return null;
+              }
+
+              // Hide internal memory-sync / NO_REPLY background task messages.
+              if (isInternalSyncMessage(rawContent || '', attachedFiles)) {
+                return null;
+              }
+
+              // Hide Gateway model-directive notifications ("Model reset to default (...)").
+              if (isModelDirectiveMessage(rawContent || '')) {
+                return null;
+              }
+
               if (msg.role === 'system') {
+                if (compactEventMessage) {
+                  return (
+                    <div key={msg.id || i} className="mx-auto my-2 max-w-[740px]">
+                      <div className="rounded-lg border border-blue-400/35 bg-blue-500/10 px-3 py-2 text-xs text-blue-200">
+                        <div className="mb-1 flex items-center gap-1.5 font-medium">
+                          <History className="h-3.5 w-3.5" />
+                          {t('chatView.sessionCompaction', { defaultValue: '会话压缩' })}
+                        </div>
+                        <div className="whitespace-pre-wrap text-[11px] text-blue-100/90">{content || t('chatView.sessionCompactionDone', { defaultValue: '上下文已压缩' })}</div>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={msg.id || i} className="text-center text-[#64748b] text-xs py-2">
                     {content}
@@ -1093,35 +1263,6 @@ export const ChatView: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
       </div>
-
-      {/* {t('chatView.backToBottom')} / 新消息提示 */}
-      {(showBackToBottom || showNewMessageHint) && (
-        <div className="chat-back-to-bottom-wrap">
-          {showNewMessageHint && (
-            <button
-              onClick={() => {
-                setShowNewMessageHint(false);
-                scrollToBottom();
-              }}
-              className="chat-back-to-bottom mb-2"
-              title={t('chatView.newMessage')}
-            >
-              <span className="mr-1">🔔</span>
-              {t('chatView.newMessage')}
-            </button>
-          )}
-          {showBackToBottom && (
-            <button
-              onClick={scrollToBottom}
-              className="chat-back-to-bottom"
-              title={t('chatView.backToBottom')}
-            >
-              <ChevronsDown className="w-5 h-5" />
-              {t('chatView.backToBottom')}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* 附件预览 - 显示在输入框面板上方 */}
       {viewAttachments.length > 0 && (
