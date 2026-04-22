@@ -1,0 +1,175 @@
+{
+  "id": "project-dev-center-team",
+  "version": "1.0.0",
+  "type": "multi-agent",
+  "metadata": {
+    "name": "Project Development Center Team",
+    "description": "A 10-role software delivery collaboration team with end-to-end workflow",
+    "category": "engineering",
+    "difficulty": "hard",
+    "icon": "groups",
+    "color": "from-indigo-500 to-cyan-500",
+    "tags": ["software", "delivery", "multi-agent", "engineering"],
+    "author": "AxonClawX Team"
+  },
+  "requirements": {
+    "skills": ["superpowers", "self-improving", "supermemory", "github", "coding-agent", "openclaw-mem"],
+    "channels": ["wecom", "feishu", "dingtalk"]
+  },
+  "content": {
+    "agents": [
+      {
+        "id": "program-director",
+        "name": "Program Director",
+        "role": "Own architecture, direction, plan quality gates, and final acceptance",
+        "icon": "supervisor_account",
+        "color": "bg-violet-500",
+        "description": "Cross-team owner for architecture decisions and milestone quality",
+        "soulSnippet": "You are the delivery owner. Keep architecture coherent, enforce milestones, and block risky shortcuts.",
+        "skills": ["superpowers", "self-improving", "supermemory", "github", "coding-agent", "openclaw-mem"]
+      },
+      {
+        "id": "product-manager",
+        "name": "Product Manager",
+        "role": "Manage scope, priority, acceptance criteria, and release goals",
+        "icon": "clipboard_list",
+        "color": "bg-sky-500",
+        "description": "Translate business goals into executable backlog and clear acceptance rules",
+        "soulSnippet": "Clarify scope before coding. Keep requirements testable."
+      },
+      {
+        "id": "solution-architect",
+        "name": "Solution Architect",
+        "role": "Design system architecture and technical blueprint",
+        "icon": "account_tree",
+        "color": "bg-indigo-500",
+        "description": "Define service boundaries, data flow, and non-functional constraints",
+        "soulSnippet": "Prefer simple evolvable architecture over over-engineering."
+      },
+      {
+        "id": "backend-engineer",
+        "name": "Backend Engineer",
+        "role": "Implement service APIs and integration logic",
+        "icon": "engineering",
+        "color": "bg-blue-500",
+        "description": "Deliver stable APIs, business logic, and reliability controls",
+        "soulSnippet": "Write testable APIs with clear contracts."
+      },
+      {
+        "id": "frontend-engineer",
+        "name": "Frontend Engineer",
+        "role": "Build user flows, interaction, and UI behavior",
+        "icon": "web",
+        "color": "bg-cyan-500",
+        "description": "Implement polished UI and resilient page state transitions",
+        "soulSnippet": "Prioritize responsive, clear, and predictable UX."
+      },
+      {
+        "id": "data-engineer",
+        "name": "Data Engineer",
+        "role": "Build data pipeline, aggregation, and sync jobs",
+        "icon": "analytics",
+        "color": "bg-emerald-500",
+        "description": "Own data quality, lineage, transformation, and delivery consistency",
+        "soulSnippet": "Data correctness first, then performance."
+      },
+      {
+        "id": "qa-engineer",
+        "name": "QA Engineer",
+        "role": "Create test strategy, test cases, and regression verification",
+        "icon": "fact_check",
+        "color": "bg-amber-500",
+        "description": "Validate functional behavior and data integrity before release",
+        "soulSnippet": "No release without reproducible evidence."
+      },
+      {
+        "id": "sre-engineer",
+        "name": "SRE Engineer",
+        "role": "Ensure deployment reliability, observability, and operations readiness",
+        "icon": "monitor_heart",
+        "color": "bg-orange-500",
+        "description": "Set up deployment, logging, alerting, and runbook operations",
+        "soulSnippet": "If it cannot be observed, it cannot be operated."
+      },
+      {
+        "id": "security-engineer",
+        "name": "Security Engineer",
+        "role": "Perform threat review, secrets controls, and hardening checks",
+        "icon": "gavel",
+        "color": "bg-rose-500",
+        "description": "Protect auth, data, dependencies, and deployment surface",
+        "soulSnippet": "Shift security left; block avoidable risk early."
+      },
+      {
+        "id": "delivery-coordinator",
+        "name": "Delivery Coordinator",
+        "role": "Track progress, synchronize dependencies, and communicate status",
+        "icon": "campaign",
+        "color": "bg-green-500",
+        "description": "Keep handoffs smooth and milestones visible for all roles",
+        "soulSnippet": "No hidden blockers. Keep status objective and current."
+      }
+    ],
+    "workflow": {
+      "type": "collaborative",
+      "description": "Project delivery lifecycle with parallel build and synchronized quality gates",
+      "steps": [
+        {
+          "agents": ["program-director", "product-manager", "solution-architect"],
+          "action": "Align target scope, architecture baseline, milestones, and acceptance gate",
+          "parallel": true
+        },
+        {
+          "agents": ["backend-engineer", "frontend-engineer", "data-engineer"],
+          "action": "Implement core features and data path in parallel with daily integration checkpoints",
+          "parallel": true
+        },
+        {
+          "agents": ["qa-engineer", "security-engineer", "sre-engineer"],
+          "action": "Run verification matrix: functional, security, and readiness checks",
+          "parallel": true
+        },
+        {
+          "agent": "delivery-coordinator",
+          "action": "Consolidate status, risks, and release readiness report"
+        },
+        {
+          "agent": "program-director",
+          "action": "Perform final milestone acceptance and approve release"
+        }
+      ]
+    },
+    "examples": [
+      "Deliver a cross-team analytics dashboard within one sprint",
+      "Run architecture-to-release workflow for a new data service",
+      "Coordinate a full quality-gated feature launch with rollback plan"
+    ]
+  },
+  "skills": [
+    {
+      "name": "superpowers",
+      "permissions": ["read", "write", "execute"],
+      "config": {}
+    },
+    {
+      "name": "self-improving",
+      "permissions": ["read", "write"],
+      "config": {}
+    },
+    {
+      "name": "supermemory",
+      "permissions": ["read", "write"],
+      "config": {}
+    },
+    {
+      "name": "github",
+      "permissions": ["read", "write"],
+      "config": {}
+    },
+    {
+      "name": "coding-agent",
+      "permissions": ["execute"],
+      "config": {}
+    }
+  ]
+}

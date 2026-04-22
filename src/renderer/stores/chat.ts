@@ -141,6 +141,8 @@ function toMs(ts: number): number {
 // If no streaming events arrive within a few seconds, we periodically
 // poll chat.history to surface intermediate tool-call turns.
 let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
+let _historyRequestSeq = 0;
+const _latestHistoryRequestBySession = new Map<string, number>();
 
 // Timer for delayed error finalization. When the Gateway reports a mid-stream
 // error (e.g. "terminated"), it may retry internally and recover. We wait
@@ -159,6 +161,17 @@ function clearHistoryPoll(): void {
     clearTimeout(_historyPollTimer);
     _historyPollTimer = null;
   }
+}
+
+function beginHistoryRequest(sessionKey: string): number {
+  const requestId = ++_historyRequestSeq;
+  _latestHistoryRequestBySession.set(sessionKey, requestId);
+  return requestId;
+}
+
+function isHistoryRequestCurrent(sessionKey: string, requestId: number): boolean {
+  const latest = _latestHistoryRequestBySession.get(sessionKey);
+  return latest === requestId && useChatStore.getState().currentSessionKey === sessionKey;
 }
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:main';
@@ -1325,9 +1338,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadHistory: async (quiet = false) => {
     const { currentSessionKey } = get();
+    const requestSessionKey = currentSessionKey;
+    const requestId = beginHistoryRequest(requestSessionKey);
     if (!quiet) set({ loading: true, error: null });
 
     const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       // Before filtering: attach images/files from tool_result messages to the next assistant message
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
       const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
@@ -1360,7 +1376,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Extract first user message text as a session label for display in the toolbar.
       // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
       // displayName (e.g. the configured agent name "ClawX") instead.
-      const isMainSession = currentSessionKey.endsWith(':main');
+      const isMainSession = requestSessionKey.endsWith(':main');
       if (!isMainSession) {
         const firstUserMsg = finalMessages.find((m) => m.role === 'user');
         if (firstUserMsg) {
@@ -1368,10 +1384,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (labelText) {
             const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
             set((s) => {
-              const existing = (s.sessionLabels?.[currentSessionKey] || '').trim();
+              const existing = (s.sessionLabels?.[requestSessionKey] || '').trim();
               if (existing) return {};
               return {
-                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+                sessionLabels: { ...s.sessionLabels, [requestSessionKey]: truncated },
               };
             });
           }
@@ -1383,12 +1399,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (lastMsg?.timestamp) {
         const lastAt = toMs(lastMsg.timestamp);
         set((s) => ({
-          sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
+          sessionLastActivity: { ...s.sessionLastActivity, [requestSessionKey]: lastAt },
         }));
       }
 
       // Async: load missing image previews from disk (updates in background)
       loadMissingPreviews(finalMessages).then((updated) => {
+        if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
         if (updated) {
           // Create new object references so React.memo detects changes.
           // loadMissingPreviews mutates AttachedFileMeta in place, so we
@@ -1440,46 +1457,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
         'chat.history',
-        { sessionKey: currentSessionKey, limit: 200 },
+        { sessionKey: requestSessionKey, limit: 200 },
       );
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       if (data) {
         let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-          rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        if (rawMessages.length === 0 && isCronSessionKey(requestSessionKey)) {
+          rawMessages = await loadCronFallbackMessages(requestSessionKey, 200);
         }
 
         applyLoadedMessages(rawMessages, thinkingLevel);
       } else {
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        const fallbackMessages = await loadCronFallbackMessages(requestSessionKey, 200);
+        if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
         if (fallbackMessages.length > 0) {
           applyLoadedMessages(fallbackMessages, null);
         } else {
-          set({ messages: [], loading: false });
+          const state = get();
+          if (state.sending && state.currentSessionKey === requestSessionKey) {
+            set({ loading: false });
+          } else {
+            set({ messages: [], loading: false });
+          }
         }
       }
     } catch (err) {
       console.warn('Failed to load chat history:', err);
-      const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+      const fallbackMessages = await loadCronFallbackMessages(requestSessionKey, 200);
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       if (fallbackMessages.length > 0) {
         applyLoadedMessages(fallbackMessages, null);
       } else {
-        set({ messages: [], loading: false });
+        const state = get();
+        if (state.sending && state.currentSessionKey === requestSessionKey) {
+          set({ loading: false });
+        } else {
+          set({ messages: [], loading: false });
+        }
       }
     }
   },
 
   loadHistoryWithOptions: async (options?: { beforeTs?: number; limit?: number }) => {
     const { currentSessionKey } = get();
+    const requestSessionKey = currentSessionKey;
+    const requestId = beginHistoryRequest(requestSessionKey);
     set({ loading: true, error: null });
 
     const limit = options?.limit ?? 500;
     const beforeTs = options?.beforeTs;
 
-    const params: Record<string, unknown> = { sessionKey: currentSessionKey, limit };
+    const params: Record<string, unknown> = { sessionKey: requestSessionKey, limit };
     if (beforeTs != null) params.beforeTs = beforeTs;
 
     const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       let toApply = rawMessages;
       if (beforeTs != null) {
         toApply = rawMessages.filter((m) => !m.timestamp || toMs(m.timestamp) <= beforeTs);
@@ -1506,7 +1539,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       set({ messages: finalMessages, thinkingLevel, loading: false });
 
-      const isMainSession = currentSessionKey.endsWith(':main');
+      const isMainSession = requestSessionKey.endsWith(':main');
       if (!isMainSession) {
         const firstUserMsg = finalMessages.find((m) => m.role === 'user');
         if (firstUserMsg) {
@@ -1514,10 +1547,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (labelText) {
             const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
             set((s) => {
-              const existing = (s.sessionLabels?.[currentSessionKey] || '').trim();
+              const existing = (s.sessionLabels?.[requestSessionKey] || '').trim();
               if (existing) return {};
               return {
-                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+                sessionLabels: { ...s.sessionLabels, [requestSessionKey]: truncated },
               };
             });
           }
@@ -1528,11 +1561,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (lastMsg?.timestamp) {
         const lastAt = toMs(lastMsg.timestamp);
         set((s) => ({
-          sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
+          sessionLastActivity: { ...s.sessionLastActivity, [requestSessionKey]: lastAt },
         }));
       }
 
       loadMissingPreviews(finalMessages).then((updated) => {
+        if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
         if (updated) {
           set({
             messages: finalMessages.map((msg) =>
@@ -1545,28 +1579,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('chat.history', params);
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       if (data) {
         let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-          rawMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+        if (rawMessages.length === 0 && isCronSessionKey(requestSessionKey)) {
+          rawMessages = await loadCronFallbackMessages(requestSessionKey, limit);
         }
         applyLoadedMessages(rawMessages, thinkingLevel);
       } else {
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+        const fallbackMessages = await loadCronFallbackMessages(requestSessionKey, limit);
+        if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
         if (fallbackMessages.length > 0) {
           applyLoadedMessages(fallbackMessages, null);
         } else {
-          set({ messages: [], loading: false });
+          const state = get();
+          if (state.sending && state.currentSessionKey === requestSessionKey) {
+            set({ loading: false });
+          } else {
+            set({ messages: [], loading: false });
+          }
         }
       }
     } catch (err) {
       console.warn('Failed to load chat history with options:', err);
-      const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, limit);
+      const fallbackMessages = await loadCronFallbackMessages(requestSessionKey, limit);
+      if (!isHistoryRequestCurrent(requestSessionKey, requestId)) return;
       if (fallbackMessages.length > 0) {
         applyLoadedMessages(fallbackMessages, null);
       } else {
-        set({ messages: [], loading: false });
+        const state = get();
+        if (state.sending && state.currentSessionKey === requestSessionKey) {
+          set({ loading: false });
+        } else {
+          set({ messages: [], loading: false });
+        }
       }
     }
   },
@@ -1778,10 +1825,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const runId = String(event.runId || '');
     const eventState = String(event.state || '');
     const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
-    const { activeRunId, currentSessionKey } = get();
+    const { activeRunId, currentSessionKey, sending } = get();
 
     // Only process events for the current session (when sessionKey is present)
     if (eventSessionKey != null && eventSessionKey !== currentSessionKey) return;
+    // Ambiguous event (no session key, no active run, and we are idle) — ignore
+    // to avoid stale cross-session content being appended unexpectedly.
+    if (eventSessionKey == null && !activeRunId && !sending) return;
 
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;

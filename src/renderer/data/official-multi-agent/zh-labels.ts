@@ -117,4 +117,33 @@ export const MULTI_AGENT_TEMPLATE_ZH: Record<string, MultiAgentTemplateZhLabel> 
       '处理并分析用户行为数据',
     ],
   },
+  'project-dev-center-team': {
+    name: '项目开发协作中心',
+    description: '10 角色软件交付协作团队，覆盖规划、研发、测试、安全与上线',
+    workflowDescription: '并行开发 + 多维验收 + 统一交付的工程流程',
+    agents: {
+      'program-director': { name: '项目总监', role: '负责架构方向、任务规划与质量校验' },
+      'product-manager': { name: '产品经理', role: '负责需求范围、优先级与验收标准' },
+      'solution-architect': { name: '解决方案架构师', role: '负责系统蓝图与技术边界设计' },
+      'backend-engineer': { name: '后端工程师', role: '负责 API 与核心业务能力开发' },
+      'frontend-engineer': { name: '前端工程师', role: '负责交互体验与前端实现' },
+      'data-engineer': { name: '数据工程师', role: '负责数据汇总、同步与质量保障' },
+      'qa-engineer': { name: '测试工程师', role: '负责功能验证与回归测试' },
+      'sre-engineer': { name: 'SRE 工程师', role: '负责可观测性、部署与运行稳定性' },
+      'security-engineer': { name: '安全工程师', role: '负责安全审计与风险加固' },
+      'delivery-coordinator': { name: '交付协调员', role: '负责进度同步与跨角色协同' },
+    },
+    workflowSteps: [
+      '项目总监、产品经理、架构师联合完成范围和方案基线',
+      '前后端与数据工程并行开发并进行日常集成校验',
+      '测试、安全、SRE 并行开展验收验证与发布准备',
+      '交付协调员汇总风险、状态与发布清单',
+      '项目总监执行最终里程碑验收并确认发布',
+    ],
+    examples: [
+      '在一个迭代内交付跨团队数据看板能力',
+      '从架构设计到发布完成新数据服务上线',
+      '执行带质量闸门与回滚预案的功能发布',
+    ],
+  },
 };

@@ -1128,6 +1128,14 @@ function persistSetupCompleteToConfig(value: boolean): void {
   writeAxonclawxConfig(cfg);
 }
 
+function persistLanguageToAxonConfig(language: string): void {
+  const cfg = readAxonclawxConfig();
+  const axon = ensureRecord(cfg.axonclawx);
+  axon.language = language;
+  cfg.axonclawx = axon;
+  writeAxonclawxConfig(cfg);
+}
+
 function sanitizeSetupCompleteKeysInConfig(): void {
   try {
     const cfg = readOpenclawConfig();
@@ -1151,6 +1159,15 @@ function sanitizeSetupCompleteKeysInConfig(): void {
     const ui = ensureRecord(cfg.ui);
     if ('setupComplete' in ui) {
       delete ui.setupComplete;
+      cfg.ui = ui;
+      changed = true;
+    }
+    if ('language' in ui) {
+      const uiLanguage = String(ui.language || '').trim();
+      if (uiLanguage) {
+        persistLanguageToAxonConfig(uiLanguage);
+      }
+      delete ui.language;
       cfg.ui = ui;
       changed = true;
     }
@@ -3135,13 +3152,15 @@ function writeOpenclawConfig(config: Record<string, unknown>): void {
   if ('setupComplete' in ui) {
     delete ui.setupComplete;
   }
+  if ('language' in ui) {
+    delete ui.language;
+  }
   config.ui = ui;
   const models = ensureRecord(config.models);
   if ('default' in models) {
     delete models.default;
   }
   config.models = models;
-
   const dir = nodePath.dirname(OPENCLAW_CFG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   try {
@@ -5086,7 +5105,11 @@ function enrichConfigFromLatestBackup(config: Record<string, unknown>, configPat
 
 function getUiSettingsFromConfig(config: Record<string, unknown>): { language: string; theme: string; setupComplete: boolean } {
   const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-  const language = typeof ui.language === 'string' && ui.language.trim() ? ui.language.trim() : 'zh';
+  const axonCfg = readAxonclawxConfig();
+  const axon = ensureRecord(axonCfg.axonclawx);
+  const language = typeof axon.language === 'string' && axon.language.trim()
+    ? axon.language.trim()
+    : (typeof ui.language === 'string' && ui.language.trim() ? ui.language.trim() : 'zh');
   const themeRaw = typeof ui.theme === 'string' ? ui.theme.trim().toLowerCase() : 'system';
   const theme = themeRaw === 'light' || themeRaw === 'dark' || themeRaw === 'system' ? themeRaw : 'system';
   const setupComplete = Boolean(ui.setupComplete);
@@ -7180,9 +7203,12 @@ ipcMain.handle('hostapi:fetch', async (_event, { path, method, headers, body }) 
       try {
         const payload = typeof body === 'string' ? JSON.parse(body) : (body as { value?: string });
         const language = String(payload?.value ?? '').trim() || 'zh';
+        persistLanguageToAxonConfig(language);
         const config = readOpenclawConfig();
         const ui = ((config.ui as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-        ui.language = language;
+        if ('language' in ui) {
+          delete ui.language;
+        }
         config.ui = ui;
         writeOpenclawConfig(config);
         return {

@@ -1,0 +1,1574 @@
+{
+  "version": 1,
+  "count": 196,
+  "agents": [
+    {
+      "id": "academic-anthropologist",
+      "name": "人类学家智能体人格",
+      "description": "name: 人类学家",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-anthropologist"
+    },
+    {
+      "id": "academic-geographer",
+      "name": "地理学家智能体人格",
+      "description": "name: 地理学家",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-geographer"
+    },
+    {
+      "id": "academic-historian",
+      "name": "历史学家智能体人格",
+      "description": "name: 历史学家",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-historian"
+    },
+    {
+      "id": "academic-narratologist",
+      "name": "叙事学家智能体人格",
+      "description": "name: 叙事学家",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-narratologist"
+    },
+    {
+      "id": "academic-psychologist",
+      "name": "心理学家智能体人格",
+      "description": "name: 心理学家",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-psychologist"
+    },
+    {
+      "id": "academic-study-planner",
+      "name": "学习规划师",
+      "description": "name: 学习规划师",
+      "tag": "academic",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/academic-study-planner"
+    },
+    {
+      "id": "accounts-payable-agent",
+      "name": "应付账款智能体",
+      "description": "name: 应付账款智能体",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/accounts-payable-agent"
+    },
+    {
+      "id": "agentic-identity-trust",
+      "name": "身份信任架构师",
+      "description": "name: 身份信任架构师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/agentic-identity-trust"
+    },
+    {
+      "id": "agents-orchestrator",
+      "name": "AgentsOrchestrator 智能体人格",
+      "description": "name: 智能体编排者",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/agents-orchestrator"
+    },
+    {
+      "id": "automation-governance-architect",
+      "name": "自动化治理架构师",
+      "description": "name: 自动化治理架构师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/automation-governance-architect"
+    },
+    {
+      "id": "blockchain-security-auditor",
+      "name": "区块链安全审计师",
+      "description": "name: 区块链安全审计师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/blockchain-security-auditor"
+    },
+    {
+      "id": "compliance-auditor",
+      "name": "合规审计师智能体",
+      "description": "name: 合规审计师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/compliance-auditor"
+    },
+    {
+      "id": "corporate-training-designer",
+      "name": "企业培训课程设计师",
+      "description": "name: 企业培训课程设计师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/corporate-training-designer"
+    },
+    {
+      "id": "data-consolidation-agent",
+      "name": "数据整合师",
+      "description": "name: 数据整合师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/data-consolidation-agent"
+    },
+    {
+      "id": "design-brand-guardian",
+      "name": "品牌守护者 Agent 人格",
+      "description": "name: 品牌守护者",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-brand-guardian"
+    },
+    {
+      "id": "design-image-prompt-engineer",
+      "name": "图像提示词工程师",
+      "description": "name: 图像提示词工程师",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-image-prompt-engineer"
+    },
+    {
+      "id": "design-inclusive-visuals-specialist",
+      "name": "包容性视觉专家",
+      "description": "name: 包容性视觉专家",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-inclusive-visuals-specialist"
+    },
+    {
+      "id": "design-ui-designer",
+      "name": "UI 设计师 Agent 人格",
+      "description": "name: UI 设计师",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-ui-designer"
+    },
+    {
+      "id": "design-ux-architect",
+      "name": "UX 架构师",
+      "description": "name: UX 架构师",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-ux-architect"
+    },
+    {
+      "id": "design-ux-researcher",
+      "name": "UX 研究员 Agent 人格",
+      "description": "name: UX 研究员",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-ux-researcher"
+    },
+    {
+      "id": "design-visual-storyteller",
+      "name": "视觉叙事师",
+      "description": "name: 视觉叙事师",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-visual-storyteller"
+    },
+    {
+      "id": "design-whimsy-injector",
+      "name": "趣味注入师",
+      "description": "name: 趣味注入师",
+      "tag": "design",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/design-whimsy-injector"
+    },
+    {
+      "id": "engineering-ai-data-remediation-engineer",
+      "name": "AI 数据修复工程师智能体",
+      "description": "name: AI 数据修复工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-ai-data-remediation-engineer"
+    },
+    {
+      "id": "engineering-ai-engineer",
+      "name": "AI 工程师",
+      "description": "name: AI 工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-ai-engineer"
+    },
+    {
+      "id": "engineering-autonomous-optimization-architect",
+      "name": "自主优化架构师",
+      "description": "name: 自主优化架构师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-autonomous-optimization-architect"
+    },
+    {
+      "id": "engineering-backend-architect",
+      "name": "后端架构师智能体人格",
+      "description": "name: 后端架构师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-backend-architect"
+    },
+    {
+      "id": "engineering-cms-developer",
+      "name": "CMS 开发者",
+      "description": "name: CMS 开发者",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-cms-developer"
+    },
+    {
+      "id": "engineering-code-reviewer",
+      "name": "代码审查员",
+      "description": "name: 代码审查员",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-code-reviewer"
+    },
+    {
+      "id": "engineering-codebase-onboarding-engineer",
+      "name": "代码库入职引导工程师",
+      "description": "name: 代码库入职引导工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-codebase-onboarding-engineer"
+    },
+    {
+      "id": "engineering-data-engineer",
+      "name": "数据工程师",
+      "description": "name: 数据工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-data-engineer"
+    },
+    {
+      "id": "engineering-database-optimizer",
+      "name": "🗄️ 数据库优化师",
+      "description": "name: 数据库优化师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-database-optimizer"
+    },
+    {
+      "id": "engineering-devops-automator",
+      "name": "DevOps 自动化师智能体人设",
+      "description": "name: DevOps 自动化师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-devops-automator"
+    },
+    {
+      "id": "engineering-dingtalk-integration-developer",
+      "name": "钉钉集成开发工程师",
+      "description": "name: 钉钉集成开发工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-dingtalk-integration-developer"
+    },
+    {
+      "id": "engineering-email-intelligence-engineer",
+      "name": "邮件智能工程师",
+      "description": "name: 邮件智能工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-email-intelligence-engineer"
+    },
+    {
+      "id": "engineering-embedded-firmware-engineer",
+      "name": "嵌入式固件工程师",
+      "description": "name: 嵌入式固件工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-embedded-firmware-engineer"
+    },
+    {
+      "id": "engineering-embedded-linux-driver-engineer",
+      "name": "嵌入式 Linux 驱动工程师",
+      "description": "name: 嵌入式 Linux 驱动工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-embedded-linux-driver-engineer"
+    },
+    {
+      "id": "engineering-feishu-integration-developer",
+      "name": "飞书集成开发工程师",
+      "description": "name: 飞书集成开发工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-feishu-integration-developer"
+    },
+    {
+      "id": "engineering-filament-optimization-specialist",
+      "name": "Filament 优化专家",
+      "description": "name: Filament 优化专家",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-filament-optimization-specialist"
+    },
+    {
+      "id": "engineering-fpga-digital-design-engineer",
+      "name": "FPGA/ASIC 数字设计工程师",
+      "description": "name: FPGA/ASIC 数字设计工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-fpga-digital-design-engineer"
+    },
+    {
+      "id": "engineering-frontend-developer",
+      "name": "前端开发者 Agent 人格",
+      "description": "name: 前端开发者",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-frontend-developer"
+    },
+    {
+      "id": "engineering-git-workflow-master",
+      "name": "Git 工作流大师",
+      "description": "name: Git 工作流大师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-git-workflow-master"
+    },
+    {
+      "id": "engineering-incident-response-commander",
+      "name": "故障响应指挥官",
+      "description": "name: 故障响应指挥官",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-incident-response-commander"
+    },
+    {
+      "id": "engineering-iot-solution-architect",
+      "name": "IoT 方案架构师",
+      "description": "name: IoT 方案架构师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-iot-solution-architect"
+    },
+    {
+      "id": "engineering-minimal-change-engineer",
+      "name": "最小变更工程师",
+      "description": "name: 最小变更工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-minimal-change-engineer"
+    },
+    {
+      "id": "engineering-mobile-app-builder",
+      "name": "移动应用开发者",
+      "description": "name: 移动应用开发者",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-mobile-app-builder"
+    },
+    {
+      "id": "engineering-rapid-prototyper",
+      "name": "快速原型师 Agent 人格",
+      "description": "name: 快速原型师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-rapid-prototyper"
+    },
+    {
+      "id": "engineering-security-engineer",
+      "name": "安全工程师 Agent",
+      "description": "name: 安全工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-security-engineer"
+    },
+    {
+      "id": "engineering-senior-developer",
+      "name": "高级开发者",
+      "description": "name: 高级开发者",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-senior-developer"
+    },
+    {
+      "id": "engineering-software-architect",
+      "name": "软件架构师",
+      "description": "name: 软件架构师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-software-architect"
+    },
+    {
+      "id": "engineering-solidity-smart-contract-engineer",
+      "name": "Solidity 智能合约工程师",
+      "description": "name: Solidity 智能合约工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-solidity-smart-contract-engineer"
+    },
+    {
+      "id": "engineering-sre",
+      "name": "SRE (站点可靠性工程师)",
+      "description": "name: SRE (站点可靠性工程师)",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-sre"
+    },
+    {
+      "id": "engineering-technical-writer",
+      "name": "技术文档工程师",
+      "description": "name: 技术文档工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-technical-writer"
+    },
+    {
+      "id": "engineering-threat-detection-engineer",
+      "name": "威胁检测工程师",
+      "description": "name: 威胁检测工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-threat-detection-engineer"
+    },
+    {
+      "id": "engineering-voice-ai-integration-engineer",
+      "name": "语音 AI 集成工程师",
+      "description": "name: 语音 AI 集成工程师",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-voice-ai-integration-engineer"
+    },
+    {
+      "id": "engineering-wechat-mini-program-developer",
+      "name": "微信小程序开发者",
+      "description": "name: 微信小程序开发者",
+      "tag": "engineering",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/engineering-wechat-mini-program-developer"
+    },
+    {
+      "id": "finance-bookkeeper-controller",
+      "name": "簿记与财务总监",
+      "description": "name: 簿记与财务总监",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-bookkeeper-controller"
+    },
+    {
+      "id": "finance-financial-analyst",
+      "name": "财务分析师",
+      "description": "name: 财务分析师",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-financial-analyst"
+    },
+    {
+      "id": "finance-financial-forecaster",
+      "name": "财务预测分析师",
+      "description": "name: 财务预测分析师",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-financial-forecaster"
+    },
+    {
+      "id": "finance-fpa-analyst",
+      "name": "FP&A 分析师",
+      "description": "name: FP&A 分析师",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-fpa-analyst"
+    },
+    {
+      "id": "finance-fraud-detector",
+      "name": "金融风控分析师",
+      "description": "name: 金融风控分析师",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-fraud-detector"
+    },
+    {
+      "id": "finance-investment-researcher",
+      "name": "投资研究员",
+      "description": "name: 投资研究员",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-investment-researcher"
+    },
+    {
+      "id": "finance-invoice-manager",
+      "name": "发票管理专家",
+      "description": "name: 发票管理专家",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-invoice-manager"
+    },
+    {
+      "id": "finance-tax-strategist",
+      "name": "税务策略师",
+      "description": "name: 税务策略师",
+      "tag": "finance",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/finance-tax-strategist"
+    },
+    {
+      "id": "game-audio-engineer",
+      "name": "游戏音频工程师",
+      "description": "name: 游戏音频工程师",
+      "tag": "game-development",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/game-audio-engineer"
+    },
+    {
+      "id": "game-designer",
+      "name": "游戏设计师",
+      "description": "name: 游戏设计师",
+      "tag": "game-development",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/game-designer"
+    },
+    {
+      "id": "gaokao-college-advisor",
+      "name": "高考志愿填报顾问",
+      "description": "name: 高考志愿填报顾问",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/gaokao-college-advisor"
+    },
+    {
+      "id": "government-digital-presales-consultant",
+      "name": "政务数字化售前顾问",
+      "description": "name: 政务数字化售前顾问",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/government-digital-presales-consultant"
+    },
+    {
+      "id": "healthcare-customer-service",
+      "name": "医疗客服专家",
+      "description": "name: 医疗客服专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/healthcare-customer-service"
+    },
+    {
+      "id": "healthcare-marketing-compliance",
+      "name": "医疗健康营销合规师",
+      "description": "name: 医疗健康营销合规师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/healthcare-marketing-compliance"
+    },
+    {
+      "id": "hospitality-guest-services",
+      "name": "酒店宾客服务专家",
+      "description": "name: 酒店宾客服务专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/hospitality-guest-services"
+    },
+    {
+      "id": "hr-onboarding",
+      "name": "HR 入职管理专家",
+      "description": "name: HR 入职管理专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/hr-onboarding"
+    },
+    {
+      "id": "hr-performance-reviewer",
+      "name": "绩效管理专家",
+      "description": "name: 绩效管理专家",
+      "tag": "hr",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/hr-performance-reviewer"
+    },
+    {
+      "id": "hr-recruiter",
+      "name": "招聘专家",
+      "description": "name: 招聘专家",
+      "tag": "hr",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/hr-recruiter"
+    },
+    {
+      "id": "identity-graph-operator",
+      "name": "身份图谱操作员",
+      "description": "name: 身份图谱操作员",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/identity-graph-operator"
+    },
+    {
+      "id": "language-translator",
+      "name": "语言翻译专家",
+      "description": "name: 语言翻译专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/language-translator"
+    },
+    {
+      "id": "legal-billing-time-tracking",
+      "name": "律所计费与工时专家",
+      "description": "name: 律所计费与工时专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/legal-billing-time-tracking"
+    },
+    {
+      "id": "legal-client-intake",
+      "name": "律所客户接案专家",
+      "description": "name: 律所客户接案专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/legal-client-intake"
+    },
+    {
+      "id": "legal-contract-reviewer",
+      "name": "合同审查专家",
+      "description": "name: 合同审查专家",
+      "tag": "legal",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/legal-contract-reviewer"
+    },
+    {
+      "id": "legal-document-review",
+      "name": "法律文书审查专家",
+      "description": "name: 法律文书审查专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/legal-document-review"
+    },
+    {
+      "id": "legal-policy-writer",
+      "name": "制度文件撰写专家",
+      "description": "name: 制度文件撰写专家",
+      "tag": "legal",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/legal-policy-writer"
+    },
+    {
+      "id": "level-designer",
+      "name": "关卡设计师",
+      "description": "name: 关卡设计师",
+      "tag": "game-development",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/level-designer"
+    },
+    {
+      "id": "loan-officer-assistant",
+      "name": "信贷经理助手",
+      "description": "name: 信贷经理助手",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/loan-officer-assistant"
+    },
+    {
+      "id": "lsp-index-engineer",
+      "name": "LSP 索引工程师",
+      "description": "name: LSP 索引工程师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/lsp-index-engineer"
+    },
+    {
+      "id": "macos-spatial-metal-engineer",
+      "name": "macOS Metal 空间工程师",
+      "description": "name: macOS Metal 空间工程师",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/macos-spatial-metal-engineer"
+    },
+    {
+      "id": "marketing-agentic-search-optimizer",
+      "name": "智能搜索优化师",
+      "description": "name: 智能搜索优化师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-agentic-search-optimizer"
+    },
+    {
+      "id": "marketing-ai-citation-strategist",
+      "name": "你的身份与记忆",
+      "description": "name: AI 引文策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-ai-citation-strategist"
+    },
+    {
+      "id": "marketing-app-store-optimizer",
+      "name": "应用商店优化师智能体人格",
+      "description": "name: 应用商店优化师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-app-store-optimizer"
+    },
+    {
+      "id": "marketing-baidu-seo-specialist",
+      "name": "百度 SEO 专家",
+      "description": "name: 百度 SEO 专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-baidu-seo-specialist"
+    },
+    {
+      "id": "marketing-bilibili-strategist",
+      "name": "B站内容策略师",
+      "description": "name: B站内容策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-bilibili-strategist"
+    },
+    {
+      "id": "marketing-book-co-author",
+      "name": "图书联合作者",
+      "description": "name: 图书联合作者",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-book-co-author"
+    },
+    {
+      "id": "marketing-carousel-growth-engine",
+      "name": "轮播图增长引擎",
+      "description": "name: 轮播图增长引擎",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-carousel-growth-engine"
+    },
+    {
+      "id": "marketing-china-ecommerce-operator",
+      "name": "中国电商运营专家",
+      "description": "name: 中国电商运营专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-china-ecommerce-operator"
+    },
+    {
+      "id": "marketing-china-market-localization-strategist",
+      "name": "中国市场本地化策略师",
+      "description": "name: 中国市场本地化策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-china-market-localization-strategist"
+    },
+    {
+      "id": "marketing-content-creator",
+      "name": "内容创作者",
+      "description": "name: 内容创作者",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-content-creator"
+    },
+    {
+      "id": "marketing-cross-border-ecommerce",
+      "name": "跨境电商运营专家",
+      "description": "name: 跨境电商运营专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-cross-border-ecommerce"
+    },
+    {
+      "id": "marketing-douyin-strategist",
+      "name": "抖音策略师",
+      "description": "name: 抖音策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-douyin-strategist"
+    },
+    {
+      "id": "marketing-ecommerce-operator",
+      "name": "电商运营师",
+      "description": "name: 电商运营师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-ecommerce-operator"
+    },
+    {
+      "id": "marketing-growth-hacker",
+      "name": "增长黑客",
+      "description": "name: 增长黑客",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-growth-hacker"
+    },
+    {
+      "id": "marketing-instagram-curator",
+      "name": "Instagram 策展师",
+      "description": "name: Instagram 策展师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-instagram-curator"
+    },
+    {
+      "id": "marketing-knowledge-commerce-strategist",
+      "name": "知识付费产品策划师",
+      "description": "name: 知识付费产品策划师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-knowledge-commerce-strategist"
+    },
+    {
+      "id": "marketing-kuaishou-strategist",
+      "name": "快手策略师",
+      "description": "name: 快手策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-kuaishou-strategist"
+    },
+    {
+      "id": "marketing-linkedin-content-creator",
+      "name": "LinkedIn 内容创作专家",
+      "description": "name: LinkedIn 内容创作专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-linkedin-content-creator"
+    },
+    {
+      "id": "marketing-livestream-commerce-coach",
+      "name": "直播电商主播教练",
+      "description": "name: 直播电商主播教练",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-livestream-commerce-coach"
+    },
+    {
+      "id": "marketing-podcast-strategist",
+      "name": "播客内容策略师",
+      "description": "name: 播客内容策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-podcast-strategist"
+    },
+    {
+      "id": "marketing-private-domain-operator",
+      "name": "私域流量运营师",
+      "description": "name: 私域流量运营师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-private-domain-operator"
+    },
+    {
+      "id": "marketing-reddit-community-builder",
+      "name": "Reddit 社区运营",
+      "description": "name: Reddit 社区运营",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-reddit-community-builder"
+    },
+    {
+      "id": "marketing-seo-specialist",
+      "name": "SEO专家",
+      "description": "name: SEO专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-seo-specialist"
+    },
+    {
+      "id": "marketing-short-video-editing-coach",
+      "name": "短视频剪辑指导师",
+      "description": "name: 短视频剪辑指导师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-short-video-editing-coach"
+    },
+    {
+      "id": "marketing-social-media-strategist",
+      "name": "社交媒体策略师",
+      "description": "name: 社交媒体策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-social-media-strategist"
+    },
+    {
+      "id": "marketing-tiktok-strategist",
+      "name": "TikTok 策略师",
+      "description": "name: TikTok 策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-tiktok-strategist"
+    },
+    {
+      "id": "marketing-twitter-engager",
+      "name": "Twitter 互动官",
+      "description": "name: Twitter 互动官",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-twitter-engager"
+    },
+    {
+      "id": "marketing-video-optimization-specialist",
+      "name": "视频优化专家",
+      "description": "name: 视频优化专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-video-optimization-specialist"
+    },
+    {
+      "id": "marketing-wechat-official-account",
+      "name": "微信公众号管理",
+      "description": "name: 微信公众号管理",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-wechat-official-account"
+    },
+    {
+      "id": "marketing-wechat-operator",
+      "name": "微信公众号运营",
+      "description": "name: 微信公众号运营",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-wechat-operator"
+    },
+    {
+      "id": "marketing-weibo-strategist",
+      "name": "微博运营策略师",
+      "description": "name: 微博运营策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-weibo-strategist"
+    },
+    {
+      "id": "marketing-weixin-channels-strategist",
+      "name": "微信视频号运营策略师",
+      "description": "name: 微信视频号运营策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-weixin-channels-strategist"
+    },
+    {
+      "id": "marketing-xiaohongshu-operator",
+      "name": "小红书运营专家",
+      "description": "name: 小红书运营专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-xiaohongshu-operator"
+    },
+    {
+      "id": "marketing-xiaohongshu-specialist",
+      "name": "小红书专家",
+      "description": "name: 小红书专家",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-xiaohongshu-specialist"
+    },
+    {
+      "id": "marketing-zhihu-strategist",
+      "name": "知乎策略师",
+      "description": "name: 知乎策略师",
+      "tag": "marketing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/marketing-zhihu-strategist"
+    },
+    {
+      "id": "narrative-designer",
+      "name": "叙事设计师",
+      "description": "name: 叙事设计师",
+      "tag": "game-development",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/narrative-designer"
+    },
+    {
+      "id": "paid-media-auditor",
+      "name": "付费媒体审计师",
+      "description": "name: 付费媒体审计师",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-auditor"
+    },
+    {
+      "id": "paid-media-creative-strategist",
+      "name": "广告创意策略师",
+      "description": "name: 广告创意策略师",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-creative-strategist"
+    },
+    {
+      "id": "paid-media-paid-social-strategist",
+      "name": "社交广告策略师",
+      "description": "name: 社交广告策略师",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-paid-social-strategist"
+    },
+    {
+      "id": "paid-media-ppc-strategist",
+      "name": "PPC 竞价策略师",
+      "description": "name: PPC 竞价策略师",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-ppc-strategist"
+    },
+    {
+      "id": "paid-media-programmatic-buyer",
+      "name": "程序化广告采买专家",
+      "description": "name: 程序化广告采买专家",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-programmatic-buyer"
+    },
+    {
+      "id": "paid-media-search-query-analyst",
+      "name": "搜索词分析师",
+      "description": "name: 搜索词分析师",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-search-query-analyst"
+    },
+    {
+      "id": "paid-media-tracking-specialist",
+      "name": "追踪与归因专家",
+      "description": "name: 追踪与归因专家",
+      "tag": "paid-media",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/paid-media-tracking-specialist"
+    },
+    {
+      "id": "product-behavioral-nudge-engine",
+      "name": "行为助推引擎",
+      "description": "name: 行为助推引擎",
+      "tag": "product",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/product-behavioral-nudge-engine"
+    },
+    {
+      "id": "product-feedback-synthesizer",
+      "name": "反馈分析师",
+      "description": "name: 反馈分析师",
+      "tag": "product",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/product-feedback-synthesizer"
+    },
+    {
+      "id": "product-manager",
+      "name": "🧭 产品经理智能体",
+      "description": "name: 产品经理",
+      "tag": "product",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/product-manager"
+    },
+    {
+      "id": "product-sprint-prioritizer",
+      "name": "Sprint 排序师",
+      "description": "name: Sprint 排序师",
+      "tag": "product",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/product-sprint-prioritizer"
+    },
+    {
+      "id": "product-trend-researcher",
+      "name": "趋势研究员",
+      "description": "name: 趋势研究员",
+      "tag": "product",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/product-trend-researcher"
+    },
+    {
+      "id": "project-management-experiment-tracker",
+      "name": "实验追踪员",
+      "description": "name: 实验追踪员",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-management-experiment-tracker"
+    },
+    {
+      "id": "project-management-jira-workflow-steward",
+      "name": "Jira工作流管家",
+      "description": "name: Jira工作流管家",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-management-jira-workflow-steward"
+    },
+    {
+      "id": "project-management-project-shepherd",
+      "name": "项目牧羊人",
+      "description": "name: 项目牧羊人",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-management-project-shepherd"
+    },
+    {
+      "id": "project-management-studio-operations",
+      "name": "工作室运营",
+      "description": "name: 工作室运营",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-management-studio-operations"
+    },
+    {
+      "id": "project-management-studio-producer",
+      "name": "工作室制片人",
+      "description": "name: 工作室制片人",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-management-studio-producer"
+    },
+    {
+      "id": "project-manager-senior",
+      "name": "高级项目经理",
+      "description": "name: 高级项目经理",
+      "tag": "project-management",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/project-manager-senior"
+    },
+    {
+      "id": "prompt-engineer",
+      "name": "提示词工程师",
+      "description": "name: 提示词工程师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/prompt-engineer"
+    },
+    {
+      "id": "real-estate-buyer-seller",
+      "name": "房地产经纪助手",
+      "description": "name: 房地产经纪助手",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/real-estate-buyer-seller"
+    },
+    {
+      "id": "recruitment-specialist",
+      "name": "Recruitment Specialist Agent",
+      "description": "name: 招聘专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/recruitment-specialist"
+    },
+    {
+      "id": "report-distribution-agent",
+      "name": "报告分发师",
+      "description": "name: 报告分发师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/report-distribution-agent"
+    },
+    {
+      "id": "retail-customer-returns",
+      "name": "零售退货专家",
+      "description": "name: 零售退货专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/retail-customer-returns"
+    },
+    {
+      "id": "sales-account-strategist",
+      "name": "客户拓展策略师",
+      "description": "name: 客户拓展策略师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-account-strategist"
+    },
+    {
+      "id": "sales-coach",
+      "name": "销售教练",
+      "description": "name: 销售教练",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-coach"
+    },
+    {
+      "id": "sales-data-extraction-agent",
+      "name": "销售数据提取师",
+      "description": "name: 销售数据提取师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-data-extraction-agent"
+    },
+    {
+      "id": "sales-deal-strategist",
+      "name": "赢单策略师",
+      "description": "name: 赢单策略师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-deal-strategist"
+    },
+    {
+      "id": "sales-discovery-coach",
+      "name": "Discovery 教练",
+      "description": "name: Discovery 教练",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-discovery-coach"
+    },
+    {
+      "id": "sales-engineer",
+      "name": "售前工程师",
+      "description": "name: 售前工程师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-engineer"
+    },
+    {
+      "id": "sales-outbound-strategist",
+      "name": "Outbound 策略师",
+      "description": "name: Outbound 策略师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-outbound-strategist"
+    },
+    {
+      "id": "sales-pipeline-analyst",
+      "name": "Pipeline 分析师",
+      "description": "name: Pipeline 分析师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-pipeline-analyst"
+    },
+    {
+      "id": "sales-proposal-strategist",
+      "name": "投标策略师",
+      "description": "name: 投标策略师",
+      "tag": "sales",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/sales-proposal-strategist"
+    },
+    {
+      "id": "specialized-ai-policy-writer",
+      "name": "AI 治理政策专家",
+      "description": "name: AI 治理政策专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-ai-policy-writer"
+    },
+    {
+      "id": "specialized-chief-of-staff",
+      "name": "幕僚长",
+      "description": "name: 幕僚长",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-chief-of-staff"
+    },
+    {
+      "id": "specialized-civil-engineer",
+      "name": "土木工程师智能体",
+      "description": "name: 土木工程师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-civil-engineer"
+    },
+    {
+      "id": "specialized-cultural-intelligence-strategist",
+      "name": "文化智能策略师",
+      "description": "name: 文化智能策略师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-cultural-intelligence-strategist"
+    },
+    {
+      "id": "specialized-developer-advocate",
+      "name": "开发者布道师智能体",
+      "description": "name: 开发者布道师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-developer-advocate"
+    },
+    {
+      "id": "specialized-document-generator",
+      "name": "文档生成器",
+      "description": "name: 文档生成器",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-document-generator"
+    },
+    {
+      "id": "specialized-french-consulting-market",
+      "name": "🧠 你的身份与记忆",
+      "description": "name: 法国咨询市场专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-french-consulting-market"
+    },
+    {
+      "id": "specialized-korean-business-navigator",
+      "name": "🧠 你的身份与记忆",
+      "description": "name: 韩国商务专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-korean-business-navigator"
+    },
+    {
+      "id": "specialized-mcp-builder",
+      "name": "MCP 构建器",
+      "description": "name: MCP 构建器",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-mcp-builder"
+    },
+    {
+      "id": "specialized-meeting-assistant",
+      "name": "会议效率专家",
+      "description": "name: 会议效率专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-meeting-assistant"
+    },
+    {
+      "id": "specialized-model-qa",
+      "name": "模型 QA 专家",
+      "description": "name: 模型 QA 专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-model-qa"
+    },
+    {
+      "id": "specialized-pricing-optimizer",
+      "name": "动态定价策略师",
+      "description": "name: 动态定价策略师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-pricing-optimizer"
+    },
+    {
+      "id": "specialized-risk-assessor",
+      "name": "企业风险评估师",
+      "description": "name: 企业风险评估师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-risk-assessor"
+    },
+    {
+      "id": "specialized-salesforce-architect",
+      "name": "🧠 你的身份与记忆",
+      "description": "name: Salesforce 架构师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-salesforce-architect"
+    },
+    {
+      "id": "specialized-workflow-architect",
+      "name": "工作流架构师智能体人格",
+      "description": "name: 工作流架构师",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/specialized-workflow-architect"
+    },
+    {
+      "id": "study-abroad-advisor",
+      "name": "留学规划顾问",
+      "description": "name: 留学规划顾问",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/study-abroad-advisor"
+    },
+    {
+      "id": "supply-chain-inventory-forecaster",
+      "name": "库存预测专家",
+      "description": "name: 库存预测专家",
+      "tag": "supply-chain",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/supply-chain-inventory-forecaster"
+    },
+    {
+      "id": "supply-chain-route-optimizer",
+      "name": "物流路线优化师",
+      "description": "name: 物流路线优化师",
+      "tag": "supply-chain",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/supply-chain-route-optimizer"
+    },
+    {
+      "id": "supply-chain-vendor-evaluator",
+      "name": "供应商评估专家",
+      "description": "name: 供应商评估专家",
+      "tag": "supply-chain",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/supply-chain-vendor-evaluator"
+    },
+    {
+      "id": "support-analytics-reporter",
+      "name": "数据分析师 Agent 人设",
+      "description": "name: 数据分析师",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-analytics-reporter"
+    },
+    {
+      "id": "support-executive-summary-generator",
+      "name": "高管摘要师",
+      "description": "name: 高管摘要师",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-executive-summary-generator"
+    },
+    {
+      "id": "support-finance-tracker",
+      "name": "财务追踪员",
+      "description": "name: 财务追踪员",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-finance-tracker"
+    },
+    {
+      "id": "support-infrastructure-maintainer",
+      "name": "基础设施运维师",
+      "description": "name: 基础设施运维师",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-infrastructure-maintainer"
+    },
+    {
+      "id": "support-legal-compliance-checker",
+      "name": "法务合规员 Agent 人格",
+      "description": "name: 法务合规员",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-legal-compliance-checker"
+    },
+    {
+      "id": "support-recruitment-specialist",
+      "name": "招聘运营专家",
+      "description": "name: 招聘运营专家",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-recruitment-specialist"
+    },
+    {
+      "id": "support-supply-chain-strategist",
+      "name": "供应链采购策略师",
+      "description": "name: 供应链采购策略师",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-supply-chain-strategist"
+    },
+    {
+      "id": "support-support-responder",
+      "name": "客服响应者 Agent 人格",
+      "description": "name: 客服响应者",
+      "tag": "support",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/support-support-responder"
+    },
+    {
+      "id": "technical-artist",
+      "name": "技术美术",
+      "description": "name: 技术美术",
+      "tag": "game-development",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/technical-artist"
+    },
+    {
+      "id": "technical-translator-agent",
+      "name": "技术翻译专家",
+      "description": "name: 技术翻译专家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/technical-translator-agent"
+    },
+    {
+      "id": "terminal-integration-specialist",
+      "name": "终端集成专家",
+      "description": "name: 终端集成专家",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/terminal-integration-specialist"
+    },
+    {
+      "id": "testing-accessibility-auditor",
+      "name": "无障碍审核员",
+      "description": "name: 无障碍审核员",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-accessibility-auditor"
+    },
+    {
+      "id": "testing-api-tester",
+      "name": "API 测试员 Agent 人格",
+      "description": "name: API 测试员",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-api-tester"
+    },
+    {
+      "id": "testing-embedded-qa-engineer",
+      "name": "嵌入式测试工程师",
+      "description": "name: 嵌入式测试工程师",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-embedded-qa-engineer"
+    },
+    {
+      "id": "testing-evidence-collector",
+      "name": "证据收集者",
+      "description": "name: 证据收集者",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-evidence-collector"
+    },
+    {
+      "id": "testing-performance-benchmarker",
+      "name": "性能基准师",
+      "description": "name: 性能基准师",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-performance-benchmarker"
+    },
+    {
+      "id": "testing-reality-checker",
+      "name": "集成 Agent 人格",
+      "description": "name: 现实检验者",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-reality-checker"
+    },
+    {
+      "id": "testing-test-results-analyzer",
+      "name": "测试结果分析师",
+      "description": "name: 测试结果分析师",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-test-results-analyzer"
+    },
+    {
+      "id": "testing-tool-evaluator",
+      "name": "工具评估师",
+      "description": "name: 工具评估师",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-tool-evaluator"
+    },
+    {
+      "id": "testing-workflow-optimizer",
+      "name": "工作流优化师",
+      "description": "name: 工作流优化师",
+      "tag": "testing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/testing-workflow-optimizer"
+    },
+    {
+      "id": "visionos-spatial-engineer",
+      "name": "visionOS 空间工程师",
+      "description": "name: visionOS 空间工程师",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/visionos-spatial-engineer"
+    },
+    {
+      "id": "xr-cockpit-interaction-specialist",
+      "name": "XR 座舱交互专家",
+      "description": "name: XR 座舱交互专家",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/xr-cockpit-interaction-specialist"
+    },
+    {
+      "id": "xr-immersive-developer",
+      "name": "XR 沉浸式开发者",
+      "description": "name: XR 沉浸式开发者",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/xr-immersive-developer"
+    },
+    {
+      "id": "xr-interface-architect",
+      "name": "XR 界面架构师",
+      "description": "name: XR 界面架构师",
+      "tag": "spatial-computing",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/xr-interface-architect"
+    },
+    {
+      "id": "zk-steward",
+      "name": "ZK 管家智能体",
+      "description": "name: ZK 管家",
+      "tag": "specialized",
+      "emoji": "🤖",
+      "sourcePath": "/builtin-agents/agency-agents-zh/openclaw/zk-steward"
+    }
+  ]
+}

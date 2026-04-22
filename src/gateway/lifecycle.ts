@@ -46,6 +46,41 @@ class GatewayLifecycleManager extends EventEmitter {
     'operator.pairing',
   ];
 
+  private resolveOpenClawCommand(): { command: string; envPathPrefix: string[] } {
+    const candidates = [
+      process.env.OPENCLAW_BIN,
+      '/opt/homebrew/bin/openclaw',
+      '/usr/local/bin/openclaw',
+      path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw'),
+      'openclaw',
+    ].filter((v): v is string => !!v && String(v).trim().length > 0);
+
+    for (const candidate of candidates) {
+      if (candidate === 'openclaw') continue;
+      try {
+        if (fs.existsSync(candidate)) {
+          return {
+            command: candidate,
+            envPathPrefix: Array.from(
+              new Set([
+                path.dirname(candidate),
+                '/opt/homebrew/bin',
+                '/usr/local/bin',
+              ]),
+            ),
+          };
+        }
+      } catch {
+        // continue fallback
+      }
+    }
+
+    return {
+      command: 'openclaw',
+      envPathPrefix: ['/opt/homebrew/bin', '/usr/local/bin'],
+    };
+  }
+
   /**
    * Start the OpenClaw Gateway
    */
@@ -87,12 +122,28 @@ class GatewayLifecycleManager extends EventEmitter {
       }
 
       // Start OpenClaw Gateway as subprocess
-      this.process = spawn('openclaw', ['gateway', 'run', '--compact'], {
+      const resolved = this.resolveOpenClawCommand();
+      const nextPath = Array.from(
+        new Set([
+          ...resolved.envPathPrefix,
+          ...(String(process.env.PATH || '').split(path.delimiter).filter(Boolean)),
+        ]),
+      ).join(path.delimiter);
+      this.emit('log', 'info', `Gateway command: ${resolved.command}`);
+      this.emit('log', 'info', `Gateway PATH: ${nextPath}`);
+
+      this.process = spawn(resolved.command, ['gateway', 'run', '--compact'], {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
           ...process.env,
+          PATH: nextPath,
           // Ensure Gateway uses the correct port
           OPENCLAW_GATEWAY_PORT: String(this.port),
+          // Allow memory-lancedb plugin to use Zhipu AI (BigModel) embedding API
+          // when OPENAI_BASE_URL is not already set externally
+          ...(process.env.OPENAI_BASE_URL ? {} : {
+            OPENAI_BASE_URL: 'https://open.bigmodel.cn/api/paas/v4',
+          }),
           ...(this.configHomeOverride ? { HOME: this.configHomeOverride } : {}),
         },
       });
@@ -130,6 +181,19 @@ class GatewayLifecycleManager extends EventEmitter {
           if (msg.includes('Unknown config keys') || msg.includes('setupComplete')) {
             this.startupFailureReason = msg;
           }
+          const isPluginDuplicateWarning =
+            /duplicate plugin id/i.test(msg) ||
+            /bundled plugin will be overridden/i.test(msg);
+          if (
+            !isPluginDuplicateWarning &&
+            (
+              /invalid config/i.test(msg) ||
+              /must have required property/i.test(msg) ||
+              /plugins?.*memory-lancedb/i.test(msg)
+            )
+          ) {
+            this.startupFailureReason = msg;
+          }
         }
       });
 
@@ -155,6 +219,7 @@ class GatewayLifecycleManager extends EventEmitter {
       child.on('error', (error) => {
         if (this.process !== child) return;
         console.error('[Gateway] Process error:', error);
+        this.startupFailureReason = error.message || String(error);
         this.status = { state: 'error', port: this.port, error: error.message };
         this.emit('error', error);
         this.emit('log', 'error', `Process error: ${error.message}`);
@@ -247,6 +312,28 @@ class GatewayLifecycleManager extends EventEmitter {
         changed = true;
       }
       cfg.models = models;
+
+      // 1.2) Remove invalid plugin entries reported by validator (e.g. memory-lancedb schema mismatch).
+      const plugins = (cfg.plugins && typeof cfg.plugins === 'object' && !Array.isArray(cfg.plugins))
+        ? (cfg.plugins as Record<string, unknown>)
+        : {};
+      const entries = (plugins.entries && typeof plugins.entries === 'object' && !Array.isArray(plugins.entries))
+        ? (plugins.entries as Record<string, unknown>)
+        : {};
+      const pluginMatch = reason.match(/plugins\.entries\.([a-zA-Z0-9._-]+)/);
+      if (pluginMatch?.[1]) {
+        const pluginId = pluginMatch[1];
+        if (pluginId in entries) {
+          delete entries[pluginId];
+          changed = true;
+        }
+      }
+      if (reason.includes('memory-lancedb') && 'memory-lancedb' in entries) {
+        delete entries['memory-lancedb'];
+        changed = true;
+      }
+      plugins.entries = entries;
+      cfg.plugins = plugins;
 
       // 2) Downgrade meta stamp when local OpenClaw reports config is from a newer version.
       const versionMatch = reason.match(/current version is\s*([0-9]+\.[0-9]+\.[0-9]+)/i);

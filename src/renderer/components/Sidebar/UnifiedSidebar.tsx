@@ -11,8 +11,8 @@ import { CollapseButton } from './CollapseButton';
 type MenuItem = { id: string; icon: any; labelKey: string; labelFallback: string };
 
 const CORE_MENU: MenuItem[] = [
-  { id: 'overview', icon: Icons.dashboard, labelKey: 'overview', labelFallback: 'Overview' },
   { id: 'chat', icon: Icons.chat, labelKey: 'chat', labelFallback: 'Chat' },
+  { id: 'overview', icon: Icons.dashboard, labelKey: 'overview', labelFallback: 'Overview' },
   { id: 'tasks', icon: Icons.tasks, labelKey: 'tasks', labelFallback: 'Tasks' },
   { id: 'agent-hub', icon: Icons.agent, labelKey: 'agents', labelFallback: 'Agents' },
   { id: 'model-config', icon: Icons.model, labelKey: 'modelConfig', labelFallback: 'Configuration' },

@@ -103,7 +103,7 @@ function buildAgentsFromRpc(
       inheritedModel,
       workspace,
       agentDir: String(a.agentDir ?? `~/.openclaw/agents/${a.id}/agent`),
-      mainSessionKey: `${a.id}:main`,
+      mainSessionKey: `agent:${String(a.id ?? '').trim().toLowerCase() || 'main'}:main`,
       channelTypes: agentChannels,
     };
   });

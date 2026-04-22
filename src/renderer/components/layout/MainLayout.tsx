@@ -3,11 +3,12 @@
  * macOS 风格可收缩侧边栏 + 浮动右侧面板
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
 import { loadLocale } from '@/axonclawx/locales';
 import { hostApiFetch } from '@/lib/host-api';
+import { HomeView } from '@/views/HomeView';
 import { DashboardView } from '@/views/DashboardView';
 import { ChatView } from '@/components/chat/ChatView';
 import { AgentsView } from '@/views/AgentsView';
@@ -33,6 +34,43 @@ import { PanelTrigger } from '@/components/Panel/PanelTrigger';
 import { useGatewayStore } from '@/stores/gateway';
 const lockLogo = '/icon.png';
 
+class RenderErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('[MainLayout] render error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-[#0f172a] text-white p-6">
+          <div className="max-w-2xl w-full rounded-xl border border-rose-500/40 bg-rose-500/10 p-4">
+            <div className="text-sm font-semibold text-rose-200 mb-2">页面渲染失败</div>
+            <div className="text-xs text-rose-100/90 break-words whitespace-pre-wrap">
+              {this.state.message || 'Unknown render error'}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const ADVANCED_ROUTE_TO_VISIBILITY_KEY: Record<string, 'agentConfig' | 'knowledge' | 'cron' | 'nodes' | 'monitor'> = {
   'agent-config': 'agentConfig',
   knowledge: 'knowledge',
@@ -44,7 +82,7 @@ const FORCE_SETUP_WIZARD_KEY = 'clawx.force-setup-wizard';
 const FORCE_SETUP_WIZARD_ALWAYS = false;
 
 const MainLayout: React.FC = () => {
-  const [activeNav, setActiveNav] = useState('overview');
+  const [activeNav, setActiveNav] = useState('chat');
   const [forceSetupWizard, setForceSetupWizard] = useState<boolean>(() => {
     if (FORCE_SETUP_WIZARD_ALWAYS) return true;
     try {
@@ -69,6 +107,7 @@ const MainLayout: React.FC = () => {
   const [unlocking, setUnlocking] = useState(false);
   const [lockNow, setLockNow] = useState(() => new Date());
   const { t } = useTranslation();
+  const lastLanguageSyncAtRef = useRef(0);
 
   // Get connection status from gateway store
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -175,26 +214,48 @@ const MainLayout: React.FC = () => {
   }, [language]);
 
   // Keep global UI language synced with backend settings (including changes made in Configuration Center).
+  const syncLanguageFromBackend = useCallback(async (minIntervalMs = 5000) => {
+    const now = Date.now();
+    if (now - lastLanguageSyncAtRef.current < minIntervalMs) return;
+    lastLanguageSyncAtRef.current = now;
+    try {
+      const settings = await hostApiFetch<{ language?: string }>('/api/settings');
+      const remote = String(settings?.language ?? '').trim();
+      if (remote) applyLanguageFromExternal(remote);
+    } catch {
+      // ignore sync failures
+    }
+  }, [applyLanguageFromExternal]);
+
   useEffect(() => {
     let stopped = false;
-    const syncLanguage = async () => {
-      try {
-        const settings = await hostApiFetch<{ language?: string }>('/api/settings');
-        const remote = String(settings?.language ?? '').trim();
-        if (!stopped && remote) applyLanguageFromExternal(remote);
-      } catch {
-        // ignore sync failures
-      }
+    const safeSync = async (minIntervalMs = 5000) => {
+      if (stopped) return;
+      await syncLanguageFromBackend(minIntervalMs);
     };
-    void syncLanguage();
+
+    void safeSync(0); // first paint sync
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void safeSync(1000);
+    };
+    const onFocus = () => void safeSync(1000);
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+
+    // Low-frequency fallback sync to avoid stale state
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void syncLanguage();
-    }, 800);
+      if (document.visibilityState === 'visible') void safeSync(30000);
+    }, 30000);
+
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
       window.clearInterval(timer);
     };
-  }, [applyLanguageFromExternal]);
+  }, [syncLanguageFromBackend]);
 
   // Handle Cmd/Ctrl + K shortcut
   useEffect(() => {
@@ -219,7 +280,7 @@ const MainLayout: React.FC = () => {
   const renderContent = () => {
     switch (activeNav) {
       case 'overview':
-        return <DashboardView onNavigateTo={navigateTo} />;
+        return <HomeView onNavigateTo={navigateTo} />;
       case 'chat':
         return <ChatView />;
       case 'tasks':
@@ -231,7 +292,7 @@ const MainLayout: React.FC = () => {
       case 'agent-config':
         return <AgentsView />;
       case 'agent-hub':
-        return <AgentOrchestrationCanvasView />;
+        return <AgentOrchestrationCanvasView onNavigateTo={navigateTo} />;
       case 'agent-orchestration':
         return <IntelligenceManagementView />;
       case 'skill-config':
@@ -343,7 +404,9 @@ const MainLayout: React.FC = () => {
       {/* Main Content - 左右边距 10px；min-h-0 + flex 确保健康中心等页面的滚动区域正确计算高度 */}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden px-[10px] w-full min-w-0">
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {renderContent()}
+          <RenderErrorBoundary>
+            {renderContent()}
+          </RenderErrorBoundary>
         </div>
       </main>
 
